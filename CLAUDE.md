@@ -36,10 +36,25 @@ archml/
 │       ├── validation/      # Consistency checks (dangling refs, unused interfaces)
 │       ├── views/           # View generation and rendering
 │       ├── sphinx_ext/      # Sphinx extension for embedding architecture views
+│       ├── lsp/             # Language server (LSP) for VS Code integration
 │       └── cli/             # Command-line interface
 └── tests/
-    ├── unit/                # Isolated unit tests
-    └── component/           # Integration/component tests
+    ├── unit/                # Isolated unit tests (mirrors src/ structure)
+    │   ├── parser/
+    │   ├── model/
+    │   ├── validation/
+    │   ├── views/
+    │   ├── sphinx_ext/
+    │   ├── lsp/
+    │   └── cli/
+    └── component/           # Integration/component tests (mirrors src/ structure)
+        ├── parser/
+        ├── model/
+        ├── validation/
+        ├── views/
+        ├── sphinx_ext/
+        ├── lsp/
+        └── cli/
 ```
 
 ## Common Commands
@@ -112,6 +127,7 @@ Full syntax specification: `docs/LANGUAGE_SYNTAX.md`
 - Views are not part of the architecture language. They will be defined in a separate view DSL that references model entities.
 - The Sphinx extension reads `.archml` files directly and renders views inline — it is not an export pipeline.
 - The CLI is the primary user entry point for parsing, validating, and generating views outside of Sphinx.
+- A Language Server Protocol (LSP) implementation provides IDE support (diagnostics, completion, go-to-definition) for `.archml` files, with a VS Code extension as the primary client.
 
 ## Coding Conventions
 
@@ -119,4 +135,4 @@ Full syntax specification: `docs/LANGUAGE_SYNTAX.md`
 - All public APIs must have type annotations.
 - Prefer dataclasses or attrs for model types.
 - Keep modules focused: one responsibility per module.
-- Test file naming mirrors source: `src/archml/parser/lexer.py` -> `tests/unit/parser/test_lexer.py`.
+- The test directory structure mirrors the source structure. Every module in `src/archml/<package>/` has a corresponding directory in `tests/unit/<package>/` and `tests/component/<package>/`. Test files are prefixed with `test_`: `src/archml/parser/lexer.py` -> `tests/unit/parser/test_lexer.py`.
