@@ -20,6 +20,65 @@ ArchML files use the `.archml` extension. A file contains one or more top-level 
 
 Strings use double quotes. Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional human-readable `title` and `description`.
 
+## Type System
+
+### Primitive Types
+
+`String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`
+
+### File and Directory
+
+`File` and `Directory` represent filesystem entities exchanged between components (configuration files, data exports, logs, etc.).
+
+A `File` field specifies a `filetype` and an optional free-text `schema` describing the expected content:
+
+```
+field app_config: File {
+    filetype = "YAML"
+    schema = "Top-level keys: server, database, logging."
+}
+```
+
+A `Directory` field specifies a `schema` describing the expected layout:
+
+```
+field artifact: Directory {
+    schema = "Contains manifests/*.yaml, config/app.yaml, config/secrets.env, scripts/deploy.sh"
+}
+```
+
+### Container Types
+
+`List<T>`, `Map<K, V>`, `Optional<T>`
+
+### Enumerations
+
+The `enum` keyword defines a constrained set of named values:
+
+```
+enum OrderStatus {
+    Pending
+    Confirmed
+    Shipped
+    Delivered
+    Cancelled
+}
+```
+
+### Custom Types
+
+The `type` keyword defines a reusable data structure:
+
+```
+type OrderItem {
+    field product_id: String
+    field quantity: Int
+    field unit_price: Decimal
+}
+```
+
+Custom types, enums, and interfaces can all be referenced by name as field types.
+
 ## Core Entities
 
 ### Interface
@@ -39,102 +98,11 @@ interface OrderRequest {
 }
 ```
 
-**Supported primitive types**: `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `File`, `Directory`.
-
-**Generic container types**: `List<T>`, `Map<K, V>`, `Optional<T>`.
-
-#### File and Directory Types
-
-`File` and `Directory` are first-class primitives representing filesystem entities exchanged between components (configuration files, data exports, logs, etc.).
-
-A **`File`** field specifies a `filetype` and an optional free-text `schema` describing the expected content:
-
-```
-interface ConfigInput {
-    field app_config: File {
-        filetype = "YAML"
-        schema = "Top-level keys: server, database, logging. See docs/config-reference.md."
-    }
-    field tls_cert: File {
-        filetype = "PEM"
-    }
-}
-```
-
-A **`Directory`** field describes a structured layout of nested files and subdirectories:
-
-```
-interface DeploymentBundle {
-    field artifact: Directory {
-        file manifests: File {
-            filetype = "YAML"
-            schema = "Kubernetes manifest files."
-        }
-        file readme: File {
-            filetype = "Markdown"
-        }
-        directory config {
-            file app: File {
-                filetype = "YAML"
-                schema = "Application configuration."
-            }
-            file secrets: File {
-                filetype = "ENV"
-                schema = "KEY=VALUE pairs for secret injection."
-            }
-        }
-        directory scripts {
-            file deploy: File {
-                filetype = "Shell"
-                schema = "Entry-point deployment script."
-            }
-        }
-    }
-}
-```
-
-Inside a `Directory` block, `file` declares a named file entry and `directory` declares a named subdirectory. Subdirectories nest recursively.
-
-#### Enumerations
-
-The `enum` keyword defines a constrained set of named values:
-
-```
-enum OrderStatus {
-    Pending
-    Confirmed
-    Shipped
-    Delivered
-    Cancelled
-}
-```
-
-Enum values are plain identifiers. Enums can be used as field types just like primitives:
-
-```
-interface OrderUpdate {
-    field order_id: String
-    field status: OrderStatus
-}
-```
-
-#### Custom Types
-
-**Custom types** are referenced by name. The tooling resolves them to other interface, type, or enum definitions:
-
-```
-type OrderItem {
-    field product_id: String
-    field quantity: Int
-    field unit_price: Decimal
-}
-```
-
-`type` defines a reusable data structure. `interface` defines a contract used in connections. Both share the same field syntax — the distinction is semantic: interfaces appear on ports; types are building blocks.
+`interface` defines a contract used in connections. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear on ports; types compose into fields.
 
 ### Component
 
-A component is a module with a clear responsibility. Components declare the interfaces they **require** (consume from others) and **provide** (expose to others). By convention, `requires` declarations always come before `provides`.
+A component is a module with a clear responsibility. Components declare the interfaces they **require** (consume from others) and **provide** (expose to others). `requires` declarations always come before `provides`.
 
 ```
 component OrderService {
@@ -147,7 +115,7 @@ component OrderService {
 }
 ```
 
-Components can be **composed** of sub-components to express internal structure:
+Components can nest sub-components to express internal structure:
 
 ```
 component OrderService {
@@ -155,7 +123,6 @@ component OrderService {
 
     component Validator {
         title = "Order Validator"
-        description = "Validates order contents and business rules."
 
         requires OrderRequest
         provides ValidationResult
@@ -163,7 +130,6 @@ component OrderService {
 
     component Processor {
         title = "Order Processor"
-        description = "Orchestrates payment and inventory checks."
 
         requires ValidationResult
         requires PaymentRequest
@@ -171,14 +137,7 @@ component OrderService {
         provides OrderConfirmation
     }
 
-    // Internal wiring: Processor consumes what Validator produces.
     connect Validator.ValidationResult -> Processor.ValidationResult
-
-    // Surface-level ports: what the parent component exposes.
-    requires OrderRequest to Validator
-    requires PaymentRequest from Processor
-    requires InventoryCheck from Processor
-    provides OrderConfirmation from Processor
 }
 ```
 
@@ -195,7 +154,6 @@ system ECommerce {
     component PaymentGateway { ... }
     component InventoryManager { ... }
 
-    // Connections between components within this system.
     connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest
     connect OrderService.InventoryCheck -> InventoryManager.InventoryCheck
 }
@@ -210,10 +168,23 @@ system Enterprise {
     system ECommerce { ... }
     system Warehouse { ... }
 
-    // Cross-system connections.
     connect ECommerce.InventorySync -> Warehouse.InventorySync
 }
 ```
+
+### External Actors
+
+The `external` keyword marks systems or components that are outside the development boundary:
+
+```
+external system StripeAPI {
+    title = "Stripe Payment API"
+    requires PaymentRequest
+    provides PaymentResult
+}
+```
+
+External entities appear in diagrams with distinct styling. They cannot be further decomposed (they are opaque).
 
 ## Connections
 
@@ -233,30 +204,20 @@ connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest {
 }
 ```
 
-### Connection Semantics
-
-| Annotation   | Type    | Description                                        |
-|--------------|---------|----------------------------------------------------|
-| `protocol`   | String  | Communication protocol (e.g., `"HTTP"`, `"gRPC"`, `"AMQP"`). |
-| `async`      | Bool    | Whether the interaction is asynchronous.            |
-| `description`| String  | Human-readable explanation of the interaction.      |
-
-## Tags and Metadata
+## Tags
 
 Any named entity can carry **tags** for filtering and view generation:
 
 ```
 component PaymentGateway {
-    tags = ["critical", "pci-scope", "external-dependency"]
+    tags = ["critical", "pci-scope"]
     ...
 }
 ```
 
-Tags are arbitrary strings. Tooling can use them to generate filtered views (e.g., "show only PCI-scoped components").
-
 ## Multi-File Composition
 
-Large architectures are split across files. The `import` statement brings definitions from other files into scope. The `use` keyword places an imported entity (typically a component) into a system or parent component without redefining it.
+Large architectures are split across files. The `import` statement brings definitions from other files into scope. The `use` keyword places an imported entity into a system or parent component without redefining it. `use` always includes the entity type for clarity.
 
 Components, interfaces, types, and enums can all be defined at the top level of any `.archml` file — they do not need to be nested inside a system. This enables a one-file-per-component workflow where each component is self-contained and systems compose them by reference.
 
@@ -270,7 +231,6 @@ import "interfaces/order.archml"
 
 component OrderService {
     title = "Order Service"
-    description = "Accepts, validates, and processes customer orders."
 
     requires OrderRequest
     provides OrderConfirmation
@@ -283,26 +243,11 @@ import "components/order_service.archml"
 system ECommerce {
     title = "E-Commerce Platform"
 
-    // Reference the imported component — no need to redefine it.
-    use OrderService
+    use component OrderService
 }
 ```
 
-Import paths are relative to the project root (the directory containing the `.archml` files or a future configuration file). The `use` keyword only places an already-defined entity; it does not allow overriding fields or interfaces.
-
-## External Actors
-
-Not every participant in the architecture is under the team's control. The `external` keyword marks systems or components that are outside the development boundary:
-
-```
-external system StripeAPI {
-    title = "Stripe Payment API"
-    requires PaymentRequest
-    provides PaymentResult
-}
-```
-
-External entities appear in diagrams with distinct styling. The tooling can enforce that external entities are not further decomposed (they are opaque).
+Import paths are relative to the project root. The `use` keyword only places an already-defined entity; it does not allow overriding fields or interfaces.
 
 ## Complete Example
 
@@ -390,11 +335,10 @@ external system StripeAPI {
 system ECommerce {
     title = "E-Commerce Platform"
 
-    use OrderService
+    use component OrderService
 
     component PaymentGateway {
         title = "Payment Gateway"
-        description = "Mediates between internal services and external payment providers."
         tags = ["critical", "pci-scope"]
 
         requires PaymentRequest
@@ -403,7 +347,6 @@ system ECommerce {
 
     component InventoryManager {
         title = "Inventory Manager"
-        description = "Tracks product stock levels."
 
         requires InventoryCheck
         provides InventoryStatus
@@ -412,7 +355,6 @@ system ECommerce {
     connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest
     connect OrderService.InventoryCheck -> InventoryManager.InventoryCheck {
         protocol = "HTTP"
-        async = false
     }
     connect PaymentGateway.PaymentRequest -> StripeAPI.PaymentRequest {
         protocol = "HTTP"
@@ -431,15 +373,13 @@ system ECommerce {
 | `type`        | Reusable data structure (used within interfaces).          |
 | `enum`        | Constrained set of named values.                           |
 | `field`       | Named, typed data element inside an interface or type.     |
-| `file`        | Named file entry inside a `Directory` layout.              |
-| `directory`   | Named subdirectory entry inside a `Directory` layout.      |
-| `filetype`    | Annotation on a `File` specifying its format.              |
-| `schema`      | Free-text annotation describing expected file content.     |
+| `filetype`    | Annotation on a `File` field specifying its format.        |
+| `schema`      | Free-text annotation describing expected file/directory content. |
 | `requires`    | Declares an interface that an element consumes (listed before `provides`). |
 | `provides`    | Declares an interface that an element exposes.             |
 | `connect`     | Links a required interface to a provided interface.        |
 | `import`      | Brings definitions from another file into scope.           |
-| `use`         | Places an imported entity into a system or component.      |
+| `use`         | Places an imported entity into a system or component (e.g., `use component X`). |
 | `external`    | Marks a system or component as outside the development boundary. |
 | `tags`        | Arbitrary labels for filtering and view generation.        |
 | `title`       | Human-readable display name.                               |
