@@ -38,23 +38,14 @@ archml/
 │       ├── sphinx_ext/      # Sphinx extension for embedding architecture views
 │       ├── lsp/             # Language server (LSP) for VS Code integration
 │       └── cli/             # Command-line interface
-└── tests/
-    ├── unit/                # Isolated unit tests (mirrors src/ structure)
-    │   ├── parser/
-    │   ├── model/
-    │   ├── validation/
-    │   ├── views/
-    │   ├── sphinx_ext/
-    │   ├── lsp/
-    │   └── cli/
-    └── component/           # Integration/component tests (mirrors src/ structure)
-        ├── parser/
-        ├── model/
-        ├── validation/
-        ├── views/
-        ├── sphinx_ext/
-        ├── lsp/
-        └── cli/
+└── tests/                   # All tests (mirrors src/ structure)
+    ├── parser/
+    ├── model/
+    ├── validation/
+    ├── views/
+    ├── sphinx_ext/
+    ├── lsp/
+    └── cli/
 ```
 
 ## Common Commands
@@ -70,7 +61,7 @@ uv run pytest
 uv run pytest --cov=archml
 
 # Run a specific test file or test
-uv run pytest tests/unit/test_parser.py
+uv run pytest tests/parser/test_lexer.py
 uv run pytest -k "test_parse_component"
 
 # Lint and format
@@ -93,10 +84,9 @@ Every new feature requires thorough testing before it is considered complete. Th
 
 1. Write or update the relevant specification/design if needed.
 2. Implement the feature in `src/archml/`.
-3. Write unit tests in `tests/unit/` covering normal cases, edge cases, and error cases.
-4. Write component tests in `tests/component/` for cross-module integration when applicable.
-5. Ensure all tests pass, ruff reports no issues, and ty finds no type errors.
-6. Commit with a clear message describing the change.
+3. Write tests in `tests/` covering normal cases, edge cases, and error cases.
+4. Ensure all tests pass, ruff reports no issues, and ty finds no type errors.
+5. Commit with a clear message describing the change.
 
 Tests are not optional. A feature without tests is not done.
 
@@ -135,4 +125,4 @@ Full syntax specification: `docs/LANGUAGE_SYNTAX.md`
 - All public APIs must have type annotations.
 - Prefer dataclasses or attrs for model types.
 - Keep modules focused: one responsibility per module.
-- The test directory structure mirrors the source structure. Every module in `src/archml/<package>/` has a corresponding directory in `tests/unit/<package>/` and `tests/component/<package>/`. Test files are prefixed with `test_`: `src/archml/parser/lexer.py` -> `tests/unit/parser/test_lexer.py`.
+- The test directory structure mirrors the source structure. Every module in `src/archml/<package>/` has a corresponding directory in `tests/<package>/`. Test files are prefixed with `test_`: `src/archml/parser/lexer.py` -> `tests/parser/test_lexer.py`.
