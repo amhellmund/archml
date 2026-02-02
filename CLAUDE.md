@@ -126,3 +126,28 @@ Full syntax specification: `docs/LANGUAGE_SYNTAX.md`
 - Prefer dataclasses or attrs for model types.
 - Keep modules focused: one responsibility per module.
 - The test directory structure mirrors the source structure. Every module in `src/archml/<package>/` has a corresponding directory in `tests/<package>/`. Test files are prefixed with `test_`: `src/archml/parser/lexer.py` -> `tests/parser/test_lexer.py`.
+- Every Python file follows this layout:
+
+```python
+# Copyright ...
+# SPDX-License-Identifier: Apache-2.0
+
+import ...
+
+# ###############
+# Public Interface
+# ###############
+
+def public_function() -> None:
+    """Docstring describing the function."""
+    ...
+
+# ################
+# Implementation
+# ################
+
+def _private_helper() -> None:
+    ...
+```
+
+The copyright header and imports come first. Public interface (classes, functions, constants) is separated from private implementation by section comments. All private members are prefixed with an underscore.
