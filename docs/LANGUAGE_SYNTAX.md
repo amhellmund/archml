@@ -24,7 +24,7 @@ Strings use double quotes. Identifiers are unquoted alphanumeric names with unde
 
 ### Primitive Types
 
-`String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`
+`String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 
 ### File and Directory
 
@@ -93,10 +93,32 @@ interface OrderRequest {
     field order_id: String
     field customer_id: String
     field items: List<OrderItem>
-    field total_amount: Decimal
-    field currency: String
+    field total_amount: Decimal {
+        description = "Grand total including tax and shipping."
+    }
+    field currency: String {
+        description = "ISO 4217 currency code."
+        schema = "Three-letter uppercase code, e.g. USD, EUR."
+    }
 }
 ```
+
+Fields support optional `description` and `schema` annotations in a block. `description` explains the purpose of the field; `schema` provides format or validation expectations as free text.
+
+Interfaces support versioning with the `@` suffix:
+
+```
+interface OrderRequest @v2 {
+    field order_id: String
+    field customer_id: String
+    field items: List<OrderItem>
+    field total_amount: Decimal
+    field currency: String
+    field shipping_method: String
+}
+```
+
+When a component requires or provides a versioned interface, it references the version explicitly (e.g., `requires OrderRequest @v2`). Unversioned references default to the latest version.
 
 `interface` defines a contract used in connections. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear on ports; types compose into fields.
 
@@ -190,8 +212,14 @@ External entities appear in diagrams with distinct styling. They cannot be furth
 
 Connections are the data-flow edges of the architecture graph. A connection always links a **required** interface on one side to a **provided** interface on the other. The arrow `->` indicates the direction of the request (who initiates); data may flow in both directions as part of request/response.
 
+All connections are unidirectional. For bidirectional communication, use two separate connections:
+
 ```
 connect <source>.<interface> -> <target>.<interface>
+
+// Bidirectional: two explicit connections.
+connect ServiceA.RequestToB -> ServiceB.RequestFromA
+connect ServiceB.ResponseToA -> ServiceA.ResponseFromB
 ```
 
 Connections may carry annotations:
@@ -369,12 +397,12 @@ system ECommerce {
 |---------------|------------------------------------------------------------|
 | `system`      | Group of components or sub-systems with a shared goal.     |
 | `component`   | Module with a clear responsibility; may nest sub-components. |
-| `interface`   | Named contract of typed data fields.                       |
+| `interface`   | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc. |
 | `type`        | Reusable data structure (used within interfaces).          |
 | `enum`        | Constrained set of named values.                           |
-| `field`       | Named, typed data element inside an interface or type.     |
+| `field`       | Named, typed data element. Supports `description` and `schema` annotations. |
 | `filetype`    | Annotation on a `File` field specifying its format.        |
-| `schema`      | Free-text annotation describing expected file/directory content. |
+| `schema`      | Free-text annotation describing expected content or format. |
 | `requires`    | Declares an interface that an element consumes (listed before `provides`). |
 | `provides`    | Declares an interface that an element exposes.             |
 | `connect`     | Links a required interface to a provided interface.        |
@@ -385,8 +413,6 @@ system ECommerce {
 | `title`       | Human-readable display name.                               |
 | `description` | Longer explanation of an entity's purpose.                 |
 
-## Open Questions
+## Scope Boundaries
 
-- **Versioning**: Should interfaces support versioning (e.g., `interface OrderRequest @v2`)? This would enable backward-compatibility analysis.
-- **Bidirectional connections**: The current `->` syntax models request direction. Should there be explicit `<->` for peer-to-peer or pub/sub patterns?
-- **Views**: How should named views (filtered subsets of the model) be declared in the DSL vs. in a separate view configuration?
+- **Views** are not part of the architecture language syntax. They are defined in a separate view DSL that references entities from the architecture model.
