@@ -11,3 +11,4 @@
 def main() -> None:
     """Run the ArchML CLI."""
     print("archml — architecture modeling tool")
+    print("Run 'archml --help' for usage information.")
