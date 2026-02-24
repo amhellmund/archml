@@ -245,9 +245,18 @@ component PaymentGateway {
 
 ## Multi-File Composition
 
-Large architectures are split across files. The `import` statement brings definitions from other files into scope. The `use` keyword places an imported entity into a system or parent component without redefining it. `use` always includes the entity type for clarity.
+Large architectures are split across files. The `from ... import` statement brings specific named definitions from other files into scope. The `use` keyword places an imported entity into a system or parent component without redefining it. `use` always includes the entity type for clarity.
 
 Components, interfaces, types, and enums can all be defined at the top level of any `.archml` file — they do not need to be nested inside a system. This enables a one-file-per-component workflow where each component is self-contained and systems compose them by reference.
+
+### Explicit Imports
+
+Imports name the exact entities to bring into scope. The path omits the `.archml` extension and is resolved using the repository's virtual filesystem mapping (see [Repository Configuration](#repository-configuration)):
+
+```
+from dir/subdir/file import Entity
+from dir/subdir/file import Entity1, Entity2
+```
 
 ```
 // file: interfaces/order.archml
@@ -255,7 +264,7 @@ interface OrderRequest { ... }
 interface OrderConfirmation { ... }
 
 // file: components/order_service.archml
-import "interfaces/order.archml"
+from interfaces/order import OrderRequest, OrderConfirmation
 
 component OrderService {
     title = "Order Service"
@@ -265,8 +274,8 @@ component OrderService {
 }
 
 // file: systems/ecommerce.archml
-import "interfaces/order.archml"
-import "components/order_service.archml"
+from interfaces/order import OrderRequest, OrderConfirmation
+from components/order_service import OrderService
 
 system ECommerce {
     title = "E-Commerce Platform"
@@ -275,11 +284,78 @@ system ECommerce {
 }
 ```
 
-Import paths are relative to the project root. The `use` keyword only places an already-defined entity; it does not allow overriding fields or interfaces.
+The `use` keyword only places an already-imported entity; it does not allow overriding fields or interfaces.
+
+### Cross-Repository Imports
+
+Architecture from multiple repositories can be combined into a unified architecture picture. To import from another repository, prefix the path with `@repo-name`:
+
+```
+from @repo/top-level-name/dir/subdir/file import Entity
+```
+
+When `@repo` is omitted, the current repository is used. The `repo-name` refers to a named repository declared in the workspace configuration (see [Workspace Configuration](#workspace-configuration)).
+
+```
+// Importing from the current repository (@ prefix omitted)
+from interfaces/order import OrderRequest
+
+// Importing from named repositories
+from @payments/services/payment import PaymentService
+from @inventory/services/stock import StockManager
+
+system Enterprise {
+    title = "Enterprise Landscape"
+
+    use component OrderService
+    use component PaymentService
+    use component StockManager
+}
+```
+
+## Repository Configuration
+
+Each repository defines a virtual filesystem mapping in an `archml.yaml` file at the repository root. The mapping assigns short top-level names to paths relative to the repository root, creating stable import roots that are decoupled from the physical directory layout:
+
+```yaml
+# archml.yaml
+roots:
+  interfaces: src/architecture/interfaces
+  components: src/architecture/components
+  systems: src/architecture/systems
+  types: src/architecture/types
+```
+
+An import path is resolved by matching its first segment against the declared top-level names. For example, the path `interfaces/order` resolves to `src/architecture/interfaces/order.archml`. A path whose first segment does not match any declared name is a resolution error.
+
+Top-level names can map to individual files as well as directories. Both same-repository and cross-repository imports use the virtual filesystem mapping of the repository being imported from.
+
+## Workspace Configuration
+
+Cross-repository imports require a workspace configuration (`archml-workspace.yaml`) at the workspace root that lists the repositories available for import:
+
+```yaml
+# archml-workspace.yaml
+repositories:
+  payments:
+    url: https://github.com/example/payments-service
+    ref: main
+  inventory:
+    url: https://github.com/example/inventory-service
+    ref: v2.3.0
+```
+
+The key (e.g., `payments`) matches the `@repo-name` prefix in import paths. The `ref` field pins the import to a specific branch, tag, or commit.
 
 ## Complete Example
 
 ```
+// archml.yaml (project configuration)
+// roots:
+//   types: types.archml
+//   components: components
+//   systems: systems
+
 // file: types.archml
 
 type OrderItem {
@@ -338,7 +414,7 @@ interface ReportOutput {
 }
 
 // file: components/order_service.archml
-import "types.archml"
+from types import OrderItem, OrderRequest, PaymentRequest, InventoryCheck, OrderConfirmation
 
 component OrderService {
     title = "Order Service"
@@ -351,8 +427,8 @@ component OrderService {
 }
 
 // file: systems/ecommerce.archml
-import "types.archml"
-import "components/order_service.archml"
+from types import PaymentRequest, PaymentResult, InventoryCheck, InventoryStatus
+from components/order_service import OrderService
 
 external system StripeAPI {
     title = "Stripe Payment API"
@@ -406,7 +482,8 @@ system ECommerce {
 | `requires`    | Declares an interface that an element consumes (listed before `provides`). |
 | `provides`    | Declares an interface that an element exposes.             |
 | `connect`     | Links a required interface to a provided interface.        |
-| `import`      | Brings definitions from another file into scope.           |
+| `from`        | Introduces the source path in an import statement (`from path import Name`). |
+| `import`      | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`). |
 | `use`         | Places an imported entity into a system or component (e.g., `use component X`). |
 | `external`    | Marks a system or component as outside the development boundary. |
 | `tags`        | Arbitrary labels for filtering and view generation.        |
