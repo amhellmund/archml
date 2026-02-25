@@ -157,9 +157,11 @@ def test_serve_launches_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     monkeypatch.setattr(sys, "argv", ["archml", "serve", str(tmp_path)])
     mock_app = MagicMock()
-    with patch("archml.webui.app.create_app", return_value=mock_app):
-        with pytest.raises(SystemExit) as exc_info:
-            main()
+    with (
+        patch("archml.webui.app.create_app", return_value=mock_app),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
     assert exc_info.value.code == 0
     mock_app.run.assert_called_once_with(host="127.0.0.1", port=8050, debug=False)
 
@@ -175,8 +177,10 @@ def test_serve_custom_host_and_port(
         ["archml", "serve", "--host", "0.0.0.0", "--port", "9000", str(tmp_path)],
     )
     mock_app = MagicMock()
-    with patch("archml.webui.app.create_app", return_value=mock_app):
-        with pytest.raises(SystemExit) as exc_info:
-            main()
+    with (
+        patch("archml.webui.app.create_app", return_value=mock_app),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
     assert exc_info.value.code == 0
     mock_app.run.assert_called_once_with(host="0.0.0.0", port=9000, debug=False)

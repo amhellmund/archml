@@ -6,7 +6,6 @@
 from pathlib import Path
 
 import dash
-import pytest
 
 from archml.webui.app import create_app
 
