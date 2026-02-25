@@ -120,7 +120,7 @@ interface OrderRequest @v2 {
 
 When a component requires or provides a versioned interface, it references the version explicitly (e.g., `requires OrderRequest @v2`). Unversioned references default to the latest version.
 
-`interface` defines a contract used in connections. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear on ports; types compose into fields.
+`interface` defines a contract used in connections. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear byports; types compose into fields.
 
 ### Component
 
@@ -159,7 +159,7 @@ component OrderService {
         provides OrderConfirmation
     }
 
-    connect Validator -> Processor on ValidationResult
+    connect Validator -> Processor by ValidationResult
 }
 ```
 
@@ -176,8 +176,8 @@ system ECommerce {
     component PaymentGateway { ... }
     component InventoryManager { ... }
 
-    connect OrderService -> PaymentGateway on PaymentRequest
-    connect OrderService -> InventoryManager on InventoryCheck
+    connect OrderService -> PaymentGateway by PaymentRequest
+    connect OrderService -> InventoryManager by InventoryCheck
 }
 ```
 
@@ -190,7 +190,7 @@ system Enterprise {
     system ECommerce { ... }
     system Warehouse { ... }
 
-    connect ECommerce -> Warehouse on InventorySync
+    connect ECommerce -> Warehouse by InventorySync
 }
 ```
 
@@ -210,22 +210,22 @@ External entities appear in diagrams with distinct styling. They cannot be furth
 
 ## Connections
 
-Connections are the data-flow edges of the architecture graph. A connection always links a **required** interface on one side to a **provided** interface on the other. The arrow `->` indicates the direction of the request (who initiates); data may flow in both directions as part of request/response.
+Connections are the data-flow edges of the architecture graph. A connection always links a **required** interface byone side to a **provided** interface bythe other. The arrow `->` indicates the direction of the request (who initiates); data may flow in both directions as part of request/response.
 
 All connections are unidirectional. For bidirectional communication, use two separate connections:
 
 ```
-connect <source> -> <target> on <interface>
+connect <source> -> <target> by <interface>
 
 // Bidirectional: two explicit connections.
-connect ServiceA -> ServiceB on RequestToB
-connect ServiceB -> ServiceA on ResponseToA
+connect ServiceA -> ServiceB by RequestToB
+connect ServiceB -> ServiceA by ResponseToA
 ```
 
 Connections may carry annotations:
 
 ```
-connect OrderService -> PaymentGateway on PaymentRequest {
+connect OrderService -> PaymentGateway by PaymentRequest {
     protocol = "gRPC"
     async = true
     description = "Initiates payment processing for confirmed orders."
@@ -456,11 +456,11 @@ system ECommerce {
         provides InventoryStatus
     }
 
-    connect OrderService -> PaymentGateway on PaymentRequest
-    connect OrderService -> InventoryManager on InventoryCheck {
+    connect OrderService -> PaymentGateway by PaymentRequest
+    connect OrderService -> InventoryManager by InventoryCheck {
         protocol = "HTTP"
     }
-    connect PaymentGateway -> StripeAPI on PaymentRequest {
+    connect PaymentGateway -> StripeAPI by PaymentRequest {
         protocol = "HTTP"
         async = true
     }
@@ -477,12 +477,12 @@ system ECommerce {
 | `type`        | Reusable data structure (used within interfaces).          |
 | `enum`        | Constrained set of named values.                           |
 | `field`       | Named, typed data element. Supports `description` and `schema` annotations. |
-| `filetype`    | Annotation on a `File` field specifying its format.        |
+| `filetype`    | Annotation bya `File` field specifying its format.        |
 | `schema`      | Free-text annotation describing expected content or format. |
 | `requires`    | Declares an interface that an element consumes (listed before `provides`). |
 | `provides`    | Declares an interface that an element exposes.             |
 | `connect`     | Links a required interface to a provided interface.        |
-| `on`          | Specifies the interface in a `connect` statement (`connect A -> B on Interface`). |
+| `by`          | Specifies the interface in a `connect` statement (`connect A -> B by Interface`). |
 | `from`        | Introduces the source path in an import statement (`from path import Name`). |
 | `import`      | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`). |
 | `use`         | Places an imported entity into a system or component (e.g., `use component X`). |
