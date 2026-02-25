@@ -9,7 +9,9 @@ description = "A text-based DSL for defining software architecture alongside cod
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "dash>=2.0",
+]
 
 [project.scripts]
 archml = "archml.cli.main:main"

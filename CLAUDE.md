@@ -37,6 +37,7 @@ archml/
 │       ├── views/           # View generation and rendering
 │       ├── sphinx_ext/      # Sphinx extension for embedding architecture views
 │       ├── lsp/             # Language server (LSP) for VS Code integration
+│       ├── webui/           # Dash-based web UI for interactive architecture viewing
 │       └── cli/             # Command-line interface
 └── tests/                   # All tests (mirrors src/ structure)
     ├── parser/
@@ -45,6 +46,7 @@ archml/
     ├── views/
     ├── sphinx_ext/
     ├── lsp/
+    ├── webui/
     └── cli/
 ```
 
