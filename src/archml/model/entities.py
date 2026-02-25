@@ -58,10 +58,9 @@ class InterfaceDef:
 
 @dataclass
 class ConnectionEndpoint:
-    """One end of a connection: a named entity and the interface it exposes."""
+    """One end of a connection: a named entity."""
 
     entity: str
-    interface: str
 
 
 @dataclass
@@ -70,6 +69,7 @@ class Connection:
 
     source: ConnectionEndpoint
     target: ConnectionEndpoint
+    interface: InterfaceRef
     protocol: str | None = None
     is_async: bool = False
     description: str | None = None
@@ -77,7 +77,7 @@ class Connection:
 
 @dataclass
 class Component:
-    """A module with a clear responsibility, declared ports, and optional sub-components."""
+    """A module with declared interface ports and optional nested sub-components."""
 
     name: str
     title: str | None = None

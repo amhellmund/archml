@@ -188,14 +188,16 @@ def test_external_component() -> None:
 def test_connection() -> None:
     """A Connection links a required interface to a provided interface."""
     conn = Connection(
-        source=ConnectionEndpoint(entity="OrderService", interface="PaymentRequest"),
-        target=ConnectionEndpoint(entity="PaymentGateway", interface="PaymentRequest"),
+        source=ConnectionEndpoint(entity="OrderService"),
+        target=ConnectionEndpoint(entity="PaymentGateway"),
+        interface=InterfaceRef("PaymentRequest"),
         protocol="gRPC",
         is_async=True,
         description="Initiates payment processing.",
     )
     assert conn.source.entity == "OrderService"
     assert conn.target.entity == "PaymentGateway"
+    assert conn.interface.name == "PaymentRequest"
     assert conn.protocol == "gRPC"
     assert conn.is_async
 
@@ -213,8 +215,9 @@ def test_nested_component() -> None:
         provides=[InterfaceRef("OrderConfirmation")],
     )
     conn = Connection(
-        source=ConnectionEndpoint("Validator", "ValidationResult"),
-        target=ConnectionEndpoint("Processor", "ValidationResult"),
+        source=ConnectionEndpoint("Validator"),
+        target=ConnectionEndpoint("Processor"),
+        interface=InterfaceRef("ValidationResult"),
     )
     order_svc = Component(
         name="OrderService",
@@ -245,8 +248,9 @@ def test_system_with_components_and_connections() -> None:
         components=[order_svc, payment_gw],
         connections=[
             Connection(
-                source=ConnectionEndpoint("OrderService", "PaymentRequest"),
-                target=ConnectionEndpoint("PaymentGateway", "PaymentRequest"),
+                source=ConnectionEndpoint("OrderService"),
+                target=ConnectionEndpoint("PaymentGateway"),
+                interface=InterfaceRef("PaymentRequest"),
             )
         ],
     )
@@ -265,8 +269,9 @@ def test_nested_systems() -> None:
         systems=[ecommerce, warehouse],
         connections=[
             Connection(
-                source=ConnectionEndpoint("ECommerce", "InventorySync"),
-                target=ConnectionEndpoint("Warehouse", "InventorySync"),
+                source=ConnectionEndpoint("ECommerce"),
+                target=ConnectionEndpoint("Warehouse"),
+                interface=InterfaceRef("InventorySync"),
             )
         ],
     )
