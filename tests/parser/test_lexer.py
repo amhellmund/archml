@@ -244,7 +244,7 @@ class TestSymbols:
         ]
 
     def test_equals_in_assignment(self) -> None:
-        types = _types("title = \"Hello\"")
+        types = _types('title = "Hello"')
         assert types == [TokenType.TITLE, TokenType.EQUALS, TokenType.STRING]
 
     def test_at_symbol(self) -> None:
