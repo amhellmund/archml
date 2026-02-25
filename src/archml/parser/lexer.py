@@ -29,6 +29,7 @@ class TokenType(enum.Enum):
     REQUIRES = "requires"
     PROVIDES = "provides"
     CONNECT = "connect"
+    BY = "by"
     FROM = "from"
     IMPORT = "import"
     USE = "use"
@@ -132,6 +133,7 @@ _KEYWORDS: dict[str, TokenType] = {
     "requires": TokenType.REQUIRES,
     "provides": TokenType.PROVIDES,
     "connect": TokenType.CONNECT,
+    "by": TokenType.BY,
     "from": TokenType.FROM,
     "import": TokenType.IMPORT,
     "use": TokenType.USE,

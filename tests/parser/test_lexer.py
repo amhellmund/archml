@@ -80,6 +80,7 @@ class TestKeywords:
             ("requires", TokenType.REQUIRES),
             ("provides", TokenType.PROVIDES),
             ("connect", TokenType.CONNECT),
+            ("by", TokenType.BY),
             ("from", TokenType.FROM),
             ("import", TokenType.IMPORT),
             ("use", TokenType.USE),
@@ -538,7 +539,7 @@ class TestSourceLocations:
 
     def test_token_after_multiline_block_comment(self) -> None:
         tokens = _tokens_no_eof("/* line1\nline2\n */system")
-        # The block comment spans 3 lines; "system" starts on line 3, column 4
+        # The block comment spans 3 lines; "system" starts byline 3, column 4
         assert tokens[0].line == 3
         assert tokens[0].column == 4
 
@@ -704,16 +705,14 @@ class TestStructuralPatterns:
         ]
 
     def test_connect_statement(self) -> None:
-        source = "connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest"
+        source = "connect OrderService -> PaymentGateway by PaymentRequest"
         types = _types(source)
         assert types == [
             TokenType.CONNECT,
             TokenType.IDENTIFIER,
-            TokenType.DOT,
-            TokenType.IDENTIFIER,
             TokenType.ARROW,
             TokenType.IDENTIFIER,
-            TokenType.DOT,
+            TokenType.BY,
             TokenType.IDENTIFIER,
         ]
 
@@ -808,7 +807,7 @@ class TestStructuralPatterns:
 
     def test_connect_with_block_annotation(self) -> None:
         source = """\
-connect A.X -> B.X {
+connect A -> B by X {
     protocol = "HTTP"
     async = true
 }"""
@@ -816,11 +815,9 @@ connect A.X -> B.X {
         assert types == [
             TokenType.CONNECT,
             TokenType.IDENTIFIER,
-            TokenType.DOT,
-            TokenType.IDENTIFIER,
             TokenType.ARROW,
             TokenType.IDENTIFIER,
-            TokenType.DOT,
+            TokenType.BY,
             TokenType.IDENTIFIER,
             TokenType.LBRACE,
             TokenType.IDENTIFIER,
@@ -929,13 +926,15 @@ system ECommerce {
         provides PaymentResult
     }
 
-    connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest
+    connect OrderService -> PaymentGateway by PaymentRequest
 }"""
         tokens = _tokens_no_eof(source)
         assert tokens[0].type == TokenType.SYSTEM
-        # Find the ARROW token
+        # Find the ARROW and BY tokens
         arrow_tokens = [t for t in tokens if t.type == TokenType.ARROW]
+        by_tokens = [t for t in tokens if t.type == TokenType.BY]
         assert len(arrow_tokens) == 1
+        assert len(by_tokens) == 1
 
     def test_file_field_annotation(self) -> None:
         source = """\
