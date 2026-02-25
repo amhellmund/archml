@@ -159,7 +159,7 @@ component OrderService {
         provides OrderConfirmation
     }
 
-    connect Validator.ValidationResult -> Processor.ValidationResult
+    connect Validator -> Processor on ValidationResult
 }
 ```
 
@@ -176,8 +176,8 @@ system ECommerce {
     component PaymentGateway { ... }
     component InventoryManager { ... }
 
-    connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest
-    connect OrderService.InventoryCheck -> InventoryManager.InventoryCheck
+    connect OrderService -> PaymentGateway on PaymentRequest
+    connect OrderService -> InventoryManager on InventoryCheck
 }
 ```
 
@@ -190,7 +190,7 @@ system Enterprise {
     system ECommerce { ... }
     system Warehouse { ... }
 
-    connect ECommerce.InventorySync -> Warehouse.InventorySync
+    connect ECommerce -> Warehouse on InventorySync
 }
 ```
 
@@ -215,17 +215,17 @@ Connections are the data-flow edges of the architecture graph. A connection alwa
 All connections are unidirectional. For bidirectional communication, use two separate connections:
 
 ```
-connect <source>.<interface> -> <target>.<interface>
+connect <source> -> <target> on <interface>
 
 // Bidirectional: two explicit connections.
-connect ServiceA.RequestToB -> ServiceB.RequestFromA
-connect ServiceB.ResponseToA -> ServiceA.ResponseFromB
+connect ServiceA -> ServiceB on RequestToB
+connect ServiceB -> ServiceA on ResponseToA
 ```
 
 Connections may carry annotations:
 
 ```
-connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest {
+connect OrderService -> PaymentGateway on PaymentRequest {
     protocol = "gRPC"
     async = true
     description = "Initiates payment processing for confirmed orders."
@@ -456,11 +456,11 @@ system ECommerce {
         provides InventoryStatus
     }
 
-    connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest
-    connect OrderService.InventoryCheck -> InventoryManager.InventoryCheck {
+    connect OrderService -> PaymentGateway on PaymentRequest
+    connect OrderService -> InventoryManager on InventoryCheck {
         protocol = "HTTP"
     }
-    connect PaymentGateway.PaymentRequest -> StripeAPI.PaymentRequest {
+    connect PaymentGateway -> StripeAPI on PaymentRequest {
         protocol = "HTTP"
         async = true
     }
@@ -482,6 +482,7 @@ system ECommerce {
 | `requires`    | Declares an interface that an element consumes (listed before `provides`). |
 | `provides`    | Declares an interface that an element exposes.             |
 | `connect`     | Links a required interface to a provided interface.        |
+| `on`          | Specifies the interface in a `connect` statement (`connect A -> B on Interface`). |
 | `from`        | Introduces the source path in an import statement (`from path import Name`). |
 | `import`      | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`). |
 | `use`         | Places an imported entity into a system or component (e.g., `use component X`). |

@@ -80,6 +80,7 @@ class TestKeywords:
             ("requires", TokenType.REQUIRES),
             ("provides", TokenType.PROVIDES),
             ("connect", TokenType.CONNECT),
+            ("on", TokenType.ON),
             ("from", TokenType.FROM),
             ("import", TokenType.IMPORT),
             ("use", TokenType.USE),
@@ -704,16 +705,14 @@ class TestStructuralPatterns:
         ]
 
     def test_connect_statement(self) -> None:
-        source = "connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest"
+        source = "connect OrderService -> PaymentGateway on PaymentRequest"
         types = _types(source)
         assert types == [
             TokenType.CONNECT,
             TokenType.IDENTIFIER,
-            TokenType.DOT,
-            TokenType.IDENTIFIER,
             TokenType.ARROW,
             TokenType.IDENTIFIER,
-            TokenType.DOT,
+            TokenType.ON,
             TokenType.IDENTIFIER,
         ]
 
@@ -808,7 +807,7 @@ class TestStructuralPatterns:
 
     def test_connect_with_block_annotation(self) -> None:
         source = """\
-connect A.X -> B.X {
+connect A -> B on X {
     protocol = "HTTP"
     async = true
 }"""
@@ -816,11 +815,9 @@ connect A.X -> B.X {
         assert types == [
             TokenType.CONNECT,
             TokenType.IDENTIFIER,
-            TokenType.DOT,
-            TokenType.IDENTIFIER,
             TokenType.ARROW,
             TokenType.IDENTIFIER,
-            TokenType.DOT,
+            TokenType.ON,
             TokenType.IDENTIFIER,
             TokenType.LBRACE,
             TokenType.IDENTIFIER,
@@ -929,13 +926,15 @@ system ECommerce {
         provides PaymentResult
     }
 
-    connect OrderService.PaymentRequest -> PaymentGateway.PaymentRequest
+    connect OrderService -> PaymentGateway on PaymentRequest
 }"""
         tokens = _tokens_no_eof(source)
         assert tokens[0].type == TokenType.SYSTEM
-        # Find the ARROW token
+        # Find the ARROW and ON tokens
         arrow_tokens = [t for t in tokens if t.type == TokenType.ARROW]
+        on_tokens = [t for t in tokens if t.type == TokenType.ON]
         assert len(arrow_tokens) == 1
+        assert len(on_tokens) == 1
 
     def test_file_field_annotation(self) -> None:
         source = """\
