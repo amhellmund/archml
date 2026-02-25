@@ -120,7 +120,7 @@ interface OrderRequest @v2 {
 
 When a component requires or provides a versioned interface, it references the version explicitly (e.g., `requires OrderRequest @v2`). Unversioned references default to the latest version.
 
-`interface` defines a contract used in connections. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear byports; types compose into fields.
+`interface` defines a contract used in connections. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear on ports; types compose into fields.
 
 ### Component
 
@@ -210,7 +210,7 @@ External entities appear in diagrams with distinct styling. They cannot be furth
 
 ## Connections
 
-Connections are the data-flow edges of the architecture graph. A connection always links a **required** interface byone side to a **provided** interface bythe other. The arrow `->` indicates the direction of the request (who initiates); data may flow in both directions as part of request/response.
+Connections are the data-flow edges of the architecture graph. A connection always links a **required** interface byone side to a **provided** interface on the other. The arrow `->` indicates the direction of the request (who initiates); data may flow in both directions as part of request/response.
 
 All connections are unidirectional. For bidirectional communication, use two separate connections:
 
@@ -469,27 +469,27 @@ system ECommerce {
 
 ## Summary of Keywords
 
-| Keyword       | Purpose                                                    |
-|---------------|------------------------------------------------------------|
-| `system`      | Group of components or sub-systems with a shared goal.     |
-| `component`   | Module with a clear responsibility; may nest sub-components. |
-| `interface`   | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc. |
-| `type`        | Reusable data structure (used within interfaces).          |
-| `enum`        | Constrained set of named values.                           |
-| `field`       | Named, typed data element. Supports `description` and `schema` annotations. |
-| `filetype`    | Annotation bya `File` field specifying its format.        |
-| `schema`      | Free-text annotation describing expected content or format. |
-| `requires`    | Declares an interface that an element consumes (listed before `provides`). |
-| `provides`    | Declares an interface that an element exposes.             |
-| `connect`     | Links a required interface to a provided interface.        |
-| `by`          | Specifies the interface in a `connect` statement (`connect A -> B by Interface`). |
-| `from`        | Introduces the source path in an import statement (`from path import Name`). |
+| Keyword       | Purpose                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------- |
+| `system`      | Group of components or sub-systems with a shared goal.                                                |
+| `component`   | Module with a clear responsibility; may nest sub-components.                                          |
+| `interface`   | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc.                       |
+| `type`        | Reusable data structure (used within interfaces).                                                     |
+| `enum`        | Constrained set of named values.                                                                      |
+| `field`       | Named, typed data element. Supports `description` and `schema` annotations.                           |
+| `filetype`    | Annotation bya `File` field specifying its format.                                                    |
+| `schema`      | Free-text annotation describing expected content or format.                                           |
+| `requires`    | Declares an interface that an element consumes (listed before `provides`).                            |
+| `provides`    | Declares an interface that an element exposes.                                                        |
+| `connect`     | Links a required interface to a provided interface.                                                   |
+| `by`          | Specifies the interface in a `connect` statement (`connect A -> B by Interface`).                     |
+| `from`        | Introduces the source path in an import statement (`from path import Name`).                          |
 | `import`      | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`). |
-| `use`         | Places an imported entity into a system or component (e.g., `use component X`). |
-| `external`    | Marks a system or component as outside the development boundary. |
-| `tags`        | Arbitrary labels for filtering and view generation.        |
-| `title`       | Human-readable display name.                               |
-| `description` | Longer explanation of an entity's purpose.                 |
+| `use`         | Places an imported entity into a system or component (e.g., `use component X`).                       |
+| `external`    | Marks a system or component as outside the development boundary.                                      |
+| `tags`        | Arbitrary labels for filtering and view generation.                                                   |
+| `title`       | Human-readable display name.                                                                          |
+| `description` | Longer explanation of an entity's purpose.                                                            |
 
 ## Scope Boundaries
 

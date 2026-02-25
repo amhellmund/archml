@@ -930,11 +930,11 @@ system ECommerce {
 }"""
         tokens = _tokens_no_eof(source)
         assert tokens[0].type == TokenType.SYSTEM
-        # Find the ARROW and ON tokens
+        # Find the ARROW and BY tokens
         arrow_tokens = [t for t in tokens if t.type == TokenType.ARROW]
-        on_tokens = [t for t in tokens if t.type == TokenType.BY]
+        by_tokens = [t for t in tokens if t.type == TokenType.BY]
         assert len(arrow_tokens) == 1
-        assert len(on_tokens) == 1
+        assert len(by_tokens) == 1
 
     def test_file_field_annotation(self) -> None:
         source = """\
