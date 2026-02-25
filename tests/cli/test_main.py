@@ -152,9 +152,7 @@ def test_serve_fails_if_directory_does_not_exist(
     assert exc_info.value.code == 1
 
 
-def test_serve_launches_app(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_serve_launches_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve creates and runs the web app when workspace exists."""
     (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     monkeypatch.setattr(sys, "argv", ["archml", "serve", str(tmp_path)])
