@@ -477,7 +477,7 @@ system ECommerce {
 | `type`        | Reusable data structure (used within interfaces).          |
 | `enum`        | Constrained set of named values.                           |
 | `field`       | Named, typed data element. Supports `description` and `schema` annotations. |
-| `filetype`    | Annotation bya `File` field specifying its format.        |
+| `filetype`    | Annotation on a `File` field specifying its format.        |
 | `schema`      | Free-text annotation describing expected content or format. |
 | `requires`    | Declares an interface that an element consumes (listed before `provides`). |
 | `provides`    | Declares an interface that an element exposes.             |
