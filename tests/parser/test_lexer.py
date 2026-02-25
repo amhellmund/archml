@@ -952,5 +952,5 @@ field app_config: File {
         source = "field quantity: Int"
         tokens = _tokens_no_eof(source)
         # 'Int' is an identifier, not a number
-        assert tokens[2].type == TokenType.IDENTIFIER
-        assert tokens[2].value == "Int"
+        assert tokens[3].type == TokenType.IDENTIFIER
+        assert tokens[3].value == "Int"
