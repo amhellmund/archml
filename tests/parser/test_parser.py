@@ -577,7 +577,7 @@ class TestFieldAnnotations:
 
     def test_field_with_description_and_schema(self) -> None:
         source = (
-            'field currency: String'
+            "field currency: String"
             ' { description = "Currency code." schema = "e.g. USD." }'
         )
         f = self._parse_field(source)
@@ -586,7 +586,7 @@ class TestFieldAnnotations:
 
     def test_file_field_with_filetype_and_schema(self) -> None:
         source = (
-            'field config: File'
+            "field config: File"
             ' { filetype = "YAML" schema = "Top-level keys: server." }'
         )
         f = self._parse_field(source)
@@ -602,7 +602,7 @@ class TestFieldAnnotations:
 
     def test_all_field_annotations(self) -> None:
         source = (
-            'field report: File'
+            "field report: File"
             ' { filetype = "PDF" schema = "Monthly report."'
             ' description = "Report file." }'
         )
@@ -1259,9 +1259,7 @@ interface ReportOutput {
         assert confirmation.fields[2].type.primitive == PrimitiveType.TIMESTAMP
 
         # Verify PaymentResult with Optional
-        payment_result = next(
-            i for i in result.interfaces if i.name == "PaymentResult"
-        )
+        payment_result = next(i for i in result.interfaces if i.name == "PaymentResult")
         txn_field = payment_result.fields[2]
         assert txn_field.name == "transaction_id"
         assert isinstance(txn_field.type, OptionalTypeRef)
@@ -1599,7 +1597,7 @@ class TestParseErrors:
 
     def test_unknown_field_annotation(self) -> None:
         with pytest.raises(ParseError):
-            _parse('type T { field x: String { required = true } }')
+            _parse("type T { field x: String { required = true } }")
 
     def test_error_has_line_number(self) -> None:
         with pytest.raises(ParseError) as exc_info:
@@ -1784,7 +1782,7 @@ interface AllPrimitives {
             PrimitiveType.TIMESTAMP,
             PrimitiveType.DATETIME,
         ]
-        for field, ptype in zip(iface.fields, expected):
+        for field, ptype in zip(iface.fields, expected, strict=True):
             assert isinstance(field.type, PrimitiveTypeRef)
             assert field.type.primitive == ptype
 

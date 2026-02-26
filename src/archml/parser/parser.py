@@ -72,6 +72,32 @@ def parse(source: str) -> ArchFile:
 # Implementation
 # ################
 
+_KEYWORD_TYPES: frozenset[TokenType] = frozenset(
+    {
+        TokenType.SYSTEM,
+        TokenType.COMPONENT,
+        TokenType.INTERFACE,
+        TokenType.TYPE,
+        TokenType.ENUM,
+        TokenType.FIELD,
+        TokenType.FILETYPE,
+        TokenType.SCHEMA,
+        TokenType.REQUIRES,
+        TokenType.PROVIDES,
+        TokenType.CONNECT,
+        TokenType.BY,
+        TokenType.FROM,
+        TokenType.IMPORT,
+        TokenType.USE,
+        TokenType.EXTERNAL,
+        TokenType.TAGS,
+        TokenType.TITLE,
+        TokenType.DESCRIPTION,
+        TokenType.TRUE,
+        TokenType.FALSE,
+    }
+)
+
 _PRIMITIVE_TYPES: dict[str, PrimitiveType] = {
     "String": PrimitiveType.STRING,
     "Int": PrimitiveType.INT,
@@ -141,6 +167,21 @@ class _Parser:
         consuming).
         """
         return self._peek_type() in types
+
+    def _expect_name_token(self) -> Token:
+        """Consume the current token as a name.
+
+        Accepts identifiers and keywords used in name positions (e.g. a field
+        named 'by').  Raises ParseError for structural tokens and EOF.
+        """
+        tok = self._current()
+        if tok.type != TokenType.IDENTIFIER and tok.type not in _KEYWORD_TYPES:
+            raise ParseError(
+                f"Expected identifier, got {tok.value!r}",
+                tok.line,
+                tok.column,
+            )
+        return self._advance()
 
     # ------------------------------------------------------------------
     # Top-level declarations
@@ -380,6 +421,10 @@ class _Parser:
                 system.description = self._parse_string_attr(TokenType.DESCRIPTION)
             elif self._check(TokenType.TAGS):
                 system.tags = self._parse_tags()
+            elif self._check(TokenType.REQUIRES):
+                system.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
+            elif self._check(TokenType.PROVIDES):
+                system.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
             elif self._check(TokenType.COMPONENT):
                 system.components.append(self._parse_component(is_external=False))
             elif self._check(TokenType.SYSTEM):
@@ -498,7 +543,7 @@ class _Parser:
     def _parse_field(self) -> Field:
         """Parse: field <name>: <type> [{ description=.. schema=.. filetype=.. }]"""
         self._expect(TokenType.FIELD)
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name_token()
         self._expect(TokenType.COLON)
         field_type = self._parse_type_ref()
         f = Field(name=name_tok.value, type=field_type)

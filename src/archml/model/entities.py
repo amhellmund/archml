@@ -98,6 +98,8 @@ class System:
     title: str | None = None
     description: str | None = None
     tags: list[str] = field(default_factory=list)
+    requires: list[InterfaceRef] = field(default_factory=list)
+    provides: list[InterfaceRef] = field(default_factory=list)
     components: list[Component] = field(default_factory=list)
     systems: list[System] = field(default_factory=list)
     connections: list[Connection] = field(default_factory=list)
