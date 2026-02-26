@@ -1,0 +1,13 @@
+// Negative: duplicate type name at top level
+// Expected error: Duplicate type name 'Address'
+
+type Address {
+    field street: String
+    field city: String
+}
+
+type Address {
+    field line1: String
+    field line2: String
+    field postcode: String
+}

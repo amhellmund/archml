@@ -1,0 +1,55 @@
+// Comprehensive types and enums file
+// Expected result: no semantic errors
+
+enum OrderStatus {
+    title = "Order Status"
+    description = "Lifecycle states of an order."
+    Pending
+    Confirmed
+    Shipped
+    Delivered
+    Cancelled
+}
+
+enum PaymentMethod {
+    CreditCard
+    BankTransfer
+    Crypto
+}
+
+type Address {
+    title = "Postal Address"
+    field street: String
+    field city: String
+    field postal_code: String
+    field country: String
+}
+
+type OrderItem {
+    title = "Order Line Item"
+    field product_id: String
+    field product_name: String
+    field quantity: Int
+    field unit_price: Decimal
+}
+
+type CustomerProfile {
+    title = "Customer"
+    field customer_id: String
+    field name: String
+    field email: String
+    field address: Address
+    field preferred_payment: PaymentMethod
+}
+
+type Order {
+    title = "Order"
+    field order_id: String
+    field customer: CustomerProfile
+    field items: List<OrderItem>
+    field total: Decimal
+    field status: OrderStatus
+    field payment_method: PaymentMethod
+    field notes: Optional<String>
+    field labels: Map<String, String>
+}

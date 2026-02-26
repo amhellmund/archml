@@ -1,0 +1,40 @@
+// Versioned interfaces: multiple versions of the same interface
+// Expected result: no semantic errors
+
+// Unversioned baseline
+interface OrderRequest {
+    field order_id: String
+    field amount: Decimal
+}
+
+// Version 2 adds currency
+interface OrderRequest @v2 {
+    field order_id: String
+    field amount: Decimal
+    field currency: String
+}
+
+// Version 3 adds shipping
+interface OrderRequest @v3 {
+    field order_id: String
+    field amount: Decimal
+    field currency: String
+    field shipping_method: String
+}
+
+// Component referencing specific version
+component LegacyOrderService {
+    title = "Legacy Order Service (v1)"
+    requires OrderRequest
+}
+
+component OrderServiceV2 {
+    title = "Order Service v2"
+    requires OrderRequest @v2
+    provides OrderRequest @v3
+}
+
+component ModernOrderService {
+    title = "Modern Order Service (v3)"
+    requires OrderRequest @v3
+}

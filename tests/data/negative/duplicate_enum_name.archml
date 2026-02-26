@@ -1,0 +1,12 @@
+// Negative: duplicate enum name at top level
+// Expected error: Duplicate enum name 'OrderStatus'
+
+enum OrderStatus {
+    Pending
+    Confirmed
+}
+
+enum OrderStatus {
+    Active
+    Cancelled
+}

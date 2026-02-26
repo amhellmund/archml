@@ -1,0 +1,17 @@
+// Negative: duplicate component names — top-level and within a system
+// Expected errors:
+//   Duplicate component name 'OrderService'
+//   Duplicate component name 'Worker' in system 'Platform'
+
+component OrderService {
+    title = "First OrderService"
+}
+
+component OrderService {
+    title = "Second OrderService — duplicate!"
+}
+
+system Platform {
+    component Worker {}
+    component Worker {}
+}

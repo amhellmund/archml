@@ -20,7 +20,7 @@ from archml.model.types import (
     PrimitiveType,
     PrimitiveTypeRef,
 )
-from archml.parser.parser import ParseError, parse
+from archml.compiler.parser import ParseError, parse
 
 # ###############
 # Test Helpers

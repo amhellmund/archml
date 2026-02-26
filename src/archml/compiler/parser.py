@@ -3,7 +3,7 @@
 
 """Recursive-descent parser for .archml files.
 
-Converts a token stream produced by the lexer into an ArchFile semantic model.
+Converts a token stream produced by the scanner into an ArchFile semantic model.
 """
 
 from archml.model.entities import (
@@ -30,7 +30,7 @@ from archml.model.types import (
     PrimitiveTypeRef,
     TypeRef,
 )
-from archml.parser.lexer import Token, TokenType, tokenize
+from archml.compiler.scanner import Token, TokenType, tokenize
 
 # ###############
 # Public Interface

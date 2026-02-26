@@ -5,7 +5,7 @@
 
 import pytest
 
-from archml.parser.lexer import LexerError, Token, TokenType, tokenize
+from archml.compiler.scanner import LexerError, Token, TokenType, tokenize
 
 # ###############
 # Test Helpers

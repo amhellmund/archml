@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 
 class TokenType(enum.Enum):
-    """All token types produced by the ArchML lexer."""
+    """All token types produced by the ArchML scanner."""
 
     # Keywords
     SYSTEM = "system"

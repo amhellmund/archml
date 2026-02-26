@@ -1,0 +1,18 @@
+// Negative: duplicate values within enums
+// Expected errors:
+//   Duplicate value 'Active' in enum 'Status'
+//   Duplicate value 'Red' in enum 'Color'
+
+enum Status {
+    Active
+    Inactive
+    Active
+    Deleted
+}
+
+enum Color {
+    Red
+    Green
+    Red
+    Blue
+}

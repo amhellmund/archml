@@ -1,0 +1,22 @@
+// Negative: field types reference undefined names
+// Expected errors:
+//   Undefined type 'OrderStatus' in field 'status' of type 'Order'
+//   Undefined type 'OrderItem' in field 'items' of type 'Order'
+//   Undefined type 'UnknownMeta' in field 'meta' of interface 'Response'
+//   Undefined type 'BadKey' in field 'labels' of interface 'Catalog'
+
+type Order {
+    field order_id: String
+    field status: OrderStatus
+    field items: List<OrderItem>
+    field amount: Decimal
+}
+
+interface Response {
+    field id: String
+    field meta: Optional<UnknownMeta>
+}
+
+interface Catalog {
+    field labels: Map<BadKey, String>
+}
