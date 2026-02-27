@@ -60,6 +60,17 @@ def analyze(
     - Import entity validation: when *resolved_imports* is provided, each
       entity named in a ``from ... import`` statement must actually be
       defined at the top level of the resolved source file.
+    - Duplicate import names: the same entity name may not be imported from
+      more than one source path.
+
+    Side effect:
+        Fully-qualified names are assigned to all :class:`Component`,
+        :class:`System`, and :class:`InterfaceDef` entities in the file
+        (setting their ``qualified_name`` attribute).  Top-level entities
+        receive their local name; nested entities receive a dotted path
+        prefixed with the names of all enclosing systems / components
+        (e.g. ``"SystemA.Worker"`` for ``component Worker`` inside
+        ``system SystemA``).
 
     Args:
         arch_file: The parsed ArchFile to analyze.
@@ -72,6 +83,7 @@ def analyze(
         A list of :class:`SemanticError` instances. An empty list means no
         semantic errors were found.
     """
+    _assign_qualified_names(arch_file)
     return _SemanticAnalyzer(arch_file, resolved_imports).analyze()
 
 
@@ -115,6 +127,9 @@ class _SemanticAnalyzer:
 
         # 1. Check for duplicate top-level definitions.
         errors.extend(_check_top_level_duplicates(self._file))
+
+        # 1a. Check for duplicate import names across all import statements.
+        errors.extend(_check_duplicate_imports(self._file))
 
         # 2. Check internals of each enum.
         for enum_def in self._file.enums:
@@ -360,6 +375,63 @@ class _SemanticAnalyzer:
 # ------------------------------------------------------------------
 # Module-level helper functions
 # ------------------------------------------------------------------
+
+
+def _assign_qualified_names(arch_file: ArchFile) -> None:
+    """Assign fully-qualified names to all components, systems, and interfaces.
+
+    Mutates each entity in-place.  Top-level entities receive their local name
+    as their qualified name.  Nested entities receive a dotted path built by
+    prepending the names of all enclosing scopes (systems and components).
+    Versioned interfaces include the version suffix (e.g. ``"Foo@v2"``).
+    """
+    for iface in arch_file.interfaces:
+        ver_str = f"@{iface.version}" if iface.version else ""
+        iface.qualified_name = f"{iface.name}{ver_str}"
+    for comp in arch_file.components:
+        _assign_component_qualified_names(comp, prefix=None)
+    for system in arch_file.systems:
+        _assign_system_qualified_names(system, prefix=None)
+
+
+def _assign_component_qualified_names(comp: Component, prefix: str | None) -> None:
+    """Recursively set qualified names for a component and its sub-components."""
+    comp.qualified_name = f"{prefix}.{comp.name}" if prefix else comp.name
+    for sub in comp.components:
+        _assign_component_qualified_names(sub, prefix=comp.qualified_name)
+
+
+def _assign_system_qualified_names(system: System, prefix: str | None) -> None:
+    """Recursively set qualified names for a system and all its children."""
+    system.qualified_name = f"{prefix}.{system.name}" if prefix else system.name
+    for comp in system.components:
+        _assign_component_qualified_names(comp, prefix=system.qualified_name)
+    for sub_sys in system.systems:
+        _assign_system_qualified_names(sub_sys, prefix=system.qualified_name)
+
+
+def _check_duplicate_imports(arch_file: ArchFile) -> list[SemanticError]:
+    """Check that no entity name is imported from more than one source path.
+
+    An entity name that appears in multiple ``from ... import`` statements
+    (whether from the same source path or different ones) is reported as an
+    error, because it would create an ambiguous binding in the current file's
+    scope.
+    """
+    seen: dict[str, str] = {}  # entity name -> first source path
+    errors: list[SemanticError] = []
+    for imp in arch_file.imports:
+        for name in imp.entities:
+            if name in seen:
+                errors.append(
+                    SemanticError(
+                        f"Duplicate import name '{name}': already imported from '{seen[name]}'"
+                        f", cannot also import from '{imp.source_path}'"
+                    )
+                )
+            else:
+                seen[name] = imp.source_path
+    return errors
 
 
 def _collect_all_top_level_names(arch_file: ArchFile) -> set[str]:

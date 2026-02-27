@@ -976,3 +976,219 @@ class TestDirectModelConstruction:
         )
         errors = analyze(arch_file)
         assert any("Undefined type 'UnknownType'" in e.message for e in errors)
+
+
+# ###############
+# Duplicate Import Names
+# ###############
+
+
+class TestDuplicateImportNames:
+    """Tests that the same entity name imported from multiple sources fails."""
+
+    def test_same_name_from_two_different_sources_fails(self) -> None:
+        _assert_error(
+            """
+from interfaces/order import OrderRequest
+from interfaces/other import OrderRequest
+""",
+            "Duplicate import name 'OrderRequest'",
+        )
+
+    def test_same_name_from_same_source_twice_fails(self) -> None:
+        _assert_error(
+            """
+from interfaces/order import OrderRequest
+from interfaces/order import OrderRequest
+""",
+            "Duplicate import name 'OrderRequest'",
+        )
+
+    def test_different_names_from_different_sources_ok(self) -> None:
+        _assert_clean("""
+from interfaces/order import OrderRequest
+from interfaces/payment import PaymentRequest
+""")
+
+    def test_different_names_from_same_source_ok(self) -> None:
+        _assert_clean("""
+from interfaces/order import OrderRequest, PaymentRequest
+""")
+
+    def test_duplicate_within_single_import_statement_fails(self) -> None:
+        # Parser allows this, but semantic analysis must reject it.
+        from archml.model.entities import ImportDeclaration
+
+        arch_file = ArchFile(
+            imports=[
+                ImportDeclaration(source_path="interfaces/order", entities=["Foo", "Foo"]),
+            ]
+        )
+        errors = analyze(arch_file)
+        assert any("Duplicate import name 'Foo'" in e.message for e in errors)
+
+    def test_error_message_names_both_sources(self) -> None:
+        errors = _analyze("""
+from path/a import MyInterface
+from path/b import MyInterface
+""")
+        messages = _messages(errors)
+        assert any("'path/a'" in m and "'path/b'" in m for m in messages)
+
+    def test_multiple_duplicate_imports_reported(self) -> None:
+        errors = _analyze("""
+from path/a import Foo
+from path/b import Bar
+from path/c import Foo
+from path/d import Bar
+""")
+        messages = _messages(errors)
+        assert any("Duplicate import name 'Foo'" in m for m in messages)
+        assert any("Duplicate import name 'Bar'" in m for m in messages)
+
+    def test_duplicate_import_does_not_prevent_other_error_detection(self) -> None:
+        # A duplicate import name is flagged alongside any other errors.
+        errors = _analyze("""
+from path/a import Foo
+from path/b import Foo
+component Bar {
+    requires UnknownInterface
+}
+""")
+        messages = _messages(errors)
+        assert any("Duplicate import name 'Foo'" in m for m in messages)
+        assert any("refers to unknown interface 'UnknownInterface'" in m for m in messages)
+
+
+# ###############
+# Qualified Names
+# ###############
+
+
+class TestQualifiedNames:
+    """Tests that fully-qualified names are correctly assigned to entities."""
+
+    def test_top_level_component_has_local_name_as_qualified_name(self) -> None:
+        arch_file = parse("component Worker {}")
+        analyze(arch_file)
+        assert arch_file.components[0].qualified_name == "Worker"
+
+    def test_top_level_system_has_local_name_as_qualified_name(self) -> None:
+        arch_file = parse("system Enterprise {}")
+        analyze(arch_file)
+        assert arch_file.systems[0].qualified_name == "Enterprise"
+
+    def test_top_level_interface_has_local_name_as_qualified_name(self) -> None:
+        arch_file = parse("interface OrderRequest { field id: String }")
+        analyze(arch_file)
+        assert arch_file.interfaces[0].qualified_name == "OrderRequest"
+
+    def test_versioned_interface_qualified_name_includes_version(self) -> None:
+        arch_file = parse("interface OrderRequest @v2 { field id: String }")
+        analyze(arch_file)
+        assert arch_file.interfaces[0].qualified_name == "OrderRequest@v2"
+
+    def test_component_in_system_gets_dotted_qualified_name(self) -> None:
+        arch_file = parse("""
+system SystemA {
+    component Worker {}
+}
+""")
+        analyze(arch_file)
+        system = arch_file.systems[0]
+        assert system.qualified_name == "SystemA"
+        assert system.components[0].qualified_name == "SystemA.Worker"
+
+    def test_same_named_components_in_different_systems_get_distinct_qualified_names(self) -> None:
+        arch_file = parse("""
+system SystemA {
+    component Worker {}
+}
+
+system SystemB {
+    component Worker {}
+}
+""")
+        errors = analyze(arch_file)
+        assert errors == [], f"Expected no errors but got: {[e.message for e in errors]}"
+        assert arch_file.systems[0].components[0].qualified_name == "SystemA.Worker"
+        assert arch_file.systems[1].components[0].qualified_name == "SystemB.Worker"
+
+    def test_nested_sub_system_gets_dotted_qualified_name(self) -> None:
+        arch_file = parse("""
+system Enterprise {
+    system Division {}
+}
+""")
+        analyze(arch_file)
+        enterprise = arch_file.systems[0]
+        assert enterprise.qualified_name == "Enterprise"
+        assert enterprise.systems[0].qualified_name == "Enterprise.Division"
+
+    def test_deeply_nested_component_gets_full_dotted_path(self) -> None:
+        arch_file = parse("""
+system Enterprise {
+    system Division {
+        component Worker {}
+    }
+}
+""")
+        analyze(arch_file)
+        enterprise = arch_file.systems[0]
+        division = enterprise.systems[0]
+        worker = division.components[0]
+        assert enterprise.qualified_name == "Enterprise"
+        assert division.qualified_name == "Enterprise.Division"
+        assert worker.qualified_name == "Enterprise.Division.Worker"
+
+    def test_nested_sub_component_gets_dotted_qualified_name(self) -> None:
+        arch_file = parse("""
+component Router {
+    component InputHandler {}
+    component OutputHandler {}
+}
+""")
+        analyze(arch_file)
+        router = arch_file.components[0]
+        assert router.qualified_name == "Router"
+        assert router.components[0].qualified_name == "Router.InputHandler"
+        assert router.components[1].qualified_name == "Router.OutputHandler"
+
+    def test_same_named_components_in_different_scopes_no_errors(self) -> None:
+        # 'component' appears in both SystemA and SystemB — this must not
+        # produce a duplicate-name error.
+        _assert_clean("""
+system SystemA {
+    component Service {}
+}
+
+system SystemB {
+    component Service {}
+}
+""")
+
+    def test_same_named_sub_components_in_different_parent_components_no_errors(self) -> None:
+        _assert_clean("""
+component RouterA {
+    component Handler {}
+}
+
+component RouterB {
+    component Handler {}
+}
+""")
+
+    def test_multiple_top_level_interfaces_with_same_name_from_different_files_represented_distinctly(
+        self,
+    ) -> None:
+        # Each file independently defines its own interface; the qualified name
+        # is simply the local name (possibly with version).  Distinguishing
+        # interfaces across files is the responsibility of the import system
+        # (duplicate import names are rejected).
+        arch_file = parse("""
+interface Foo { field x: String }
+interface Foo @v2 { field x: String }
+""")
+        analyze(arch_file)
+        assert arch_file.interfaces[0].qualified_name == "Foo"
+        assert arch_file.interfaces[1].qualified_name == "Foo@v2"

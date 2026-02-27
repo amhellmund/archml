@@ -54,6 +54,7 @@ class InterfaceDef:
     title: str | None = None
     description: str | None = None
     tags: list[str] = field(default_factory=list)
+    qualified_name: str = ""
 
 
 @dataclass
@@ -88,6 +89,7 @@ class Component:
     components: list[Component] = field(default_factory=list)
     connections: list[Connection] = field(default_factory=list)
     is_external: bool = False
+    qualified_name: str = ""
 
 
 @dataclass
@@ -104,6 +106,7 @@ class System:
     systems: list[System] = field(default_factory=list)
     connections: list[Connection] = field(default_factory=list)
     is_external: bool = False
+    qualified_name: str = ""
 
 
 @dataclass
