@@ -1,0 +1,17 @@
+// Simple component with no dependencies
+
+interface DataRequest {
+    field id: String
+    field amount: Decimal
+}
+
+interface DataResponse {
+    field id: String
+    field success: Bool
+}
+
+component DataProcessor {
+    title = "Data Processor"
+    requires DataRequest
+    provides DataResponse
+}

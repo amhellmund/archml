@@ -1,0 +1,25 @@
+// Shared types library for compiler tests
+
+enum Priority {
+    Low
+    Medium
+    High
+    Critical
+}
+
+type TaskItem {
+    field task_id: String
+    field priority: Priority
+    field due_date: Timestamp
+}
+
+interface TaskRequest {
+    field requester: String
+    field items: List<TaskItem>
+}
+
+interface TaskResult {
+    field task_id: String
+    field success: Bool
+    field message: Optional<String>
+}

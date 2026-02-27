@@ -1,0 +1,29 @@
+// Top-level system that imports from lib/types and worker
+// source_root for these tests is tests/data/positive/compiler/
+
+from shared/types import TaskRequest, TaskResult
+from worker import TaskWorker
+
+interface StatusCheck {
+    field healthy: Bool
+}
+
+system TaskSystem {
+    title = "Task Processing System"
+    tags = ["core"]
+
+    use component TaskWorker
+
+    component Scheduler {
+        title = "Task Scheduler"
+        provides TaskRequest
+    }
+
+    component ResultStore {
+        title = "Result Store"
+        requires TaskResult
+    }
+
+    connect Scheduler -> TaskWorker by TaskRequest
+    connect TaskWorker -> ResultStore by TaskResult
+}

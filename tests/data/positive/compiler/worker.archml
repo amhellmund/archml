@@ -1,0 +1,11 @@
+// Worker component that imports from the shared types library
+// source_root for these tests is tests/data/positive/compiler/
+
+from shared/types import TaskRequest, TaskResult
+
+component TaskWorker {
+    title = "Task Worker"
+    description = "Processes incoming tasks and reports results."
+    requires TaskRequest
+    provides TaskResult
+}
