@@ -39,7 +39,11 @@ def _assert_clean(source: str, resolved_imports: dict[str, ArchFile] | None = No
     assert errors == [], f"Expected no errors but got: {[e.message for e in errors]}"
 
 
-def _assert_error(source: str, expected_fragment: str, resolved_imports: dict[str, ArchFile] | None = None) -> None:
+def _assert_error(
+    source: str,
+    expected_fragment: str,
+    resolved_imports: dict[str, ArchFile] | None = None,
+) -> None:
     """Assert that exactly one semantic error containing expected_fragment is produced."""
     errors = _analyze(source, resolved_imports)
     messages = _messages(errors)
@@ -249,40 +253,58 @@ type ServiceSpec {
 
 class TestDuplicateTopLevelNames:
     def test_duplicate_enum_name(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 enum Status { Active }
 enum Status { Inactive }
-""", "Duplicate enum name 'Status'")
+""",
+            "Duplicate enum name 'Status'",
+        )
 
     def test_duplicate_type_name(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 type Address { field street: String }
 type Address { field city: String }
-""", "Duplicate type name 'Address'")
+""",
+            "Duplicate type name 'Address'",
+        )
 
     def test_duplicate_component_name(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 component OrderService {}
 component OrderService {}
-""", "Duplicate component name 'OrderService'")
+""",
+            "Duplicate component name 'OrderService'",
+        )
 
     def test_duplicate_system_name(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 system ECommerce {}
 system ECommerce {}
-""", "Duplicate system name 'ECommerce'")
+""",
+            "Duplicate system name 'ECommerce'",
+        )
 
     def test_duplicate_interface_same_name_no_version(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface OrderRequest { field a: String }
 interface OrderRequest { field b: Int }
-""", "Duplicate interface definition 'OrderRequest'")
+""",
+            "Duplicate interface definition 'OrderRequest'",
+        )
 
     def test_duplicate_interface_same_name_same_version(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface OrderRequest @v2 { field a: String }
 interface OrderRequest @v2 { field b: Int }
-""", "Duplicate interface definition 'OrderRequest@v2'")
+""",
+            "Duplicate interface definition 'OrderRequest@v2'",
+        )
 
     def test_different_interface_versions_are_ok(self) -> None:
         _assert_clean("""
@@ -291,10 +313,13 @@ interface OrderRequest @v2 { field b: Int }
 """)
 
     def test_enum_and_type_same_name_conflict(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 enum Foo { Bar }
 type Foo { field x: String }
-""", "Name 'Foo' is defined as both an enum and a type")
+""",
+            "Name 'Foo' is defined as both an enum and a type",
+        )
 
     def test_third_occurrence_of_duplicate_name(self) -> None:
         errors = _analyze("""
@@ -325,13 +350,16 @@ type Address { field y: String }
 
 class TestDuplicateEnumValues:
     def test_duplicate_enum_value(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 enum Status {
     Active
     Inactive
     Active
 }
-""", "Duplicate value 'Active' in enum 'Status'")
+""",
+            "Duplicate value 'Active' in enum 'Status'",
+        )
 
     def test_no_duplicates_ok(self) -> None:
         _assert_clean("""
@@ -366,21 +394,27 @@ enum Foo { A A A }
 
 class TestDuplicateFieldNames:
     def test_duplicate_field_in_type(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 type Address {
     field street: String
     field city: String
     field street: String
 }
-""", "Duplicate field name 'street' in type 'Address'")
+""",
+            "Duplicate field name 'street' in type 'Address'",
+        )
 
     def test_duplicate_field_in_interface(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface OrderRequest {
     field order_id: String
     field order_id: Int
 }
-""", "Duplicate field name 'order_id' in interface 'OrderRequest'")
+""",
+            "Duplicate field name 'order_id' in interface 'OrderRequest'",
+        )
 
     def test_no_duplicate_fields_ok(self) -> None:
         _assert_clean("""
@@ -405,18 +439,24 @@ type B { field name: Int }
 
 class TestTypeReferenceResolution:
     def test_undefined_named_type_in_type_field(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 type Order {
     field status: OrderStatus
 }
-""", "Undefined type 'OrderStatus'")
+""",
+            "Undefined type 'OrderStatus'",
+        )
 
     def test_undefined_named_type_in_interface_field(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface Request {
     field item: OrderItem
 }
-""", "Undefined type 'OrderItem'")
+""",
+            "Undefined type 'OrderItem'",
+        )
 
     def test_enum_used_as_field_type_ok(self) -> None:
         _assert_clean("""
@@ -437,32 +477,44 @@ type Spec { field config: Config }
 """)
 
     def test_undefined_type_in_list(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface Batch {
     field items: List<UnknownItem>
 }
-""", "Undefined type 'UnknownItem'")
+""",
+            "Undefined type 'UnknownItem'",
+        )
 
     def test_undefined_key_in_map(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface Catalog {
     field entries: Map<BadKey, String>
 }
-""", "Undefined type 'BadKey'")
+""",
+            "Undefined type 'BadKey'",
+        )
 
     def test_undefined_value_in_map(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface Catalog {
     field entries: Map<String, BadValue>
 }
-""", "Undefined type 'BadValue'")
+""",
+            "Undefined type 'BadValue'",
+        )
 
     def test_undefined_type_in_optional(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface Response {
     field meta: Optional<UnknownMeta>
 }
-""", "Undefined type 'UnknownMeta'")
+""",
+            "Undefined type 'UnknownMeta'",
+        )
 
     def test_known_type_via_import_ok(self) -> None:
         # Without resolved_imports, a type imported by name is accepted.
@@ -496,18 +548,24 @@ interface AllPrimitives {
 
 class TestInterfaceRefResolution:
     def test_undefined_interface_in_requires(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 component Foo {
     requires UnknownInterface
 }
-""", "refers to unknown interface 'UnknownInterface'")
+""",
+            "refers to unknown interface 'UnknownInterface'",
+        )
 
     def test_undefined_interface_in_provides(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 component Foo {
     provides UnknownInterface
 }
-""", "refers to unknown interface 'UnknownInterface'")
+""",
+            "refers to unknown interface 'UnknownInterface'",
+        )
 
     def test_valid_interface_ref(self) -> None:
         _assert_clean("""
@@ -527,12 +585,15 @@ component OrderService {
 """)
 
     def test_wrong_interface_version_local(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface OrderRequest @v2 { field id: String }
 component OrderService {
     requires OrderRequest @v1
 }
-""", "no version 'v1' of interface 'OrderRequest' is defined")
+""",
+            "no version 'v1' of interface 'OrderRequest' is defined",
+        )
 
     def test_correct_versioned_ref_ok(self) -> None:
         _assert_clean("""
@@ -552,26 +613,35 @@ component OrderService {
 """)
 
     def test_versioned_ref_to_unversioned_interface_error(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface OrderRequest { field id: String }
 component OrderService {
     requires OrderRequest @v1
 }
-""", "no version 'v1' of interface 'OrderRequest' is defined")
+""",
+            "no version 'v1' of interface 'OrderRequest' is defined",
+        )
 
     def test_system_with_undefined_requires(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 system Foo {
     requires MissingInterface
 }
-""", "refers to unknown interface 'MissingInterface'")
+""",
+            "refers to unknown interface 'MissingInterface'",
+        )
 
     def test_system_with_undefined_provides(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 system Foo {
     provides MissingInterface
 }
-""", "refers to unknown interface 'MissingInterface'")
+""",
+            "refers to unknown interface 'MissingInterface'",
+        )
 
 
 # ###############
@@ -581,40 +651,52 @@ system Foo {
 
 class TestConnectionEndpoints:
     def test_unknown_source_in_component_connection(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface Signal { field v: Bool }
 component Router {
     component Output { requires Signal }
     connect UnknownInput -> Output by Signal
 }
-""", "connection source 'UnknownInput' is not a known member entity")
+""",
+            "connection source 'UnknownInput' is not a known member entity",
+        )
 
     def test_unknown_target_in_component_connection(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface Signal { field v: Bool }
 component Router {
     component Input { provides Signal }
     connect Input -> UnknownOutput by Signal
 }
-""", "connection target 'UnknownOutput' is not a known member entity")
+""",
+            "connection target 'UnknownOutput' is not a known member entity",
+        )
 
     def test_unknown_source_in_system_connection(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface DataFeed { field payload: String }
 system Pipeline {
     component Consumer { requires DataFeed }
     connect MissingProducer -> Consumer by DataFeed
 }
-""", "connection source 'MissingProducer' is not a known member entity")
+""",
+            "connection source 'MissingProducer' is not a known member entity",
+        )
 
     def test_unknown_target_in_system_connection(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 interface DataFeed { field payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
     connect Producer -> MissingConsumer by DataFeed
 }
-""", "connection target 'MissingConsumer' is not a known member entity")
+""",
+            "connection target 'MissingConsumer' is not a known member entity",
+        )
 
     def test_valid_system_connection(self) -> None:
         _assert_clean("""
@@ -637,13 +719,16 @@ component Processor {
 """)
 
     def test_connection_with_undefined_interface(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 system Pipeline {
     component A {}
     component B {}
     connect A -> B by UndefinedInterface
 }
-""", "refers to unknown interface 'UndefinedInterface'")
+""",
+            "refers to unknown interface 'UndefinedInterface'",
+        )
 
     def test_connection_with_versioned_interface_ok(self) -> None:
         _assert_clean("""
@@ -683,36 +768,48 @@ system ECommerce {
 
 class TestDuplicateNestedNames:
     def test_duplicate_sub_component_in_component(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 component Router {
     component Leg {}
     component Leg {}
 }
-""", "Duplicate sub-component name 'Leg'")
+""",
+            "Duplicate sub-component name 'Leg'",
+        )
 
     def test_duplicate_component_in_system(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 system Platform {
     component Worker {}
     component Worker {}
 }
-""", "Duplicate component name 'Worker'")
+""",
+            "Duplicate component name 'Worker'",
+        )
 
     def test_duplicate_sub_system_in_system(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 system Enterprise {
     system Division {}
     system Division {}
 }
-""", "Duplicate sub-system name 'Division'")
+""",
+            "Duplicate sub-system name 'Division'",
+        )
 
     def test_component_and_system_same_name_in_system(self) -> None:
-        _assert_error("""
+        _assert_error(
+            """
 system Enterprise {
     component Foo {}
     system Foo {}
 }
-""", "name 'Foo' is used for both a component and a sub-system")
+""",
+            "name 'Foo' is used for both a component and a sub-system",
+        )
 
     def test_distinct_sub_component_names_ok(self) -> None:
         _assert_clean("""
@@ -856,7 +953,10 @@ class TestDirectModelConstruction:
                 InterfaceDef(
                     name="Batch",
                     fields=[
-                        Field(name="items", type=ListTypeRef(element_type=NamedTypeRef(name="Item")))
+                        Field(
+                            name="items",
+                            type=ListTypeRef(element_type=NamedTypeRef(name="Item")),
+                        )
                     ],
                 )
             ],
@@ -870,9 +970,7 @@ class TestDirectModelConstruction:
             interfaces=[
                 InterfaceDef(
                     name="Batch",
-                    fields=[
-                        Field(name="items", type=NamedTypeRef(name="UnknownType"))
-                    ],
+                    fields=[Field(name="items", type=NamedTypeRef(name="UnknownType"))],
                 )
             ],
         )

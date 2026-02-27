@@ -73,15 +73,7 @@ class NamedTypeRef:
 
 
 # A field type reference — one of the built-in, container, or named types.
-TypeRef = (
-    PrimitiveTypeRef
-    | FileTypeRef
-    | DirectoryTypeRef
-    | ListTypeRef
-    | MapTypeRef
-    | OptionalTypeRef
-    | NamedTypeRef
-)
+TypeRef = PrimitiveTypeRef | FileTypeRef | DirectoryTypeRef | ListTypeRef | MapTypeRef | OptionalTypeRef | NamedTypeRef
 
 
 @dataclass

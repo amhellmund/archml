@@ -39,10 +39,7 @@ def _messages(errors: list[SemanticError]) -> list[str]:
 
 def _assert_clean(path: Path, resolved_imports: dict[str, ArchFile] | None = None) -> None:
     errors = _compile(path, resolved_imports)
-    assert errors == [], (
-        f"{path.name}: expected no errors but got:\n"
-        + "\n".join(f"  - {e.message}" for e in errors)
-    )
+    assert errors == [], f"{path.name}: expected no errors but got:\n" + "\n".join(f"  - {e.message}" for e in errors)
 
 
 def _assert_errors(path: Path, *fragments: str, resolved_imports: dict[str, ArchFile] | None = None) -> None:
@@ -52,8 +49,7 @@ def _assert_errors(path: Path, *fragments: str, resolved_imports: dict[str, Arch
     assert messages, f"{path.name}: expected errors but got none"
     for fragment in fragments:
         assert any(fragment in m for m in messages), (
-            f"{path.name}: expected an error containing {fragment!r}, "
-            f"but got: {messages}"
+            f"{path.name}: expected an error containing {fragment!r}, but got: {messages}"
         )
 
 
@@ -218,9 +214,7 @@ class TestNegativeExamples:
         errors = _compile(path)
         # Without resolver, no import errors should be raised
         import_errors = [e for e in errors if "is not defined in" in e.message or "could not be resolved" in e.message]
-        assert import_errors == [], (
-            f"Expected no import errors without resolver, but got: {import_errors}"
-        )
+        assert import_errors == [], f"Expected no import errors without resolver, but got: {import_errors}"
 
     def test_import_undefined_entity_with_resolver(self) -> None:
         """With resolver, missing entities are reported."""

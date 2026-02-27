@@ -135,8 +135,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     if not workspace_file.exists():
         print(
-            f"Error: no ArchML workspace found at '{directory}'. "
-            "Run 'archml init' to initialize a workspace.",
+            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
             file=sys.stderr,
         )
         return 1
@@ -164,8 +163,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
     if not workspace_file.exists():
         print(
-            f"Error: no ArchML workspace found at '{directory}'. "
-            "Run 'archml init' to initialize a workspace.",
+            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
             file=sys.stderr,
         )
         return 1
