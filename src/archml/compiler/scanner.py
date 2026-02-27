@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 
 class TokenType(enum.Enum):
-    """All token types produced by the ArchML lexer."""
+    """All token types produced by the ArchML scanner."""
 
     # Keywords
     SYSTEM = "system"
@@ -323,11 +323,7 @@ class _Lexer:
         while self._pos < len(self._source) and self._current().isdigit():
             self._advance()
 
-        if (
-            self._pos < len(self._source)
-            and self._current() == "."
-            and self._peek().isdigit()
-        ):
+        if self._pos < len(self._source) and self._current() == "." and self._peek().isdigit():
             self._advance()  # consume the '.'
             while self._pos < len(self._source) and self._current().isdigit():
                 self._advance()
@@ -340,9 +336,7 @@ class _Lexer:
     def _scan_identifier_or_keyword(self, line: int, col: int) -> None:
         """Scan an identifier and map it to a keyword token type if applicable."""
         start = self._pos
-        while self._pos < len(self._source) and (
-            self._current().isalnum() or self._current() == "_"
-        ):
+        while self._pos < len(self._source) and (self._current().isalnum() or self._current() == "_"):
             self._advance()
         value = self._source[start : self._pos]
         token_type = _KEYWORDS.get(value, TokenType.IDENTIFIER)

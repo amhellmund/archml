@@ -1,0 +1,30 @@
+// Negative: connection endpoints reference non-existent members
+// Expected errors:
+//   system 'Pipeline': connection source 'GhostProducer' is not a known member entity
+//   component 'Router': connection target 'GhostOutput' is not a known member entity
+
+interface DataFeed {
+    field payload: String
+}
+
+interface Signal {
+    field value: Int
+}
+
+system Pipeline {
+    component Consumer {
+        requires DataFeed
+    }
+
+    // GhostProducer is not defined as a member
+    connect GhostProducer -> Consumer by DataFeed
+}
+
+component Router {
+    component Input {
+        provides Signal
+    }
+
+    // GhostOutput is not defined as a sub-component
+    connect Input -> GhostOutput by Signal
+}

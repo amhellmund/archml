@@ -36,8 +36,7 @@ def _build_layout(directory: Path) -> html.Div:
             html.P(f"Workspace: {directory}"),
             html.Hr(),
             html.P(
-                "Architecture views will be rendered here as the parser and "
-                "model components are implemented.",
+                "Architecture views will be rendered here as the parser and model components are implemented.",
                 style={"color": "#666"},
             ),
         ],

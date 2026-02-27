@@ -1,0 +1,18 @@
+// Negative: duplicate field names within a type and an interface
+// Expected errors:
+//   Duplicate field name 'street' in type 'Address'
+//   Duplicate field name 'order_id' in interface 'OrderRequest'
+
+type Address {
+    field street: String
+    field city: String
+    field street: String
+    field country: String
+}
+
+interface OrderRequest {
+    field order_id: String
+    field customer_id: String
+    field order_id: Int
+    field amount: Decimal
+}

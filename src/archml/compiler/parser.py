@@ -3,9 +3,10 @@
 
 """Recursive-descent parser for .archml files.
 
-Converts a token stream produced by the lexer into an ArchFile semantic model.
+Converts a token stream produced by the scanner into an ArchFile semantic model.
 """
 
+from archml.compiler.scanner import Token, TokenType, tokenize
 from archml.model.entities import (
     ArchFile,
     Component,
@@ -30,7 +31,6 @@ from archml.model.types import (
     PrimitiveTypeRef,
     TypeRef,
 )
-from archml.parser.lexer import Token, TokenType, tokenize
 
 # ###############
 # Public Interface
@@ -211,8 +211,7 @@ class _Parser:
                 result.systems.append(self._parse_system(is_external=True))
             else:
                 raise ParseError(
-                    "Expected 'component' or 'system' after 'external',"
-                    f" got {inner.value!r}",
+                    f"Expected 'component' or 'system' after 'external', got {inner.value!r}",
                     inner.line,
                     inner.column,
                 )
@@ -387,8 +386,7 @@ class _Parser:
                     comp.components.append(self._parse_component(is_external=True))
                 else:
                     raise ParseError(
-                        "Expected 'component' after 'external' inside component body,"
-                        f" got {inner.value!r}",
+                        f"Expected 'component' after 'external' inside component body, got {inner.value!r}",
                         inner.line,
                         inner.column,
                     )
@@ -438,8 +436,7 @@ class _Parser:
                     system.systems.append(self._parse_system(is_external=True))
                 else:
                     raise ParseError(
-                        "Expected 'component' or 'system' after 'external'"
-                        f" inside system body, got {inner.value!r}",
+                        f"Expected 'component' or 'system' after 'external' inside system body, got {inner.value!r}",
                         inner.line,
                         inner.column,
                     )
@@ -559,8 +556,7 @@ class _Parser:
                 else:
                     inner_tok = self._current()
                     raise ParseError(
-                        f"Unexpected token {inner_tok.value!r}"
-                        " in field annotation block",
+                        f"Unexpected token {inner_tok.value!r} in field annotation block",
                         inner_tok.line,
                         inner_tok.column,
                     )

@@ -1,0 +1,34 @@
+// Source file for multi-file import tests
+// This file defines types, enums, and interfaces that can be imported
+
+enum OrderStatus {
+    Pending
+    Confirmed
+    Shipped
+    Delivered
+    Cancelled
+}
+
+type OrderItem {
+    field product_id: String
+    field quantity: Int
+    field unit_price: Decimal
+}
+
+interface OrderRequest {
+    field order_id: String
+    field customer_id: String
+    field items: List<OrderItem>
+}
+
+interface OrderConfirmation {
+    field order_id: String
+    field status: OrderStatus
+    field confirmed_at: Timestamp
+}
+
+interface PaymentRequest {
+    field order_id: String
+    field amount: Decimal
+    field currency: String
+}

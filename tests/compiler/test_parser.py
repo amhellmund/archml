@@ -5,6 +5,7 @@
 
 import pytest
 
+from archml.compiler.parser import ParseError, parse
 from archml.model.entities import (
     ArchFile,
     ConnectionEndpoint,
@@ -20,7 +21,6 @@ from archml.model.types import (
     PrimitiveType,
     PrimitiveTypeRef,
 )
-from archml.parser.parser import ParseError, parse
 
 # ###############
 # Test Helpers
@@ -85,10 +85,7 @@ class TestImportDeclarations:
         assert imp.entities == ["OrderRequest", "OrderConfirmation"]
 
     def test_import_three_entities(self) -> None:
-        result = _parse(
-            "from interfaces/order import"
-            " OrderRequest, OrderConfirmation, PaymentRequest"
-        )
+        result = _parse("from interfaces/order import OrderRequest, OrderConfirmation, PaymentRequest")
         assert result.imports[0].entities == [
             "OrderRequest",
             "OrderConfirmation",
@@ -576,19 +573,13 @@ class TestFieldAnnotations:
         assert isinstance(f.type, FileTypeRef)
 
     def test_field_with_description_and_schema(self) -> None:
-        source = (
-            "field currency: String"
-            ' { description = "Currency code." schema = "e.g. USD." }'
-        )
+        source = 'field currency: String { description = "Currency code." schema = "e.g. USD." }'
         f = self._parse_field(source)
         assert f.description == "Currency code."
         assert f.schema == "e.g. USD."
 
     def test_file_field_with_filetype_and_schema(self) -> None:
-        source = (
-            "field config: File"
-            ' { filetype = "YAML" schema = "Top-level keys: server." }'
-        )
+        source = 'field config: File { filetype = "YAML" schema = "Top-level keys: server." }'
         f = self._parse_field(source)
         assert isinstance(f.type, FileTypeRef)
         assert f.filetype == "YAML"
@@ -601,11 +592,7 @@ class TestFieldAnnotations:
         assert f.schema == "Contains manifests/*.yaml"
 
     def test_all_field_annotations(self) -> None:
-        source = (
-            "field report: File"
-            ' { filetype = "PDF" schema = "Monthly report."'
-            ' description = "Report file." }'
-        )
+        source = 'field report: File { filetype = "PDF" schema = "Monthly report." description = "Report file." }'
         f = self._parse_field(source)
         assert f.filetype == "PDF"
         assert f.schema == "Monthly report."
@@ -1066,9 +1053,7 @@ system ECommerce {
         assert conns[2].is_async is True
 
     def test_connection_endpoint_entities(self) -> None:
-        result = _parse(
-            "system S { connect SourceService -> TargetService by MyInterface }"
-        )
+        result = _parse("system S { connect SourceService -> TargetService by MyInterface }")
         conn = result.systems[0].connections[0]
         assert isinstance(conn.source, ConnectionEndpoint)
         assert isinstance(conn.target, ConnectionEndpoint)
@@ -1249,9 +1234,7 @@ interface ReportOutput {
         assert "Shipped" in status.values
 
         # Verify OrderConfirmation interface uses named type and timestamp
-        confirmation = next(
-            i for i in result.interfaces if i.name == "OrderConfirmation"
-        )
+        confirmation = next(i for i in result.interfaces if i.name == "OrderConfirmation")
         assert confirmation.fields[1].name == "status"
         assert isinstance(confirmation.fields[1].type, NamedTypeRef)
         assert confirmation.fields[2].name == "confirmed_at"
@@ -1273,11 +1256,7 @@ interface ReportOutput {
 
     def test_complete_spec_example_order_service_component(self) -> None:
         """Parse the components/order_service.archml portion."""
-        import_line = (
-            "from types import"
-            " OrderItem, OrderRequest, PaymentRequest,"
-            " InventoryCheck, OrderConfirmation"
-        )
+        import_line = "from types import OrderItem, OrderRequest, PaymentRequest, InventoryCheck, OrderConfirmation"
         source = f"""\
 {import_line}
 

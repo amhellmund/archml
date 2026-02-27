@@ -1,0 +1,17 @@
+// Negative: an enum and a type share the same name, creating ambiguity
+// Expected error: Name 'Status' is defined as both an enum and a type
+
+enum Status {
+    Active
+    Inactive
+}
+
+type Status {
+    field code: Int
+    field label: String
+}
+
+// A field referencing Status would be ambiguous
+interface Record {
+    field status: Status
+}

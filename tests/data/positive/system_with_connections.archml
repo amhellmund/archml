@@ -1,0 +1,88 @@
+// Full system with nested components, external entity, and connections
+// Expected result: no semantic errors
+
+interface PaymentRequest {
+    field order_id: String
+    field amount: Decimal
+    field currency: String
+}
+
+interface PaymentResult {
+    field order_id: String
+    field success: Bool
+    field transaction_id: Optional<String>
+}
+
+interface InventoryCheck {
+    field product_id: String
+    field quantity: Int
+}
+
+interface InventoryStatus {
+    field product_id: String
+    field available: Bool
+}
+
+interface OrderRequest {
+    field order_id: String
+    field customer_id: String
+}
+
+interface OrderConfirmation {
+    field order_id: String
+    field confirmed: Bool
+}
+
+// External payment provider
+external system StripeAPI {
+    title = "Stripe Payment API"
+    description = "Third-party payment processing service."
+    requires PaymentRequest
+    provides PaymentResult
+}
+
+// E-commerce platform
+system ECommerce {
+    title = "E-Commerce Platform"
+    description = "Customer-facing online store back-end."
+
+    component OrderService {
+        title = "Order Service"
+        tags = ["core"]
+
+        requires OrderRequest
+        requires PaymentRequest
+        requires InventoryCheck
+        provides OrderConfirmation
+    }
+
+    component PaymentGateway {
+        title = "Payment Gateway"
+        tags = ["critical", "pci-scope"]
+
+        requires PaymentRequest
+        provides PaymentResult
+    }
+
+    component InventoryManager {
+        title = "Inventory Manager"
+
+        requires InventoryCheck
+        provides InventoryStatus
+    }
+
+    connect OrderService -> PaymentGateway by PaymentRequest {
+        protocol = "gRPC"
+        async = false
+        description = "Submit payment for confirmed order."
+    }
+    connect OrderService -> InventoryManager by InventoryCheck {
+        protocol = "HTTP"
+        async = true
+    }
+    connect PaymentGateway -> StripeAPI by PaymentRequest {
+        protocol = "HTTP"
+        async = true
+        description = "Delegate payment processing to Stripe."
+    }
+}

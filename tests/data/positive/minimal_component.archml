@@ -1,0 +1,8 @@
+// Minimal component: no ports, no fields
+// Expected result: no semantic errors
+
+component Processor {
+    title = "Simple Processor"
+    description = "A minimal component with no interface requirements."
+    tags = ["core"]
+}

@@ -1,0 +1,52 @@
+// Nested components with internal connections
+// Expected result: no semantic errors
+
+interface ValidationResult {
+    field is_valid: Bool
+    field errors: List<String>
+}
+
+interface OrderRequest {
+    field order_id: String
+    field amount: Decimal
+}
+
+interface OrderConfirmation {
+    field order_id: String
+    field confirmed: Bool
+}
+
+interface PaymentRequest {
+    field order_id: String
+    field amount: Decimal
+}
+
+// A component with sub-components and internal routing
+component OrderService {
+    title = "Order Service"
+    description = "Accepts, validates, and processes customer orders."
+    tags = ["core", "stateful"]
+
+    requires OrderRequest
+    requires PaymentRequest
+    provides OrderConfirmation
+
+    component Validator {
+        title = "Order Validator"
+        description = "Validates incoming order requests."
+
+        requires OrderRequest
+        provides ValidationResult
+    }
+
+    component Processor {
+        title = "Order Processor"
+        description = "Processes validated orders and triggers payment."
+
+        requires ValidationResult
+        requires PaymentRequest
+        provides OrderConfirmation
+    }
+
+    connect Validator -> Processor by ValidationResult
+}

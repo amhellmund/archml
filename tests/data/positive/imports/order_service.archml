@@ -1,0 +1,13 @@
+// Component file that imports from types.archml
+// Expected result: no semantic errors when resolved with types.archml
+
+from imports/types import OrderRequest, PaymentRequest, OrderConfirmation
+
+component OrderService {
+    title = "Order Service"
+    description = "Accepts, validates, and processes customer orders."
+
+    requires OrderRequest
+    requires PaymentRequest
+    provides OrderConfirmation
+}

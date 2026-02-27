@@ -1,0 +1,93 @@
+// Interface definitions with versioning and type references
+// Expected result: no semantic errors
+
+enum OrderStatus {
+    Pending
+    Confirmed
+    Shipped
+    Delivered
+    Cancelled
+}
+
+type OrderItem {
+    field product_id: String
+    field quantity: Int
+    field unit_price: Decimal
+}
+
+// Unversioned interface
+interface OrderRequest {
+    title = "Order Creation Request"
+    description = "Payload for placing a new customer order."
+
+    field order_id: String
+    field customer_id: String
+    field items: List<OrderItem>
+    field total_amount: Decimal {
+        description = "Grand total including tax and shipping."
+        schema = "Positive decimal value."
+    }
+    field currency: String {
+        description = "ISO 4217 currency code."
+        schema = "Three-letter uppercase code, e.g. USD, EUR."
+    }
+}
+
+// Versioned interface v2 (adds shipping_method)
+interface OrderRequest @v2 {
+    title = "Order Creation Request v2"
+
+    field order_id: String
+    field customer_id: String
+    field items: List<OrderItem>
+    field total_amount: Decimal
+    field currency: String
+    field shipping_method: String
+}
+
+interface OrderConfirmation {
+    title = "Order Confirmation"
+
+    field order_id: String
+    field status: OrderStatus
+    field confirmed_at: Timestamp
+    field estimated_delivery: Optional<Datetime>
+}
+
+interface PaymentRequest {
+    field order_id: String
+    field amount: Decimal
+    field currency: String
+}
+
+interface PaymentResult {
+    field order_id: String
+    field success: Bool
+    field transaction_id: Optional<String>
+    field error_message: Optional<String>
+}
+
+interface InventoryCheck {
+    field product_id: String
+    field requested_quantity: Int
+}
+
+interface InventoryStatus {
+    field product_id: String
+    field available: Bool
+    field available_quantity: Int
+}
+
+interface ReportOutput {
+    field report: File {
+        filetype = "PDF"
+        schema = "Monthly sales summary report."
+    }
+    field export: File {
+        filetype = "CSV"
+        schema = "Raw transaction data."
+    }
+    field artifact: Directory {
+        schema = "Contains report.pdf, data.csv, and metadata.json."
+    }
+}

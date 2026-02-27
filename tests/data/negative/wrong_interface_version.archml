@@ -1,0 +1,23 @@
+// Negative: versioned interface reference does not match any defined version
+// Expected errors:
+//   component 'OrderService': 'requires OrderRequest@v1' — no version 'v1' of interface 'OrderRequest' is defined
+//   component 'LegacyClient': 'requires PaymentRequest@old' — no version 'old' of interface 'PaymentRequest' is defined
+
+// Only v2 exists, but a component requires @v1
+interface OrderRequest @v2 {
+    field order_id: String
+    field currency: String
+}
+
+// Unversioned interface, but component requires @old
+interface PaymentRequest {
+    field amount: Decimal
+}
+
+component OrderService {
+    requires OrderRequest @v1
+}
+
+component LegacyClient {
+    requires PaymentRequest @old
+}

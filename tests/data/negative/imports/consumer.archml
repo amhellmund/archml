@@ -1,0 +1,10 @@
+// Consumer file for negative import test
+// Tries to import OrderConfirmation which is NOT defined in source.archml
+// Expected error: 'OrderConfirmation' is not defined in 'imports/source'
+// Expected error: 'MissingEnum' is not defined in 'imports/source'
+
+from imports/source import OrderRequest, OrderItem, OrderConfirmation, MissingEnum
+
+component OrderConsumer {
+    requires OrderRequest
+}
