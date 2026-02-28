@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from archml.model.entities import ArchFile, Component, Connection, EnumDef, InterfaceDef, InterfaceRef, System
-from archml.model.types import Field, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
+from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
 
 # ###############
 # Public Interface
@@ -455,7 +455,7 @@ def _check_enum_values(enum_def: EnumDef) -> list[SemanticError]:
     )
 
 
-def _check_field_names(ctx: str, fields: list[Field]) -> list[SemanticError]:
+def _check_field_names(ctx: str, fields: list[FieldDef]) -> list[SemanticError]:
     """Check for duplicate field names within a type or interface."""
     return _check_duplicate_names(
         [f.name for f in fields],
@@ -478,7 +478,7 @@ def _collect_named_type_refs(type_ref: TypeRef) -> list[str]:
 
 def _check_type_refs_in_fields(
     ctx: str,
-    fields: list[Field],
+    fields: list[FieldDef],
     valid_type_names: set[str],
 ) -> list[SemanticError]:
     """Check that every NamedTypeRef in field types resolves to a known name."""

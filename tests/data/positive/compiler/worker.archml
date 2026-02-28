@@ -1,0 +1,13 @@
+// Worker component that depends on shared types.
+
+from compiler/shared/types import TaskRequest, TaskResult, Priority
+
+component TaskWorker {
+    requires TaskRequest
+    provides TaskResult
+}
+
+component PriorityRouter {
+    requires TaskRequest
+    provides TaskRequest
+}

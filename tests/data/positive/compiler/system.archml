@@ -1,0 +1,15 @@
+// Top-level system that imports from both shared/types and worker.
+
+from compiler/shared/types import TaskRequest, TaskResult
+from compiler/worker import TaskWorker, PriorityRouter
+
+system TaskProcessingSystem {
+    use component TaskWorker
+    use component PriorityRouter
+    component Dispatcher {
+        requires TaskRequest
+        provides TaskRequest
+    }
+    connect Dispatcher -> PriorityRouter by TaskRequest
+    connect PriorityRouter -> TaskWorker by TaskRequest
+}
