@@ -135,7 +135,7 @@ def test_check_with_workspace_yaml_and_local_source_import(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """check resolves @mnemonic imports from the workspace YAML source-imports."""
+    """check resolves mnemonic imports from the workspace YAML source-imports."""
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir()
     (lib_dir / "iface.archml").write_text("interface MyIface { field v: Int }\n")
@@ -148,7 +148,7 @@ def test_check_with_workspace_yaml_and_local_source_import(
         f"    local-path: lib\n"
     )
     (tmp_path / "app.archml").write_text(
-        "from @mylib/iface import MyIface\ncomponent C { requires MyIface }\n"
+        "from mylib/iface import MyIface\ncomponent C { requires MyIface }\n"
     )
 
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])

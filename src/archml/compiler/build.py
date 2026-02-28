@@ -7,9 +7,17 @@ Implements a CMake-style cache: an artifact is reused when it already exists
 and is strictly newer than the corresponding source file.  Dependencies are
 compiled recursively before the dependent file is validated.
 
-Source imports (``@mnemonic/path`` prefixes) are resolved using a caller-
-supplied *source_import_map* that maps mnemonic names to absolute base paths.
-The mapping is normally derived from the workspace configuration.
+Two forms of cross-file import are supported:
+
+* **Local workspace imports** — ``from mnemonic/path/to/file import …``
+  The first path segment is looked up as a mnemonic in the caller-supplied
+  *source_import_map* (``{mnemonic: absolute_base_path}``), derived from the
+  workspace ``source-imports`` configuration.
+
+* **Remote git imports** — ``from @repo/mnemonic/path/to/file import …``
+  The ``@repo`` prefix identifies a Git repository.  This form is recognised
+  but **not yet implemented**; attempting to compile such an import raises
+  :class:`CompilerError`.
 """
 
 from __future__ import annotations
@@ -60,18 +68,19 @@ def compile_files(
         source_root: Root directory that all local source files are relative to;
             used to compute artifact paths and import resolution.
         source_import_map: Mapping from mnemonic names to absolute base paths for
-            cross-workspace imports.  Import paths of the form ``@mnemonic/rel``
-            are resolved by looking up *mnemonic* in this map and appending *rel*.
-            Defaults to an empty map (no external imports configured).
+            local cross-workspace imports.  Import paths of the form
+            ``mnemonic/rel`` are resolved by looking up *mnemonic* in this map
+            and appending *rel*.  Defaults to an empty map (no external imports
+            configured).
 
     Returns:
         A mapping from canonical path keys (e.g. ``"shared/types"`` or
-        ``"@common/types"``) to their compiled :class:`~archml.model.entities.ArchFile`
+        ``"common/types"``) to their compiled :class:`~archml.model.entities.ArchFile`
         models.
 
     Raises:
-        CompilerError: On parse errors, missing imports, unknown mnemonics,
-            semantic errors, or circular dependencies.
+        CompilerError: On parse errors, missing imports, unsupported remote
+            imports, semantic errors, or circular dependencies.
     """
     if source_import_map is None:
         source_import_map = {}
@@ -95,8 +104,8 @@ def _rel_key(source_file: Path, source_root: Path, source_import_map: dict[str, 
     For files under *source_root*, the key is the relative path without the
     ``.archml`` suffix (e.g. ``"shared/types"``).
 
-    For files under a mnemonic base path, the key is ``"@mnemonic/rel"``
-    (e.g. ``"@common/types"``).
+    For files under a local mnemonic base path, the key is ``"mnemonic/rel"``
+    (e.g. ``"common/types"``).
 
     Raises:
         CompilerError: If the file is not under *source_root* or any known
@@ -111,7 +120,7 @@ def _rel_key(source_file: Path, source_root: Path, source_import_map: dict[str, 
     for mnemonic, base_path in source_import_map.items():
         try:
             rel = source_file.relative_to(base_path)
-            return f"@{mnemonic}/" + str(rel.with_suffix("")).replace("\\", "/")
+            return f"{mnemonic}/" + str(rel.with_suffix("")).replace("\\", "/")
         except ValueError:
             continue
 
@@ -125,8 +134,7 @@ def _artifact_path(key: str, build_dir: Path) -> Path:
     """Return the artifact path for a given canonical key.
 
     The key segments (split on ``/``) map directly to subdirectory components
-    under *build_dir*.  A ``@mnemonic`` prefix becomes a literal directory
-    component (e.g. ``"@common/types"`` → ``build_dir/@common/types.archml.json``).
+    under *build_dir* (e.g. ``"common/types"`` → ``build_dir/common/types.archml.json``).
     """
     parts = key.split("/")
     artifact_dir = build_dir
@@ -151,7 +159,7 @@ def _resolve_import_source(
 
     Args:
         import_path: The raw import path string as stored in :class:`ImportDeclaration`
-            (e.g. ``"shared/types"`` or ``"@common/types"``).
+            (e.g. ``"shared/types"`` or ``"common/types"``).
         source_root: Root directory for local (non-mnemonic) imports.
         source_import_map: Mapping from mnemonic names to base paths.
 
@@ -159,23 +167,17 @@ def _resolve_import_source(
         Absolute path to the ``.archml`` file (which may or may not exist).
 
     Raises:
-        CompilerError: If *import_path* uses an unknown mnemonic or has an
-            invalid ``@mnemonic`` structure.
+        CompilerError: If *import_path* is a remote git import (starts with
+            ``@``), which is not yet supported.
     """
     if import_path.startswith("@"):
-        try:
-            slash_pos = import_path.index("/", 1)
-        except ValueError:
-            raise CompilerError(
-                f"Invalid source import path '{import_path}': missing path after mnemonic"
-            )
-        mnemonic = import_path[1:slash_pos]
-        rel = import_path[slash_pos + 1:]
-        if mnemonic not in source_import_map:
-            raise CompilerError(
-                f"Unknown source import mnemonic '@{mnemonic}' in import '{import_path}'"
-            )
-        return source_import_map[mnemonic] / (rel + ".archml")
+        raise CompilerError(f"Remote git imports are not yet supported: '{import_path}'")
+    slash_pos = import_path.find("/")
+    if slash_pos != -1:
+        first_segment = import_path[:slash_pos]
+        if first_segment in source_import_map:
+            rel = import_path[slash_pos + 1:]
+            return source_import_map[first_segment] / (rel + ".archml")
     return source_root / (import_path + ".archml")
 
 
@@ -237,6 +239,19 @@ def _compile_file(
                 deps_valid = False
                 break
         if deps_valid:
+            # Recursively ensure all dependencies are also loaded into the
+            # result map so callers see the full transitive closure.
+            for imp in arch_file.imports:
+                dep_source = _resolve_import_source(imp.source_path, source_root, source_import_map)
+                _compile_file(
+                    dep_source,
+                    build_dir,
+                    source_root,
+                    source_import_map,
+                    compiled,
+                    in_progress,
+                    _key=imp.source_path,
+                )
             compiled[key] = arch_file
             return arch_file
 

@@ -242,7 +242,7 @@ component Worker { requires Signal }
 
 class TestSourceImports:
     def test_resolves_mnemonic_import(self, tmp_path: Path) -> None:
-        """Files imported via @mnemonic/path are resolved from the mnemonic base."""
+        """Files imported via mnemonic/path are resolved from the mnemonic base."""
         src = tmp_path / "src"
         lib = tmp_path / "lib"
         build = tmp_path / "build"
@@ -250,7 +250,7 @@ class TestSourceImports:
         _write(lib / "types.archml", "interface Signal { field v: Int }")
         _write(
             src / "app.archml",
-            "from @mylib/types import Signal\ncomponent Worker { requires Signal }",
+            "from mylib/types import Signal\ncomponent Worker { requires Signal }",
         )
 
         result = compile_files(
@@ -260,20 +260,20 @@ class TestSourceImports:
             source_import_map={"mylib": lib},
         )
         assert "app" in result
-        assert "@mylib/types" in result
+        assert "mylib/types" in result
 
-    def test_mnemonic_artifact_stored_under_at_prefix(self, tmp_path: Path) -> None:
-        """Artifacts for @mnemonic imports are stored under @mnemonic/ in the build dir."""
+    def test_mnemonic_artifact_stored_under_mnemonic_prefix(self, tmp_path: Path) -> None:
+        """Artifacts for mnemonic imports are stored under mnemonic/ in the build dir."""
         src = tmp_path / "src"
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
         _write(lib / "types.archml", "interface Signal { field v: Int }")
-        _write(src / "app.archml", "from @mylib/types import Signal\ncomponent C { requires Signal }")
+        _write(src / "app.archml", "from mylib/types import Signal\ncomponent C { requires Signal }")
 
         compile_files([src / "app.archml"], build, src, source_import_map={"mylib": lib})
 
-        assert _artifact(build, "@mylib/types").exists()
+        assert _artifact(build, "mylib/types").exists()
 
     def test_mnemonic_import_in_subdirectory(self, tmp_path: Path) -> None:
         """Mnemonic imports work for files nested in subdirectories."""
@@ -284,7 +284,7 @@ class TestSourceImports:
         _write(lib / "shared" / "base.archml", "interface IBase { field x: Int }")
         _write(
             src / "app.archml",
-            "from @mylib/shared/base import IBase\ncomponent C { requires IBase }",
+            "from mylib/shared/base import IBase\ncomponent C { requires IBase }",
         )
 
         result = compile_files(
@@ -293,7 +293,7 @@ class TestSourceImports:
             src,
             source_import_map={"mylib": lib},
         )
-        assert "@mylib/shared/base" in result
+        assert "mylib/shared/base" in result
 
     def test_multiple_mnemonics(self, tmp_path: Path) -> None:
         """Multiple mnemonic mappings can be used simultaneously."""
@@ -306,7 +306,7 @@ class TestSourceImports:
         _write(lib_b / "types.archml", "interface TypeB { field y: Int }")
         _write(
             src / "app.archml",
-            "from @liba/types import TypeA\nfrom @libb/types import TypeB\n"
+            "from liba/types import TypeA\nfrom libb/types import TypeB\n"
             "component C { requires TypeA\n requires TypeB }",
         )
 
@@ -316,8 +316,8 @@ class TestSourceImports:
             src,
             source_import_map={"liba": lib_a, "libb": lib_b},
         )
-        assert "@liba/types" in result
-        assert "@libb/types" in result
+        assert "liba/types" in result
+        assert "libb/types" in result
 
     def test_mnemonic_dependency_compiled_transitively(self, tmp_path: Path) -> None:
         """A local file that imports from a mnemonic is compiled correctly."""
@@ -326,7 +326,7 @@ class TestSourceImports:
         build = tmp_path / "build"
 
         _write(lib / "iface.archml", "interface IFace { field v: Int }")
-        _write(src / "mid.archml", "from @ext/iface import IFace\ncomponent Mid { requires IFace }")
+        _write(src / "mid.archml", "from ext/iface import IFace\ncomponent Mid { requires IFace }")
         _write(src / "top.archml", "from mid import Mid\ncomponent Top {}")
 
         result = compile_files(
@@ -337,16 +337,16 @@ class TestSourceImports:
         )
         assert "top" in result
         assert "mid" in result
-        assert "@ext/iface" in result
+        assert "ext/iface" in result
 
-    def test_unknown_mnemonic_raises_compiler_error(self, tmp_path: Path) -> None:
-        """Importing from an unknown mnemonic raises CompilerError."""
+    def test_remote_git_import_raises_compiler_error(self, tmp_path: Path) -> None:
+        """Importing via @repo/mnemonic/path (remote git) raises CompilerError."""
         src = tmp_path / "src"
         build = tmp_path / "build"
 
-        _write(src / "app.archml", "from @unknown/types import X\ncomponent C {}")
+        _write(src / "app.archml", "from @myrepo/mylib/types import X\ncomponent C {}")
 
-        with pytest.raises(CompilerError, match="Unknown source import mnemonic '@unknown'"):
+        with pytest.raises(CompilerError, match="Remote git imports are not yet supported"):
             compile_files([src / "app.archml"], build, src)
 
     def test_mnemonic_missing_file_raises_compiler_error(self, tmp_path: Path) -> None:
@@ -356,7 +356,7 @@ class TestSourceImports:
         build = tmp_path / "build"
         lib.mkdir()
 
-        _write(src / "app.archml", "from @mylib/missing import X\ncomponent C {}")
+        _write(src / "app.archml", "from mylib/missing import X\ncomponent C {}")
 
         with pytest.raises(CompilerError, match="not found"):
             compile_files([src / "app.archml"], build, src, source_import_map={"mylib": lib})
@@ -377,10 +377,10 @@ class TestSourceImports:
         build = tmp_path / "build"
 
         _write(lib / "types.archml", "interface Signal { field v: Int }")
-        _write(src / "app.archml", "from @mylib/types import Signal\ncomponent W { requires Signal }")
+        _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
         compile_files([src / "app.archml"], build, src, source_import_map={"mylib": lib})
-        artifact = _artifact(build, "@mylib/types")
+        artifact = _artifact(build, "mylib/types")
         mtime_first = artifact.stat().st_mtime
 
         compile_files([src / "app.archml"], build, src, source_import_map={"mylib": lib})
@@ -429,19 +429,19 @@ class TestFileMoveRecompilation:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        # First compilation: @mylib/types exists
+        # First compilation: mylib/types exists
         _write(lib / "types.archml", "interface Signal { field v: Int }")
-        _write(src / "app.archml", "from @mylib/types import Signal\ncomponent W { requires Signal }")
+        _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
         compile_files([src / "app.archml"], build, src, source_import_map={"mylib": lib})
         app_artifact = _artifact(build, "app")
         assert app_artifact.exists()
 
-        # Simulate a move: the dependency at @mylib/types is gone
+        # Simulate a move: the dependency at mylib/types is gone
         (lib / "types.archml").unlink()
         # app.archml is NOT updated yet — it still refers to the old path
 
-        # Now trigger a recompile: since @mylib/types is gone, the cache for
+        # Now trigger a recompile: since mylib/types is gone, the cache for
         # 'app' should be busted and re-parsing app should fail because the dep is missing.
         with pytest.raises(CompilerError, match="not found"):
             compile_files([src / "app.archml"], build, src, source_import_map={"mylib": lib})
@@ -453,7 +453,7 @@ class TestFileMoveRecompilation:
         build = tmp_path / "build"
 
         _write(lib / "types.archml", "interface Signal { field v: Int }")
-        _write(src / "app.archml", "from @mylib/types import Signal\ncomponent W { requires Signal }")
+        _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
         compile_files([src / "app.archml"], build, src, source_import_map={"mylib": lib})
         app_artifact = _artifact(build, "app")
@@ -552,14 +552,14 @@ class TestReturnValue:
         assert len(result) == 1
         assert "x" in result
 
-    def test_mnemonic_key_includes_at_prefix(self, tmp_path: Path) -> None:
-        """Keys for mnemonic imports use @mnemonic/path format."""
+    def test_mnemonic_key_uses_mnemonic_prefix(self, tmp_path: Path) -> None:
+        """Keys for mnemonic imports use mnemonic/path format (no @ prefix)."""
         src = tmp_path / "src"
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
         _write(lib / "iface.archml", "interface I { field v: Int }")
-        _write(src / "app.archml", "from @ext/iface import I\ncomponent C { requires I }")
+        _write(src / "app.archml", "from ext/iface import I\ncomponent C { requires I }")
 
         result = compile_files([src / "app.archml"], build, src, source_import_map={"ext": lib})
-        assert "@ext/iface" in result
+        assert "ext/iface" in result
