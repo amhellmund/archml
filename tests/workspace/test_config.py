@@ -1,0 +1,215 @@
+# Copyright 2026 ArchML Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Tests for the workspace configuration module."""
+
+import pytest
+
+from archml.workspace.config import (
+    GitPathImport,
+    LocalPathImport,
+    WorkspaceConfig,
+    WorkspaceConfigError,
+    load_workspace_config,
+)
+
+# ###############
+# Public Interface
+# ###############
+
+
+def test_load_minimal_config(tmp_path):
+    """A config with only build-directory and no source-imports is valid."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text("build-directory: build\n", encoding="utf-8")
+
+    config = load_workspace_config(cfg_file)
+
+    assert isinstance(config, WorkspaceConfig)
+    assert config.build_directory == "build"
+    assert config.source_imports == []
+
+
+def test_load_config_with_local_path_import(tmp_path):
+    """A source import with local-path is parsed as LocalPathImport."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: out\n"
+        "source-imports:\n"
+        "  - name: common\n"
+        "    local-path: src/common\n",
+        encoding="utf-8",
+    )
+
+    config = load_workspace_config(cfg_file)
+
+    assert config.build_directory == "out"
+    assert len(config.source_imports) == 1
+    imp = config.source_imports[0]
+    assert isinstance(imp, LocalPathImport)
+    assert imp.name == "common"
+    assert imp.local_path == "src/common"
+
+
+def test_load_config_with_git_import(tmp_path):
+    """A source import with git-repository and revision is parsed as GitPathImport."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: out\n"
+        "source-imports:\n"
+        "  - name: external\n"
+        "    git-repository: https://github.com/example/repo\n"
+        "    revision: main\n",
+        encoding="utf-8",
+    )
+
+    config = load_workspace_config(cfg_file)
+
+    assert len(config.source_imports) == 1
+    imp = config.source_imports[0]
+    assert isinstance(imp, GitPathImport)
+    assert imp.name == "external"
+    assert imp.git_repository == "https://github.com/example/repo"
+    assert imp.revision == "main"
+
+
+def test_load_config_with_mixed_imports(tmp_path):
+    """A config may contain both local and git source imports."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: out\n"
+        "source-imports:\n"
+        "  - name: local-lib\n"
+        "    local-path: libs/local\n"
+        "  - name: remote-lib\n"
+        "    git-repository: https://github.com/example/remote\n"
+        "    revision: v1.0\n",
+        encoding="utf-8",
+    )
+
+    config = load_workspace_config(cfg_file)
+
+    assert len(config.source_imports) == 2
+    assert isinstance(config.source_imports[0], LocalPathImport)
+    assert isinstance(config.source_imports[1], GitPathImport)
+
+
+def test_load_config_with_empty_source_imports(tmp_path):
+    """An explicit empty source-imports list is accepted."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\n"
+        "source-imports: []\n",
+        encoding="utf-8",
+    )
+
+    config = load_workspace_config(cfg_file)
+
+    assert config.source_imports == []
+
+
+def test_error_file_not_found(tmp_path):
+    """Loading a nonexistent file raises WorkspaceConfigError."""
+    missing = tmp_path / "no-such-file.yaml"
+
+    with pytest.raises(WorkspaceConfigError, match="Cannot read workspace config"):
+        load_workspace_config(missing)
+
+
+def test_error_invalid_yaml_syntax(tmp_path):
+    """A file with invalid YAML raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text("build-directory: [\nbad yaml", encoding="utf-8")
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid YAML"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_missing_build_directory(tmp_path):
+    """Omitting build-directory raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text("source-imports: []\n", encoding="utf-8")
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_top_level_not_a_mapping(tmp_path):
+    """A YAML file whose top-level value is not a mapping raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text("- item1\n- item2\n", encoding="utf-8")
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_source_imports_not_a_list(tmp_path):
+    """source-imports must be a list; a scalar value raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\n"
+        "source-imports: not-a-list\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_import_both_local_and_git(tmp_path):
+    """Specifying both local-path and git-repository raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: conflict\n"
+        "    local-path: some/path\n"
+        "    git-repository: https://github.com/example/repo\n"
+        "    revision: main\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_import_neither_local_nor_git(tmp_path):
+    """An import entry with only a name (no local-path or git-repository) raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: incomplete\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_git_import_missing_revision(tmp_path):
+    """A git import without revision raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: external\n"
+        "    git-repository: https://github.com/example/repo\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_unknown_top_level_field(tmp_path):
+    """An unrecognised top-level key raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\n"
+        "unknown-field: oops\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
