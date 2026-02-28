@@ -85,13 +85,13 @@ TypeRef = Annotated[
 ]
 
 
-class Field(BaseModel):
+class FieldDef(BaseModel):
     """A named, typed data element in a type or interface definition."""
 
     name: str
     type: TypeRef
     description: str | None = None
-    schema: str | None = None
+    schema_ref: str | None = None
     filetype: str | None = None
 
 
@@ -99,4 +99,4 @@ class Field(BaseModel):
 ListTypeRef.model_rebuild()
 MapTypeRef.model_rebuild()
 OptionalTypeRef.model_rebuild()
-Field.model_rebuild()
+FieldDef.model_rebuild()

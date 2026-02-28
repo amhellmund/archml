@@ -128,15 +128,15 @@ class TestCache:
 
         compile_files([source], build, src)
         artifact = _artifact(build, src, source)
-        mtime_first = artifact.stat().st_mtime
+        content_first = artifact.read_text(encoding="utf-8")
 
         # Touch the source file to make it newer than the artifact.
-        _write(source, "component B {}", mtime_offset=0.0)  # mtime = now
+        _write(source, "component B {}", mtime_offset=2.0)  # mtime = 2s in the future
 
         compile_files([source], build, src)
-        mtime_second = artifact.stat().st_mtime
+        content_second = artifact.read_text(encoding="utf-8")
 
-        assert mtime_second > mtime_first  # artifact was rewritten
+        assert content_second != content_first  # artifact was rewritten with new content
 
     def test_stale_artifact_reads_updated_content(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
@@ -146,7 +146,7 @@ class TestCache:
 
         compile_files([source], build, src)
 
-        _write(source, "component NewComp {}", mtime_offset=0.0)  # now = newer than artifact
+        _write(source, "component NewComp {}", mtime_offset=2.0)  # 2s in future = newer than artifact
         result = compile_files([source], build, src)
 
         assert result["x"].components[0].name == "NewComp"

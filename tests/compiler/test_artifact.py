@@ -23,7 +23,7 @@ from archml.model.entities import (
 )
 from archml.model.types import (
     DirectoryTypeRef,
-    Field,
+    FieldDef,
     FileTypeRef,
     ListTypeRef,
     MapTypeRef,
@@ -89,7 +89,7 @@ class TestPrimitiveTypeRefs:
             types=[
                 TypeDef(
                     name="T",
-                    fields=[Field(name="f", type=PrimitiveTypeRef(primitive=primitive))],
+                    fields=[FieldDef(name="f", type=PrimitiveTypeRef(primitive=primitive))],
                 )
             ]
         )
@@ -103,7 +103,12 @@ class TestContainerTypeRefs:
             types=[
                 TypeDef(
                     name="T",
-                    fields=[Field(name="items", type=ListTypeRef(element_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)))],
+                    fields=[
+                        FieldDef(
+                            name="items",
+                            type=ListTypeRef(element_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
+                        )
+                    ],
                 )
             ]
         )
@@ -119,7 +124,7 @@ class TestContainerTypeRefs:
                 TypeDef(
                     name="T",
                     fields=[
-                        Field(
+                        FieldDef(
                             name="mapping",
                             type=MapTypeRef(
                                 key_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
@@ -141,7 +146,12 @@ class TestContainerTypeRefs:
             types=[
                 TypeDef(
                     name="T",
-                    fields=[Field(name="opt", type=OptionalTypeRef(inner_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)))],
+                    fields=[
+                        FieldDef(
+                            name="opt",
+                            type=OptionalTypeRef(inner_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
+                        )
+                    ],
                 )
             ]
         )
@@ -151,20 +161,12 @@ class TestContainerTypeRefs:
         assert isinstance(field_type.inner_type, PrimitiveTypeRef)
 
     def test_file_type_ref(self) -> None:
-        af = ArchFile(
-            interfaces=[
-                InterfaceDef(name="I", fields=[Field(name="f", type=FileTypeRef())])
-            ]
-        )
+        af = ArchFile(interfaces=[InterfaceDef(name="I", fields=[FieldDef(name="f", type=FileTypeRef())])])
         result = _roundtrip(af)
         assert isinstance(result.interfaces[0].fields[0].type, FileTypeRef)
 
     def test_directory_type_ref(self) -> None:
-        af = ArchFile(
-            interfaces=[
-                InterfaceDef(name="I", fields=[Field(name="d", type=DirectoryTypeRef())])
-            ]
-        )
+        af = ArchFile(interfaces=[InterfaceDef(name="I", fields=[FieldDef(name="d", type=DirectoryTypeRef())])])
         result = _roundtrip(af)
         assert isinstance(result.interfaces[0].fields[0].type, DirectoryTypeRef)
 
@@ -173,7 +175,7 @@ class TestContainerTypeRefs:
             types=[
                 TypeDef(
                     name="T",
-                    fields=[Field(name="item", type=NamedTypeRef(name="MyType"))],
+                    fields=[FieldDef(name="item", type=NamedTypeRef(name="MyType"))],
                 )
             ]
         )
@@ -188,7 +190,7 @@ class TestContainerTypeRefs:
                 TypeDef(
                     name="T",
                     fields=[
-                        Field(
+                        FieldDef(
                             name="nested",
                             type=MapTypeRef(
                                 key_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),

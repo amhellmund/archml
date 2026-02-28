@@ -149,8 +149,7 @@ def _compile_file(
             dep_source = source_root / (imp.source_path + ".archml")
             if not dep_source.exists():
                 raise CompilerError(
-                    f"Dependency '{imp.source_path}' of '{source_file}' not found"
-                    f" (expected '{dep_source}')"
+                    f"Dependency '{imp.source_path}' of '{source_file}' not found (expected '{dep_source}')"
                 )
             dep = _compile_file(dep_source, build_dir, source_root, compiled, in_progress)
             resolved_imports[imp.source_path] = dep

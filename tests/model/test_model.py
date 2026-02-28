@@ -10,7 +10,7 @@ from archml.model import (
     ConnectionEndpoint,
     DirectoryTypeRef,
     EnumDef,
-    Field,
+    FieldDef,
     FileTypeRef,
     ImportDeclaration,
     InterfaceDef,
@@ -28,7 +28,7 @@ from archml.model import (
 
 def test_primitive_field() -> None:
     """A field can reference a primitive type."""
-    f = Field(name="order_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING))
+    f = FieldDef(name="order_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING))
     assert f.name == "order_id"
     assert isinstance(f.type, PrimitiveTypeRef)
     assert f.type.primitive == PrimitiveType.STRING
@@ -56,39 +56,39 @@ def test_named_type_ref() -> None:
 
 def test_field_with_annotations() -> None:
     """A field can carry description and schema annotations."""
-    f = Field(
+    f = FieldDef(
         name="currency",
         type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
         description="ISO 4217 currency code.",
-        schema="Three-letter uppercase code, e.g. USD, EUR.",
+        schema_ref="Three-letter uppercase code, e.g. USD, EUR.",
     )
     assert f.description == "ISO 4217 currency code."
-    assert f.schema == "Three-letter uppercase code, e.g. USD, EUR."
+    assert f.schema_ref == "Three-letter uppercase code, e.g. USD, EUR."
     assert f.filetype is None
 
 
 def test_file_type_field() -> None:
     """A field can reference the File filesystem type with filetype and schema."""
-    f = Field(
+    f = FieldDef(
         name="report",
         type=FileTypeRef(),
         filetype="PDF",
-        schema="Monthly sales summary report.",
+        schema_ref="Monthly sales summary report.",
     )
     assert isinstance(f.type, FileTypeRef)
     assert f.filetype == "PDF"
-    assert f.schema == "Monthly sales summary report."
+    assert f.schema_ref == "Monthly sales summary report."
 
 
 def test_directory_type_field() -> None:
     """A field can reference the Directory filesystem type."""
-    f = Field(
+    f = FieldDef(
         name="artifact",
         type=DirectoryTypeRef(),
-        schema="Contains manifests/*.yaml, config/app.yaml",
+        schema_ref="Contains manifests/*.yaml, config/app.yaml",
     )
     assert isinstance(f.type, DirectoryTypeRef)
-    assert f.schema == "Contains manifests/*.yaml, config/app.yaml"
+    assert f.schema_ref == "Contains manifests/*.yaml, config/app.yaml"
 
 
 def test_enum_definition() -> None:
@@ -107,9 +107,9 @@ def test_type_definition() -> None:
     order_item = TypeDef(
         name="OrderItem",
         fields=[
-            Field(name="product_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
-            Field(name="quantity", type=PrimitiveTypeRef(primitive=PrimitiveType.INT)),
-            Field(name="unit_price", type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)),
+            FieldDef(name="product_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
+            FieldDef(name="quantity", type=PrimitiveTypeRef(primitive=PrimitiveType.INT)),
+            FieldDef(name="unit_price", type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)),
         ],
     )
     assert order_item.name == "OrderItem"
@@ -124,13 +124,13 @@ def test_interface_definition() -> None:
         title="Order Creation Request",
         description="Payload for submitting a new customer order.",
         fields=[
-            Field(name="order_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
-            Field(name="customer_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
-            Field(
+            FieldDef(name="order_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
+            FieldDef(name="customer_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
+            FieldDef(
                 name="items",
                 type=ListTypeRef(element_type=NamedTypeRef(name="OrderItem")),
             ),
-            Field(name="total_amount", type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)),
+            FieldDef(name="total_amount", type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)),
         ],
     )
     assert iface.name == "OrderRequest"
@@ -314,11 +314,11 @@ def test_arch_file_composition() -> None:
             TypeDef(
                 name="OrderItem",
                 fields=[
-                    Field(
+                    FieldDef(
                         name="product_id",
                         type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
                     ),
-                    Field(
+                    FieldDef(
                         name="quantity",
                         type=PrimitiveTypeRef(primitive=PrimitiveType.INT),
                     ),
@@ -329,7 +329,7 @@ def test_arch_file_composition() -> None:
             InterfaceDef(
                 name="OrderRequest",
                 fields=[
-                    Field(
+                    FieldDef(
                         name="order_id",
                         type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
                     )

@@ -12,7 +12,7 @@ from archml.model.entities import (
 )
 from archml.model.types import (
     DirectoryTypeRef,
-    Field,
+    FieldDef,
     FileTypeRef,
     ListTypeRef,
     MapTypeRef,
@@ -389,7 +389,7 @@ interface OrderRequest {
         result = _parse(source)
         field = result.interfaces[0].fields[0]
         assert field.description == "ISO 4217 currency code."
-        assert field.schema == "Three-letter uppercase code, e.g. USD, EUR."
+        assert field.schema_ref == "Three-letter uppercase code, e.g. USD, EUR."
 
     def test_interface_with_all_attributes(self) -> None:
         source = """\
@@ -432,7 +432,7 @@ interface OrderRequest @v2 {
 
 
 class TestFieldTypeReferences:
-    def _parse_field_type(self, type_str: str) -> Field:
+    def _parse_field_type(self, type_str: str) -> FieldDef:
         """Helper: parse a single field declaration inside a type."""
         result = _parse(f"type T {{ field x: {type_str} }}")
         return result.types[0].fields[0]
@@ -542,7 +542,7 @@ class TestFieldTypeReferences:
 
 
 class TestFieldAnnotations:
-    def _parse_field(self, field_source: str) -> Field:
+    def _parse_field(self, field_source: str) -> FieldDef:
         result = _parse(f"type T {{ {field_source} }}")
         return result.types[0].fields[0]
 
@@ -552,7 +552,7 @@ class TestFieldAnnotations:
 
     def test_field_without_annotation_has_no_schema(self) -> None:
         f = self._parse_field("field x: String")
-        assert f.schema is None
+        assert f.schema_ref is None
 
     def test_field_without_annotation_has_no_filetype(self) -> None:
         f = self._parse_field("field x: String")
@@ -565,7 +565,7 @@ class TestFieldAnnotations:
     def test_field_with_schema(self) -> None:
         source = 'field code: String { schema = "Three-letter ISO code." }'
         f = self._parse_field(source)
-        assert f.schema == "Three-letter ISO code."
+        assert f.schema_ref == "Three-letter ISO code."
 
     def test_field_with_filetype(self) -> None:
         f = self._parse_field('field report: File { filetype = "PDF" }')
@@ -576,26 +576,26 @@ class TestFieldAnnotations:
         source = 'field currency: String { description = "Currency code." schema = "e.g. USD." }'
         f = self._parse_field(source)
         assert f.description == "Currency code."
-        assert f.schema == "e.g. USD."
+        assert f.schema_ref == "e.g. USD."
 
     def test_file_field_with_filetype_and_schema(self) -> None:
         source = 'field config: File { filetype = "YAML" schema = "Top-level keys: server." }'
         f = self._parse_field(source)
         assert isinstance(f.type, FileTypeRef)
         assert f.filetype == "YAML"
-        assert f.schema == "Top-level keys: server."
+        assert f.schema_ref == "Top-level keys: server."
 
     def test_directory_field_with_schema(self) -> None:
         source = 'field artifact: Directory { schema = "Contains manifests/*.yaml" }'
         f = self._parse_field(source)
         assert isinstance(f.type, DirectoryTypeRef)
-        assert f.schema == "Contains manifests/*.yaml"
+        assert f.schema_ref == "Contains manifests/*.yaml"
 
     def test_all_field_annotations(self) -> None:
         source = 'field report: File { filetype = "PDF" schema = "Monthly report." description = "Report file." }'
         f = self._parse_field(source)
         assert f.filetype == "PDF"
-        assert f.schema == "Monthly report."
+        assert f.schema_ref == "Monthly report."
         assert f.description == "Report file."
 
 
@@ -1252,7 +1252,7 @@ interface ReportOutput {
         field = report.fields[0]
         assert isinstance(field.type, FileTypeRef)
         assert field.filetype == "PDF"
-        assert "Monthly sales summary" in field.schema  # type: ignore[operator]
+        assert "Monthly sales summary" in field.schema_ref  # type: ignore[operator]
 
     def test_complete_spec_example_order_service_component(self) -> None:
         """Parse the components/order_service.archml portion."""
@@ -1655,7 +1655,7 @@ type Config {
         field = t.fields[0]
         assert isinstance(field.type, FileTypeRef)
         assert field.filetype == "YAML"
-        assert "server" in field.schema  # type: ignore[operator]
+        assert "server" in field.schema_ref  # type: ignore[operator]
 
     def test_type_with_directory_field(self) -> None:
         source = """\
@@ -1668,7 +1668,7 @@ type Artifact {
         result = _parse(source)
         field = result.types[0].fields[0]
         assert isinstance(field.type, DirectoryTypeRef)
-        assert "manifests" in field.schema  # type: ignore[operator]
+        assert "manifests" in field.schema_ref  # type: ignore[operator]
 
     def test_enum_values_preserve_order(self) -> None:
         source = "enum Color { Red Green Blue }"
@@ -1799,4 +1799,4 @@ interface AllPrimitives {
         result = _parse(source)
         field = result.interfaces[0].fields[0]
         assert field.description is None
-        assert field.schema is None
+        assert field.schema_ref is None

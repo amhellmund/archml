@@ -8,7 +8,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 from pydantic import Field as _Field
 
-from archml.model.types import Field
+from archml.model.types import FieldDef
 
 # ###############
 # Public Interface
@@ -36,7 +36,7 @@ class TypeDef(BaseModel):
     """A reusable composite data type definition."""
 
     name: str
-    fields: list[Field] = _Field(default_factory=list)
+    fields: list[FieldDef] = _Field(default_factory=list)
     title: str | None = None
     description: str | None = None
     tags: list[str] = _Field(default_factory=list)
@@ -47,7 +47,7 @@ class InterfaceDef(BaseModel):
 
     name: str
     version: str | None = None
-    fields: list[Field] = _Field(default_factory=list)
+    fields: list[FieldDef] = _Field(default_factory=list)
     title: str | None = None
     description: str | None = None
     tags: list[str] = _Field(default_factory=list)
