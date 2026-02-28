@@ -5,8 +5,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum
+from typing import Annotated, Literal
+
+from pydantic import BaseModel
+from pydantic import Field as _Field
 
 # ###############
 # Public Interface
@@ -26,58 +29,63 @@ class PrimitiveType(Enum):
     DATETIME = "Datetime"
 
 
-@dataclass
-class PrimitiveTypeRef:
+class PrimitiveTypeRef(BaseModel):
     """Reference to a primitive type."""
 
+    kind: Literal["primitive"] = "primitive"
     primitive: PrimitiveType
 
 
-@dataclass
-class FileTypeRef:
+class FileTypeRef(BaseModel):
     """Reference to the File filesystem type."""
 
+    kind: Literal["file"] = "file"
 
-@dataclass
-class DirectoryTypeRef:
+
+class DirectoryTypeRef(BaseModel):
     """Reference to the Directory filesystem type."""
 
+    kind: Literal["directory"] = "directory"
 
-@dataclass
-class ListTypeRef:
+
+class ListTypeRef(BaseModel):
     """Reference to a parameterized List<T> type."""
 
+    kind: Literal["list"] = "list"
     element_type: TypeRef
 
 
-@dataclass
-class MapTypeRef:
+class MapTypeRef(BaseModel):
     """Reference to a parameterized Map<K, V> type."""
 
+    kind: Literal["map"] = "map"
     key_type: TypeRef
     value_type: TypeRef
 
 
-@dataclass
-class OptionalTypeRef:
+class OptionalTypeRef(BaseModel):
     """Reference to a parameterized Optional<T> type."""
 
+    kind: Literal["optional"] = "optional"
     inner_type: TypeRef
 
 
-@dataclass
-class NamedTypeRef:
+class NamedTypeRef(BaseModel):
     """Reference to a named custom type, enum, or interface."""
 
+    kind: Literal["named"] = "named"
     name: str
 
 
 # A field type reference — one of the built-in, container, or named types.
-TypeRef = PrimitiveTypeRef | FileTypeRef | DirectoryTypeRef | ListTypeRef | MapTypeRef | OptionalTypeRef | NamedTypeRef
+# The `kind` discriminator field enables fast, unambiguous deserialization.
+TypeRef = Annotated[
+    PrimitiveTypeRef | FileTypeRef | DirectoryTypeRef | ListTypeRef | MapTypeRef | OptionalTypeRef | NamedTypeRef,
+    _Field(discriminator="kind"),
+]
 
 
-@dataclass
-class Field:
+class Field(BaseModel):
     """A named, typed data element in a type or interface definition."""
 
     name: str
@@ -85,3 +93,10 @@ class Field:
     description: str | None = None
     schema: str | None = None
     filetype: str | None = None
+
+
+# Resolve forward references for models that use TypeRef.
+ListTypeRef.model_rebuild()
+MapTypeRef.model_rebuild()
+OptionalTypeRef.model_rebuild()
+Field.model_rebuild()

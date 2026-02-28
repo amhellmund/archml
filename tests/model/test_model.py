@@ -28,7 +28,7 @@ from archml.model import (
 
 def test_primitive_field() -> None:
     """A field can reference a primitive type."""
-    f = Field(name="order_id", type=PrimitiveTypeRef(PrimitiveType.STRING))
+    f = Field(name="order_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING))
     assert f.name == "order_id"
     assert isinstance(f.type, PrimitiveTypeRef)
     assert f.type.primitive == PrimitiveType.STRING
@@ -36,16 +36,16 @@ def test_primitive_field() -> None:
 
 def test_container_type_refs() -> None:
     """List, Map, and Optional type refs wrap inner type refs."""
-    list_ref = ListTypeRef(element_type=PrimitiveTypeRef(PrimitiveType.INT))
+    list_ref = ListTypeRef(element_type=PrimitiveTypeRef(primitive=PrimitiveType.INT))
     map_ref = MapTypeRef(
-        key_type=PrimitiveTypeRef(PrimitiveType.STRING),
-        value_type=PrimitiveTypeRef(PrimitiveType.DECIMAL),
+        key_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
+        value_type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL),
     )
-    optional_ref = OptionalTypeRef(inner_type=PrimitiveTypeRef(PrimitiveType.STRING))
+    optional_ref = OptionalTypeRef(inner_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING))
 
-    assert list_ref.element_type == PrimitiveTypeRef(PrimitiveType.INT)
-    assert map_ref.key_type == PrimitiveTypeRef(PrimitiveType.STRING)
-    assert optional_ref.inner_type == PrimitiveTypeRef(PrimitiveType.STRING)
+    assert list_ref.element_type == PrimitiveTypeRef(primitive=PrimitiveType.INT)
+    assert map_ref.key_type == PrimitiveTypeRef(primitive=PrimitiveType.STRING)
+    assert optional_ref.inner_type == PrimitiveTypeRef(primitive=PrimitiveType.STRING)
 
 
 def test_named_type_ref() -> None:
@@ -58,7 +58,7 @@ def test_field_with_annotations() -> None:
     """A field can carry description and schema annotations."""
     f = Field(
         name="currency",
-        type=PrimitiveTypeRef(PrimitiveType.STRING),
+        type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
         description="ISO 4217 currency code.",
         schema="Three-letter uppercase code, e.g. USD, EUR.",
     )
@@ -107,9 +107,9 @@ def test_type_definition() -> None:
     order_item = TypeDef(
         name="OrderItem",
         fields=[
-            Field(name="product_id", type=PrimitiveTypeRef(PrimitiveType.STRING)),
-            Field(name="quantity", type=PrimitiveTypeRef(PrimitiveType.INT)),
-            Field(name="unit_price", type=PrimitiveTypeRef(PrimitiveType.DECIMAL)),
+            Field(name="product_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
+            Field(name="quantity", type=PrimitiveTypeRef(primitive=PrimitiveType.INT)),
+            Field(name="unit_price", type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)),
         ],
     )
     assert order_item.name == "OrderItem"
@@ -124,13 +124,13 @@ def test_interface_definition() -> None:
         title="Order Creation Request",
         description="Payload for submitting a new customer order.",
         fields=[
-            Field(name="order_id", type=PrimitiveTypeRef(PrimitiveType.STRING)),
-            Field(name="customer_id", type=PrimitiveTypeRef(PrimitiveType.STRING)),
+            Field(name="order_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
+            Field(name="customer_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
             Field(
                 name="items",
-                type=ListTypeRef(element_type=NamedTypeRef("OrderItem")),
+                type=ListTypeRef(element_type=NamedTypeRef(name="OrderItem")),
             ),
-            Field(name="total_amount", type=PrimitiveTypeRef(PrimitiveType.DECIMAL)),
+            Field(name="total_amount", type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)),
         ],
     )
     assert iface.name == "OrderRequest"
@@ -155,10 +155,10 @@ def test_component_with_requires_and_provides() -> None:
         title="Order Service",
         description="Accepts and validates customer orders.",
         requires=[
-            InterfaceRef("PaymentRequest"),
-            InterfaceRef("InventoryCheck"),
+            InterfaceRef(name="PaymentRequest"),
+            InterfaceRef(name="InventoryCheck"),
         ],
-        provides=[InterfaceRef("OrderConfirmation")],
+        provides=[InterfaceRef(name="OrderConfirmation")],
     )
     assert svc.name == "OrderService"
     assert len(svc.requires) == 2
@@ -172,8 +172,8 @@ def test_component_with_tags() -> None:
     gw = Component(
         name="PaymentGateway",
         tags=["critical", "pci-scope"],
-        requires=[InterfaceRef("PaymentRequest")],
-        provides=[InterfaceRef("PaymentResult")],
+        requires=[InterfaceRef(name="PaymentRequest")],
+        provides=[InterfaceRef(name="PaymentResult")],
     )
     assert "critical" in gw.tags
     assert "pci-scope" in gw.tags
@@ -190,7 +190,7 @@ def test_connection() -> None:
     conn = Connection(
         source=ConnectionEndpoint(entity="OrderService"),
         target=ConnectionEndpoint(entity="PaymentGateway"),
-        interface=InterfaceRef("PaymentRequest"),
+        interface=InterfaceRef(name="PaymentRequest"),
         protocol="gRPC",
         is_async=True,
         description="Initiates payment processing.",
@@ -206,18 +206,18 @@ def test_nested_component() -> None:
     """A Component can contain sub-components with internal connections."""
     validator = Component(
         name="Validator",
-        requires=[InterfaceRef("OrderRequest")],
-        provides=[InterfaceRef("ValidationResult")],
+        requires=[InterfaceRef(name="OrderRequest")],
+        provides=[InterfaceRef(name="ValidationResult")],
     )
     processor = Component(
         name="Processor",
-        requires=[InterfaceRef("ValidationResult"), InterfaceRef("PaymentRequest")],
-        provides=[InterfaceRef("OrderConfirmation")],
+        requires=[InterfaceRef(name="ValidationResult"), InterfaceRef(name="PaymentRequest")],
+        provides=[InterfaceRef(name="OrderConfirmation")],
     )
     conn = Connection(
-        source=ConnectionEndpoint("Validator"),
-        target=ConnectionEndpoint("Processor"),
-        interface=InterfaceRef("ValidationResult"),
+        source=ConnectionEndpoint(entity="Validator"),
+        target=ConnectionEndpoint(entity="Processor"),
+        interface=InterfaceRef(name="ValidationResult"),
     )
     order_svc = Component(
         name="OrderService",
@@ -233,14 +233,14 @@ def test_system_with_components_and_connections() -> None:
     """A System groups components and declares connections between them."""
     order_svc = Component(
         name="OrderService",
-        requires=[InterfaceRef("PaymentRequest"), InterfaceRef("InventoryCheck")],
-        provides=[InterfaceRef("OrderConfirmation")],
+        requires=[InterfaceRef(name="PaymentRequest"), InterfaceRef(name="InventoryCheck")],
+        provides=[InterfaceRef(name="OrderConfirmation")],
     )
     payment_gw = Component(
         name="PaymentGateway",
         tags=["critical", "pci-scope"],
-        requires=[InterfaceRef("PaymentRequest")],
-        provides=[InterfaceRef("PaymentResult")],
+        requires=[InterfaceRef(name="PaymentRequest")],
+        provides=[InterfaceRef(name="PaymentResult")],
     )
     ecommerce = System(
         name="ECommerce",
@@ -248,9 +248,9 @@ def test_system_with_components_and_connections() -> None:
         components=[order_svc, payment_gw],
         connections=[
             Connection(
-                source=ConnectionEndpoint("OrderService"),
-                target=ConnectionEndpoint("PaymentGateway"),
-                interface=InterfaceRef("PaymentRequest"),
+                source=ConnectionEndpoint(entity="OrderService"),
+                target=ConnectionEndpoint(entity="PaymentGateway"),
+                interface=InterfaceRef(name="PaymentRequest"),
             )
         ],
     )
@@ -269,9 +269,9 @@ def test_nested_systems() -> None:
         systems=[ecommerce, warehouse],
         connections=[
             Connection(
-                source=ConnectionEndpoint("ECommerce"),
-                target=ConnectionEndpoint("Warehouse"),
-                interface=InterfaceRef("InventorySync"),
+                source=ConnectionEndpoint(entity="ECommerce"),
+                target=ConnectionEndpoint(entity="Warehouse"),
+                interface=InterfaceRef(name="InventorySync"),
             )
         ],
     )
@@ -316,11 +316,11 @@ def test_arch_file_composition() -> None:
                 fields=[
                     Field(
                         name="product_id",
-                        type=PrimitiveTypeRef(PrimitiveType.STRING),
+                        type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
                     ),
                     Field(
                         name="quantity",
-                        type=PrimitiveTypeRef(PrimitiveType.INT),
+                        type=PrimitiveTypeRef(primitive=PrimitiveType.INT),
                     ),
                 ],
             )
@@ -331,7 +331,7 @@ def test_arch_file_composition() -> None:
                 fields=[
                     Field(
                         name="order_id",
-                        type=PrimitiveTypeRef(PrimitiveType.STRING),
+                        type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
                     )
                 ],
             )
@@ -339,8 +339,8 @@ def test_arch_file_composition() -> None:
         components=[
             Component(
                 name="OrderService",
-                requires=[InterfaceRef("OrderRequest")],
-                provides=[InterfaceRef("OrderConfirmation")],
+                requires=[InterfaceRef(name="OrderRequest")],
+                provides=[InterfaceRef(name="OrderConfirmation")],
             )
         ],
         systems=[

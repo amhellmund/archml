@@ -444,31 +444,31 @@ class TestFieldTypeReferences:
 
     def test_primitive_int(self) -> None:
         f = self._parse_field_type("Int")
-        assert f.type == PrimitiveTypeRef(PrimitiveType.INT)
+        assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.INT)
 
     def test_primitive_float(self) -> None:
         f = self._parse_field_type("Float")
-        assert f.type == PrimitiveTypeRef(PrimitiveType.FLOAT)
+        assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.FLOAT)
 
     def test_primitive_decimal(self) -> None:
         f = self._parse_field_type("Decimal")
-        assert f.type == PrimitiveTypeRef(PrimitiveType.DECIMAL)
+        assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)
 
     def test_primitive_bool(self) -> None:
         f = self._parse_field_type("Bool")
-        assert f.type == PrimitiveTypeRef(PrimitiveType.BOOL)
+        assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.BOOL)
 
     def test_primitive_bytes(self) -> None:
         f = self._parse_field_type("Bytes")
-        assert f.type == PrimitiveTypeRef(PrimitiveType.BYTES)
+        assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.BYTES)
 
     def test_primitive_timestamp(self) -> None:
         f = self._parse_field_type("Timestamp")
-        assert f.type == PrimitiveTypeRef(PrimitiveType.TIMESTAMP)
+        assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.TIMESTAMP)
 
     def test_primitive_datetime(self) -> None:
         f = self._parse_field_type("Datetime")
-        assert f.type == PrimitiveTypeRef(PrimitiveType.DATETIME)
+        assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.DATETIME)
 
     def test_file_type(self) -> None:
         f = self._parse_field_type("File")

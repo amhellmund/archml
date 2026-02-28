@@ -1,0 +1,37 @@
+// A self-contained .archml file with no external imports.
+
+enum Status {
+    Active
+    Inactive
+}
+
+type Config {
+    field timeout: Int
+    field enabled: Bool
+}
+
+interface DataRequest {
+    field id: String
+    field config: Config
+}
+
+interface DataResponse {
+    field id: String
+    field status: Status
+}
+
+component Worker {
+    requires DataRequest
+    provides DataResponse
+}
+
+system SimpleSystem {
+    component Client {
+        requires DataRequest
+    }
+    component WorkerInst {
+        requires DataRequest
+        provides DataResponse
+    }
+    connect Client -> WorkerInst by DataRequest
+}
