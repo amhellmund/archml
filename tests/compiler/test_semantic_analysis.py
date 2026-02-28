@@ -15,7 +15,7 @@ from archml.model.entities import (
     InterfaceRef,
     System,
 )
-from archml.model.types import Field, ListTypeRef, NamedTypeRef
+from archml.model.types import FieldDef, ListTypeRef, NamedTypeRef
 
 # ###############
 # Test Helpers
@@ -953,7 +953,7 @@ class TestDirectModelConstruction:
                 InterfaceDef(
                     name="Batch",
                     fields=[
-                        Field(
+                        FieldDef(
                             name="items",
                             type=ListTypeRef(element_type=NamedTypeRef(name="Item")),
                         )
@@ -970,7 +970,7 @@ class TestDirectModelConstruction:
             interfaces=[
                 InterfaceDef(
                     name="Batch",
-                    fields=[Field(name="items", type=NamedTypeRef(name="UnknownType"))],
+                    fields=[FieldDef(name="items", type=NamedTypeRef(name="UnknownType"))],
                 )
             ],
         )
