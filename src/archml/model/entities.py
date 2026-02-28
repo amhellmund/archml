@@ -51,6 +51,7 @@ class InterfaceDef(BaseModel):
     title: str | None = None
     description: str | None = None
     tags: list[str] = _Field(default_factory=list)
+    qualified_name: str = ""
 
 
 class ConnectionEndpoint(BaseModel):
@@ -82,6 +83,7 @@ class Component(BaseModel):
     components: list[Component] = _Field(default_factory=list)
     connections: list[Connection] = _Field(default_factory=list)
     is_external: bool = False
+    qualified_name: str = ""
 
 
 class System(BaseModel):
@@ -97,6 +99,7 @@ class System(BaseModel):
     systems: list[System] = _Field(default_factory=list)
     connections: list[Connection] = _Field(default_factory=list)
     is_external: bool = False
+    qualified_name: str = ""
 
 
 class ImportDeclaration(BaseModel):
