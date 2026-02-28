@@ -21,7 +21,7 @@ from archml.model.entities import (
 )
 from archml.model.types import (
     DirectoryTypeRef,
-    Field,
+    FieldDef,
     FileTypeRef,
     ListTypeRef,
     MapTypeRef,
@@ -537,20 +537,20 @@ class _Parser:
     # Field declarations
     # ------------------------------------------------------------------
 
-    def _parse_field(self) -> Field:
+    def _parse_field(self) -> FieldDef:
         """Parse: field <name>: <type> [{ description=.. schema=.. filetype=.. }]"""
         self._expect(TokenType.FIELD)
         name_tok = self._expect_name_token()
         self._expect(TokenType.COLON)
         field_type = self._parse_type_ref()
-        f = Field(name=name_tok.value, type=field_type)
+        f = FieldDef(name=name_tok.value, type=field_type)
         if self._check(TokenType.LBRACE):
             self._advance()  # consume {
             while not self._check(TokenType.RBRACE, TokenType.EOF):
                 if self._check(TokenType.DESCRIPTION):
                     f.description = self._parse_string_attr(TokenType.DESCRIPTION)
                 elif self._check(TokenType.SCHEMA):
-                    f.schema = self._parse_string_attr(TokenType.SCHEMA)
+                    f.schema_ref = self._parse_string_attr(TokenType.SCHEMA)
                 elif self._check(TokenType.FILETYPE):
                     f.filetype = self._parse_string_attr(TokenType.FILETYPE)
                 else:

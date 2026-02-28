@@ -34,10 +34,7 @@ def test_load_config_with_local_path_import(tmp_path):
     """A source import with local-path is parsed as LocalPathImport."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
     cfg_file.write_text(
-        "build-directory: out\n"
-        "source-imports:\n"
-        "  - name: common\n"
-        "    local-path: src/common\n",
+        "build-directory: out\nsource-imports:\n  - name: common\n    local-path: src/common\n",
         encoding="utf-8",
     )
 
@@ -98,8 +95,7 @@ def test_load_config_with_empty_source_imports(tmp_path):
     """An explicit empty source-imports list is accepted."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
     cfg_file.write_text(
-        "build-directory: build\n"
-        "source-imports: []\n",
+        "build-directory: build\nsource-imports: []\n",
         encoding="utf-8",
     )
 
@@ -147,8 +143,7 @@ def test_error_source_imports_not_a_list(tmp_path):
     """source-imports must be a list; a scalar value raises WorkspaceConfigError."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
     cfg_file.write_text(
-        "build-directory: build\n"
-        "source-imports: not-a-list\n",
+        "build-directory: build\nsource-imports: not-a-list\n",
         encoding="utf-8",
     )
 
@@ -177,9 +172,7 @@ def test_error_import_neither_local_nor_git(tmp_path):
     """An import entry with only a name (no local-path or git-repository) raises WorkspaceConfigError."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
     cfg_file.write_text(
-        "build-directory: build\n"
-        "source-imports:\n"
-        "  - name: incomplete\n",
+        "build-directory: build\nsource-imports:\n  - name: incomplete\n",
         encoding="utf-8",
     )
 
@@ -206,8 +199,7 @@ def test_error_unknown_top_level_field(tmp_path):
     """An unrecognised top-level key raises WorkspaceConfigError."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
     cfg_file.write_text(
-        "build-directory: build\n"
-        "unknown-field: oops\n",
+        "build-directory: build\nunknown-field: oops\n",
         encoding="utf-8",
     )
 

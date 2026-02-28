@@ -17,7 +17,7 @@ from archml.model.entities import (
 )
 from archml.model.types import (
     DirectoryTypeRef,
-    Field,
+    FieldDef,
     FileTypeRef,
     ListTypeRef,
     MapTypeRef,
@@ -39,7 +39,7 @@ __all__ = [
     "OptionalTypeRef",
     "NamedTypeRef",
     "TypeRef",
-    "Field",
+    "FieldDef",
     # Entities
     "InterfaceRef",
     "EnumDef",
