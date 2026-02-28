@@ -169,9 +169,7 @@ def _check_isolated_entities(arch_file: ArchFile) -> list[ValidationWarning]:
         if not component.requires and not component.provides:
             label = _entity_label(component.name, component.qualified_name)
             warnings.append(
-                ValidationWarning(
-                    message=f"Component '{label}' has no requires or provides interfaces (isolated)."
-                )
+                ValidationWarning(message=f"Component '{label}' has no requires or provides interfaces (isolated).")
             )
         for sub in component.components:
             _check_component(sub)
@@ -180,9 +178,7 @@ def _check_isolated_entities(arch_file: ArchFile) -> list[ValidationWarning]:
         if not system.requires and not system.provides:
             label = _entity_label(system.name, system.qualified_name)
             warnings.append(
-                ValidationWarning(
-                    message=f"System '{label}' has no requires or provides interfaces (isolated)."
-                )
+                ValidationWarning(message=f"System '{label}' has no requires or provides interfaces (isolated).")
             )
         for sub in system.systems:
             _check_system(sub)
@@ -210,11 +206,7 @@ def _check_connection_cycles(arch_file: ArchFile) -> list[ValidationError]:
         cycle = _detect_cycle(graph)
         if cycle is not None:
             cycle_str = " -> ".join(cycle)
-            errors.append(
-                ValidationError(
-                    message=f"Connection cycle detected in '{scope_label}': {cycle_str}."
-                )
-            )
+            errors.append(ValidationError(message=f"Connection cycle detected in '{scope_label}': {cycle_str}."))
 
     def _process_component(component: Component) -> None:
         label = _entity_label(component.name, component.qualified_name)
@@ -245,10 +237,7 @@ def _collect_named_refs_from_type(type_ref: TypeRef) -> list[str]:
     if isinstance(type_ref, ListTypeRef):
         return _collect_named_refs_from_type(type_ref.element_type)
     if isinstance(type_ref, MapTypeRef):
-        return (
-            _collect_named_refs_from_type(type_ref.key_type)
-            + _collect_named_refs_from_type(type_ref.value_type)
-        )
+        return _collect_named_refs_from_type(type_ref.key_type) + _collect_named_refs_from_type(type_ref.value_type)
     if isinstance(type_ref, OptionalTypeRef):
         return _collect_named_refs_from_type(type_ref.inner_type)
     return []
@@ -281,11 +270,7 @@ def _check_type_cycles(arch_file: ArchFile) -> list[ValidationError]:
     cycle = _detect_cycle(graph)
     if cycle is not None:
         cycle_str = " -> ".join(cycle)
-        errors.append(
-            ValidationError(
-                message=f"Recursive type definition cycle detected: {cycle_str}."
-            )
-        )
+        errors.append(ValidationError(message=f"Recursive type definition cycle detected: {cycle_str}."))
 
     return errors
 
@@ -315,8 +300,7 @@ def _check_interface_propagation(arch_file: ArchFile) -> list[ValidationError]:
                     errors.append(
                         ValidationError(
                             message=(
-                                f"Component '{label}' provides interface '{ref.name}' "
-                                f"but no sub-component provides it."
+                                f"Component '{label}' provides interface '{ref.name}' but no sub-component provides it."
                             )
                         )
                     )
@@ -325,8 +309,7 @@ def _check_interface_propagation(arch_file: ArchFile) -> list[ValidationError]:
                     errors.append(
                         ValidationError(
                             message=(
-                                f"Component '{label}' requires interface '{ref.name}' "
-                                f"but no sub-component requires it."
+                                f"Component '{label}' requires interface '{ref.name}' but no sub-component requires it."
                             )
                         )
                     )
@@ -343,20 +326,14 @@ def _check_interface_propagation(arch_file: ArchFile) -> list[ValidationError]:
                 if _iface_key(ref) not in member_provides:
                     errors.append(
                         ValidationError(
-                            message=(
-                                f"System '{label}' provides interface '{ref.name}' "
-                                f"but no member provides it."
-                            )
+                            message=(f"System '{label}' provides interface '{ref.name}' but no member provides it.")
                         )
                     )
             for ref in system.requires:
                 if _iface_key(ref) not in member_requires:
                     errors.append(
                         ValidationError(
-                            message=(
-                                f"System '{label}' requires interface '{ref.name}' "
-                                f"but no member requires it."
-                            )
+                            message=(f"System '{label}' requires interface '{ref.name}' but no member requires it.")
                         )
                     )
         for sub in system.systems:

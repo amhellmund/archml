@@ -3,8 +3,6 @@
 
 """Unit tests for the ArchML business validation checks."""
 
-import pytest
-
 from archml.model.entities import (
     ArchFile,
     Component,
@@ -25,9 +23,7 @@ from archml.model.types import (
     PrimitiveTypeRef,
 )
 from archml.validation.checks import (
-    ValidationError,
     ValidationResult,
-    ValidationWarning,
     validate,
 )
 
@@ -98,17 +94,13 @@ def _assert_clean(arch_file: ArchFile) -> None:
 def _assert_warning(arch_file: ArchFile, fragment: str) -> None:
     result = validate(arch_file)
     msgs = _warnings(result)
-    assert any(fragment in m for m in msgs), (
-        f"Expected warning containing {fragment!r} but got: {msgs}"
-    )
+    assert any(fragment in m for m in msgs), f"Expected warning containing {fragment!r} but got: {msgs}"
 
 
 def _assert_error(arch_file: ArchFile, fragment: str) -> None:
     result = validate(arch_file)
     msgs = _errors(result)
-    assert any(fragment in m for m in msgs), (
-        f"Expected error containing {fragment!r} but got: {msgs}"
-    )
+    assert any(fragment in m for m in msgs), f"Expected error containing {fragment!r} but got: {msgs}"
 
 
 def _assert_no_warning(arch_file: ArchFile) -> None:
@@ -143,27 +135,19 @@ class TestIsolatedEntities:
         _assert_warning(arch, "isolated")
 
     def test_system_with_provides_no_warning(self) -> None:
-        arch = ArchFile(
-            systems=[System(name="S", provides=[_iref("I")])]
-        )
+        arch = ArchFile(systems=[System(name="S", provides=[_iref("I")])])
         _assert_no_warning(arch)
 
     def test_system_with_requires_no_warning(self) -> None:
-        arch = ArchFile(
-            systems=[System(name="S", requires=[_iref("I")])]
-        )
+        arch = ArchFile(systems=[System(name="S", requires=[_iref("I")])])
         _assert_no_warning(arch)
 
     def test_component_with_provides_no_warning(self) -> None:
-        arch = ArchFile(
-            components=[Component(name="C", provides=[_iref("I")])]
-        )
+        arch = ArchFile(components=[Component(name="C", provides=[_iref("I")])])
         _assert_no_warning(arch)
 
     def test_component_with_requires_no_warning(self) -> None:
-        arch = ArchFile(
-            components=[Component(name="C", requires=[_iref("I")])]
-        )
+        arch = ArchFile(components=[Component(name="C", requires=[_iref("I")])])
         _assert_no_warning(arch)
 
     def test_nested_isolated_subsystem_warns(self) -> None:
@@ -189,9 +173,7 @@ class TestIsolatedEntities:
         _assert_warning(arch, "Component 'Inner'")
 
     def test_system_with_requires_and_provides_no_warning(self) -> None:
-        arch = ArchFile(
-            systems=[System(name="S", requires=[_iref("A")], provides=[_iref("B")])]
-        )
+        arch = ArchFile(systems=[System(name="S", requires=[_iref("A")], provides=[_iref("B")])])
         _assert_no_warning(arch)
 
     def test_qualified_name_used_in_warning_when_set(self) -> None:
@@ -228,11 +210,7 @@ class TestConnectionCycles:
     """Check 2: Cycles in the connection graph within any scope are errors."""
 
     def test_no_connections_no_error(self) -> None:
-        arch = ArchFile(
-            systems=[
-                System(name="S", provides=[_iref("I")])
-            ]
-        )
+        arch = ArchFile(systems=[System(name="S", provides=[_iref("I")])])
         _assert_no_error(arch)
 
     def test_direct_cycle_in_system(self) -> None:
@@ -362,16 +340,12 @@ class TestTypeCycles:
         _assert_clean(ArchFile())
 
     def test_types_with_only_primitives_no_error(self) -> None:
-        arch = ArchFile(
-            types=[TypeDef(name="Address", fields=[_pfield("street"), _pfield("city")])]
-        )
+        arch = ArchFile(types=[TypeDef(name="Address", fields=[_pfield("street"), _pfield("city")])])
         _assert_no_error(arch)
 
     def test_direct_self_reference_type(self) -> None:
         # type Node { next: Node }
-        arch = ArchFile(
-            types=[TypeDef(name="Node", fields=[_nfield("next", "Node")])]
-        )
+        arch = ArchFile(types=[TypeDef(name="Node", fields=[_nfield("next", "Node")])])
         _assert_error(arch, "Recursive type definition cycle")
         _assert_error(arch, "Node")
 
@@ -409,17 +383,13 @@ class TestTypeCycles:
 
     def test_cycle_through_list_type(self) -> None:
         # type Tree { children: List<Tree> }
-        arch = ArchFile(
-            types=[TypeDef(name="Tree", fields=[_lfield("children", "Tree")])]
-        )
+        arch = ArchFile(types=[TypeDef(name="Tree", fields=[_lfield("children", "Tree")])])
         _assert_error(arch, "Recursive type definition cycle")
         _assert_error(arch, "Tree")
 
     def test_cycle_through_optional_type(self) -> None:
         # type Node { next: Optional<Node> }
-        arch = ArchFile(
-            types=[TypeDef(name="Node", fields=[_ofield("next", "Node")])]
-        )
+        arch = ArchFile(types=[TypeDef(name="Node", fields=[_ofield("next", "Node")])])
         _assert_error(arch, "Recursive type definition cycle")
 
     def test_cycle_through_map_value(self) -> None:
@@ -445,9 +415,7 @@ class TestTypeCycles:
 
     def test_interface_self_reference_cycle(self) -> None:
         # interface A { nested: A }
-        arch = ArchFile(
-            interfaces=[InterfaceDef(name="A", fields=[_nfield("nested", "A")])]
-        )
+        arch = ArchFile(interfaces=[InterfaceDef(name="A", fields=[_nfield("nested", "A")])])
         _assert_error(arch, "Recursive type definition cycle")
         _assert_error(arch, "A")
 
@@ -472,9 +440,7 @@ class TestTypeCycles:
     def test_type_references_undefined_name_no_cycle(self) -> None:
         # A reference to an unknown name is ignored by the cycle check
         # (structural resolution is handled by semantic analysis).
-        arch = ArchFile(
-            types=[TypeDef(name="A", fields=[_nfield("x", "Unknown")])]
-        )
+        arch = ArchFile(types=[TypeDef(name="A", fields=[_nfield("x", "Unknown")])])
         _assert_no_error(arch)
 
     def test_two_independent_types_no_cycle(self) -> None:
@@ -499,15 +465,11 @@ class TestInterfacePropagation:
 
     def test_leaf_system_with_provides_no_error(self) -> None:
         # A system with no members is a leaf — propagation check does not apply.
-        arch = ArchFile(
-            systems=[System(name="S", provides=[_iref("I")])]
-        )
+        arch = ArchFile(systems=[System(name="S", provides=[_iref("I")])])
         _assert_no_error(arch)
 
     def test_leaf_system_with_requires_no_error(self) -> None:
-        arch = ArchFile(
-            systems=[System(name="S", requires=[_iref("I")])]
-        )
+        arch = ArchFile(systems=[System(name="S", requires=[_iref("I")])])
         _assert_no_error(arch)
 
     def test_system_provides_propagated_to_component(self) -> None:
@@ -612,9 +574,7 @@ class TestInterfacePropagation:
     # ---- Component propagation ----
 
     def test_leaf_component_with_provides_no_error(self) -> None:
-        arch = ArchFile(
-            components=[Component(name="C", provides=[_iref("I")])]
-        )
+        arch = ArchFile(components=[Component(name="C", provides=[_iref("I")])])
         _assert_no_error(arch)
 
     def test_component_provides_propagated_to_subcomponent(self) -> None:
@@ -669,9 +629,7 @@ class TestValidationResult:
 
     def test_has_errors_true_when_errors_present(self) -> None:
         # A type cycle is an error.
-        arch = ArchFile(
-            types=[TypeDef(name="A", fields=[_nfield("self", "A")])]
-        )
+        arch = ArchFile(types=[TypeDef(name="A", fields=[_nfield("self", "A")])])
         result = validate(arch)
         assert result.has_errors
 
