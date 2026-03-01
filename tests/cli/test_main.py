@@ -85,9 +85,9 @@ def test_check_with_archml_files(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """check discovers .archml files and reports checking them."""
+    """check discovers .archml files, compiles them, and reports success."""
     (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
-    (tmp_path / "arch.archml").write_text("# placeholder\n")
+    (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -112,6 +112,86 @@ def test_check_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: py
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
+
+
+def test_check_reports_parse_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """check exits with code 1 and prints error message on parse failure."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / "bad.archml").write_text("component {}\n")  # missing name
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_check_with_workspace_yaml_and_local_source_import(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """check resolves mnemonic imports from the workspace YAML source-imports."""
+    lib_dir = tmp_path / "lib"
+    lib_dir.mkdir()
+    (lib_dir / "iface.archml").write_text("interface MyIface { field v: Int }\n")
+
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\nsource-imports:\n  - name: mylib\n    local-path: lib\n"
+    )
+    (tmp_path / "app.archml").write_text("from mylib/iface import MyIface\ncomponent C { requires MyIface }\n")
+
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "No issues found." in captured.out
+
+
+def test_check_with_workspace_yaml_invalid_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """check exits with code 1 when .archml-workspace.yaml is invalid."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("invalid: yaml: [broken\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_check_excludes_build_directory_from_scan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Artifacts in the build directory are not re-scanned as source files."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
+
+    # Place a valid source file and compile it once to create the artifact.
+    (tmp_path / "comp.archml").write_text("component Good {}\n")
+    # Also create a broken .archml inside the build directory (should be ignored).
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    (build_dir / "fake.archml").write_text("component {}\n")  # invalid — missing name
+
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "No issues found." in captured.out
 
 
 # -------- serve tests --------

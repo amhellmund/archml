@@ -82,6 +82,8 @@ def main() -> None:
 # Implementation
 # ################
 
+_DEFAULT_BUILD_DIR = ".archml-build"
+
 
 def _dispatch(args: argparse.Namespace) -> int:
     """Dispatch to the appropriate subcommand handler."""
@@ -125,6 +127,9 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_check(args: argparse.Namespace) -> int:
     """Handle the check subcommand."""
+    from archml.compiler.build import CompilerError, compile_files
+    from archml.workspace.config import LocalPathImport, WorkspaceConfigError, load_workspace_config
+
     directory = Path(args.directory).resolve()
 
     if not directory.exists():
@@ -140,13 +145,38 @@ def _cmd_check(args: argparse.Namespace) -> int:
         )
         return 1
 
-    archml_files = list(directory.rglob("*.archml"))
+    # Load optional extended workspace configuration for source imports and build dir.
+    workspace_yaml = directory / ".archml-workspace.yaml"
+    build_dir = directory / _DEFAULT_BUILD_DIR
+    # The empty-string key represents the workspace root for non-mnemonic imports.
+    source_import_map: dict[str, Path] = {"": directory}
+
+    if workspace_yaml.exists():
+        try:
+            config = load_workspace_config(workspace_yaml)
+        except WorkspaceConfigError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+
+        build_dir = directory / config.build_directory
+
+        for imp in config.source_imports:
+            if isinstance(imp, LocalPathImport):
+                source_import_map[imp.name] = (directory / imp.local_path).resolve()
+            # GitPathImport requires repository fetching which is not yet supported.
+
+    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents]
     if not archml_files:
         print("No .archml files found in the workspace.")
         return 0
 
     print(f"Checking {len(archml_files)} architecture file(s)...")
-    # TODO: Implement full validation once the parser and validator are ready.
+    try:
+        compile_files(archml_files, build_dir, source_import_map)
+    except CompilerError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
     print("No issues found.")
     return 0
 
