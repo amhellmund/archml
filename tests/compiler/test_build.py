@@ -193,7 +193,9 @@ component Worker { requires Signal }
         build = tmp_path / "build"
         _write(src / "base.archml", "interface IBase { field x: Int }")
         _write(src / "mid.archml", "from app/base import IBase\ncomponent Mid { requires IBase }")
-        _write(src / "top.archml", "from app/base import IBase\nfrom app/mid import Mid\ncomponent Top { requires IBase }")
+        _write(
+            src / "top.archml", "from app/base import IBase\nfrom app/mid import Mid\ncomponent Top { requires IBase }"
+        )
         result = compile_files([src / "top.archml"], build, {("", "app"): src})
         assert "app/base" in result
         assert "app/mid" in result
@@ -474,7 +476,6 @@ class TestSourceImports:
 
     def test_local_mnemonic_resolves_using_source_repo(self, tmp_path: Path) -> None:
         """Bare mnemonic imports resolve using the source file's repo context."""
-        src = tmp_path / "src"
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 

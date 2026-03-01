@@ -134,9 +134,7 @@ def _get_source_repo(source_file: Path, source_import_map: dict[SourceImportKey,
             return repo_id
         except ValueError:
             continue
-    raise CompilerError(
-        f"Source file '{source_file}' is not under any configured mnemonic base path"
-    )
+    raise CompilerError(f"Source file '{source_file}' is not under any configured mnemonic base path")
 
 
 def _rel_key(source_file: Path, source_import_map: dict[SourceImportKey, Path]) -> str:
@@ -213,9 +211,7 @@ def _resolve_import_source(
         # Format: @repo/mnemonic/path/to/file
         slash1 = import_path.find("/", 1)
         if slash1 == -1:
-            raise CompilerError(
-                f"Invalid remote import '{import_path}': expected '@repo/mnemonic/path' format"
-            )
+            raise CompilerError(f"Invalid remote import '{import_path}': expected '@repo/mnemonic/path' format")
         repo_id = import_path[:slash1]  # e.g. "@payments"
         rest = import_path[slash1 + 1 :]  # e.g. "lib/types" or "lib/shared/types"
         slash2 = rest.find("/")
@@ -245,9 +241,7 @@ def _resolve_import_source(
     path = import_path[slash1 + 1 :]  # e.g. "types" or "shared/types"
     key = SourceImportKey(source_repo, mnemonic)
     if key not in source_import_map:
-        raise CompilerError(
-            f"Import '{import_path}': mnemonic '{mnemonic}' not found in workspace configuration"
-        )
+        raise CompilerError(f"Import '{import_path}': mnemonic '{mnemonic}' not found in workspace configuration")
     return source_import_map[key] / (path + ".archml")
 
 
