@@ -31,10 +31,12 @@ def main() -> None:
         description="Create a new ArchML workspace in a repository.",
     )
     init_parser.add_argument(
-        "directory",
-        nargs="?",
-        default=".",
-        help="Directory to initialize the workspace in (default: current directory)",
+        "name",
+        help="Mnemonic name for the workspace source import",
+    )
+    init_parser.add_argument(
+        "workspace_dir",
+        help="Directory to initialize the workspace in",
     )
 
     # check subcommand
@@ -102,30 +104,42 @@ def _dispatch(args: argparse.Namespace) -> int:
 
 def _cmd_init(args: argparse.Namespace) -> int:
     """Handle the init subcommand."""
-    directory = Path(args.directory).resolve()
-
-    if not directory.exists():
-        print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
+    name = args.name
+    if not name:
+        print("Error: mnemonic name cannot be empty.", file=sys.stderr)
         return 1
 
-    workspace_file = directory / ".archml-workspace"
+    workspace_dir = Path(args.workspace_dir).resolve()
+    workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    if workspace_file.exists():
+    workspace_yaml = workspace_dir / ".archml-workspace.yaml"
+    if workspace_yaml.exists():
         print(
-            f"Error: workspace already exists at '{workspace_file}'.",
+            f"Error: workspace already exists at '{workspace_yaml}'.",
             file=sys.stderr,
         )
         return 1
 
-    workspace_content = (
-        "# ArchML Workspace Configuration\n"
-        "# This file marks the root of an ArchML workspace.\n"
-        "\n"
-        "[workspace]\n"
-        'version = "1"\n'
+    workspace_marker = workspace_dir / ".archml-workspace"
+    if not workspace_marker.exists():
+        workspace_marker.write_text(
+            "# ArchML Workspace Configuration\n"
+            "# This file marks the root of an ArchML workspace.\n"
+            "\n"
+            "[workspace]\n"
+            'version = "1"\n',
+            encoding="utf-8",
+        )
+
+    workspace_yaml.write_text(
+        f"build-directory: {_DEFAULT_BUILD_DIR}\n"
+        "source-imports:\n"
+        f"  - name: {name}\n"
+        "    local-path: .\n",
+        encoding="utf-8",
     )
-    workspace_file.write_text(workspace_content, encoding="utf-8")
-    print(f"Initialized ArchML workspace at '{workspace_file}'.")
+
+    print(f"Initialized ArchML workspace '{name}' at '{workspace_dir}'.")
     return 0
 
 
