@@ -167,7 +167,7 @@ def _resolve_import_source(
 
     Raises:
         CompilerError: If *import_path* is a remote git import (starts with
-            ``@``), which is not yet supported.
+            ``@``) whose repository key is absent from *source_import_map*.
     """
     if import_path.startswith("@"):
         slash_pos = import_path.find("/", 1)
