@@ -187,6 +187,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
     # Load optional extended workspace configuration for source imports and build dir.
     workspace_yaml = directory / ".archml-workspace.yaml"
     build_dir = directory / _DEFAULT_BUILD_DIR
+    sync_dir = directory / ".archml-remotes"
     # The empty-string key represents the workspace root for non-mnemonic imports.
     source_import_map: dict[str, Path] = {"": directory}
 
@@ -208,7 +209,11 @@ def _cmd_check(args: argparse.Namespace) -> int:
                 if repo_dir.exists():
                     source_import_map[f"@{imp.name}"] = repo_dir
 
-    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents]
+    archml_files = [
+        f
+        for f in directory.rglob("*.archml")
+        if build_dir not in f.parents and sync_dir not in f.parents
+    ]
     if not archml_files:
         print("No .archml files found in the workspace.")
         return 0
