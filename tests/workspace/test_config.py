@@ -10,6 +10,7 @@ from archml.workspace.config import (
     LocalPathImport,
     WorkspaceConfig,
     WorkspaceConfigError,
+    find_workspace_root,
     load_workspace_config,
 )
 
@@ -228,3 +229,56 @@ def test_load_config_default_remote_sync_directory(tmp_path):
     config = load_workspace_config(cfg_file)
 
     assert config.remote_sync_directory == ".archml-remotes"
+
+
+def test_find_workspace_root_in_current_directory(tmp_path):
+    """find_workspace_root returns the directory itself when it contains the workspace file."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n", encoding="utf-8")
+
+    result = find_workspace_root(tmp_path)
+
+    assert result == tmp_path
+
+
+def test_find_workspace_root_in_parent_directory(tmp_path):
+    """find_workspace_root walks up and finds the workspace in a parent directory."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n", encoding="utf-8")
+    child_dir = tmp_path / "subdir" / "nested"
+    child_dir.mkdir(parents=True)
+
+    result = find_workspace_root(child_dir)
+
+    assert result == tmp_path
+
+
+def test_find_workspace_root_returns_none_when_not_found(tmp_path):
+    """find_workspace_root returns None when no workspace file exists anywhere in the tree."""
+    child_dir = tmp_path / "subdir"
+    child_dir.mkdir()
+
+    result = find_workspace_root(child_dir)
+
+    assert result is None
+
+
+def test_find_workspace_root_uses_nearest_ancestor(tmp_path):
+    """find_workspace_root returns the closest (innermost) workspace directory."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: outer\n", encoding="utf-8")
+    inner_dir = tmp_path / "inner"
+    inner_dir.mkdir()
+    (inner_dir / ".archml-workspace.yaml").write_text("build-directory: inner\n", encoding="utf-8")
+    nested = inner_dir / "deep"
+    nested.mkdir()
+
+    result = find_workspace_root(nested)
+
+    assert result == inner_dir
+
+
+def test_find_workspace_root_returns_given_dir_when_it_is_the_root(tmp_path):
+    """find_workspace_root resolves the start directory and finds the workspace in it."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n", encoding="utf-8")
+
+    result = find_workspace_root(tmp_path / ".")
+
+    assert result == tmp_path

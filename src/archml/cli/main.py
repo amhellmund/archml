@@ -167,7 +167,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_check(args: argparse.Namespace) -> int:
     """Handle the check subcommand."""
-    from archml.workspace.config import GitPathImport, LocalPathImport
+    from archml.workspace.config import GitPathImport, LocalPathImport, find_workspace_root
 
     directory = Path(args.directory).resolve()
 
@@ -178,11 +178,15 @@ def _cmd_check(args: argparse.Namespace) -> int:
     workspace_yaml = directory / ".archml-workspace.yaml"
 
     if not workspace_yaml.exists():
-        print(
-            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
-            file=sys.stderr,
-        )
-        return 1
+        root = find_workspace_root(directory)
+        if root is None:
+            print(
+                f"Error: no ArchML workspace found at '{directory}' or any parent directory. Run 'archml init' to initialize a workspace.",
+                file=sys.stderr,
+            )
+            return 1
+        directory = root
+        workspace_yaml = directory / ".archml-workspace.yaml"
 
     # The empty-string key represents the workspace root for non-mnemonic imports.
     source_import_map: dict[str, Path] = {"": directory}
@@ -244,6 +248,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
 def _cmd_serve(args: argparse.Namespace) -> int:
     """Handle the serve subcommand."""
+    from archml.workspace.config import find_workspace_root
+
     directory = Path(args.directory).resolve()
 
     if not directory.exists():
@@ -253,11 +259,15 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     workspace_yaml = directory / ".archml-workspace.yaml"
 
     if not workspace_yaml.exists():
-        print(
-            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
-            file=sys.stderr,
-        )
-        return 1
+        root = find_workspace_root(directory)
+        if root is None:
+            print(
+                f"Error: no ArchML workspace found at '{directory}' or any parent directory. Run 'archml init' to initialize a workspace.",
+                file=sys.stderr,
+            )
+            return 1
+        directory = root
+        workspace_yaml = directory / ".archml-workspace.yaml"
 
     from archml.webui.app import create_app
 
@@ -269,7 +279,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
 def _cmd_sync_remote(args: argparse.Namespace) -> int:
     """Handle the sync-remote subcommand."""
-    from archml.workspace.config import GitPathImport
+    from archml.workspace.config import GitPathImport, find_workspace_root
     from archml.workspace.git_ops import GitError, clone_at_commit, get_current_commit
     from archml.workspace.lockfile import LOCKFILE_NAME, LockfileError, load_lockfile
 
@@ -279,18 +289,17 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_file = directory / ".archml-workspace"
-    if not workspace_file.exists():
-        print(
-            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
-            file=sys.stderr,
-        )
-        return 1
-
     workspace_yaml = directory / ".archml-workspace.yaml"
     if not workspace_yaml.exists():
-        print("No workspace configuration found. Nothing to sync.")
-        return 0
+        root = find_workspace_root(directory)
+        if root is None:
+            print(
+                f"Error: no ArchML workspace found at '{directory}' or any parent directory. Run 'archml init' to initialize a workspace.",
+                file=sys.stderr,
+            )
+            return 1
+        directory = root
+        workspace_yaml = directory / ".archml-workspace.yaml"
 
     try:
         config = load_workspace_config(workspace_yaml)
@@ -357,7 +366,7 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
 
 def _cmd_update_remote(args: argparse.Namespace) -> int:
     """Handle the update-remote subcommand."""
-    from archml.workspace.config import GitPathImport
+    from archml.workspace.config import GitPathImport, find_workspace_root
     from archml.workspace.git_ops import GitError, is_commit_hash, resolve_commit
     from archml.workspace.lockfile import (
         LOCKFILE_NAME,
@@ -374,18 +383,17 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_file = directory / ".archml-workspace"
-    if not workspace_file.exists():
-        print(
-            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
-            file=sys.stderr,
-        )
-        return 1
-
     workspace_yaml = directory / ".archml-workspace.yaml"
     if not workspace_yaml.exists():
-        print("No workspace configuration found. Nothing to update.")
-        return 0
+        root = find_workspace_root(directory)
+        if root is None:
+            print(
+                f"Error: no ArchML workspace found at '{directory}' or any parent directory. Run 'archml init' to initialize a workspace.",
+                file=sys.stderr,
+            )
+            return 1
+        directory = root
+        workspace_yaml = directory / ".archml-workspace.yaml"
 
     try:
         config = load_workspace_config(workspace_yaml)
