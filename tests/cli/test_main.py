@@ -80,14 +80,16 @@ def test_check_with_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert exc_info.value.code == 0
 
 
-def test_check_with_archml_files(
+def test_check_with_valid_archml_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """check discovers .archml files and reports checking them."""
+    """check compiles and validates .archml files; reports no issues for a valid file."""
     (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
-    (tmp_path / "arch.archml").write_text("# placeholder\n")
+    (tmp_path / "arch.archml").write_text(
+        "interface Signal { field v: Int }\ncomponent A { provides Signal }\n"
+    )
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -95,6 +97,96 @@ def test_check_with_archml_files(
     captured = capsys.readouterr()
     assert "1" in captured.out
     assert "No issues found." in captured.out
+
+
+def test_check_reports_compile_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """check exits with code 1 when a .archml file has a parse error."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / "bad.archml").write_text("component {}")  # missing name
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_check_reports_validation_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """check exits with code 1 when business validation finds errors."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    # Connection cycle: A -> B -> A (inline components inside system)
+    (tmp_path / "cycle.archml").write_text(
+        "interface I { field v: Int }\n"
+        "system S {\n"
+        "  component A { provides I requires I }\n"
+        "  component B { provides I requires I }\n"
+        "  connect A -> B by I\n"
+        "  connect B -> A by I\n"
+        "}\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_check_reports_validation_warnings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """check exits with code 0 but prints warnings for isolated components."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    # An isolated component triggers a warning but not an error.
+    (tmp_path / "isolated.archml").write_text("component Isolated {}\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "Warning" in captured.out
+
+
+def test_check_uses_workspace_yaml_build_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """check uses the build-directory from .archml-workspace.yaml when present."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: custom-build\n")
+    (tmp_path / "arch.archml").write_text(
+        "interface Signal { field v: Int }\ncomponent A { provides Signal }\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    assert (tmp_path / "custom-build").exists()
+
+
+def test_check_invalid_workspace_yaml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """check exits with code 1 when .archml-workspace.yaml is invalid."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("bad yaml: [unterminated\n")
+    (tmp_path / "arch.archml").write_text("component A {}\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
 
 
 def test_check_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -7,6 +7,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from archml.compiler.build import CompilerError, compile_files
+from archml.validation.checks import validate
+from archml.workspace.config import WorkspaceConfigError, load_workspace_config
+
 # ###############
 # Public Interface
 # ###############
@@ -146,7 +150,46 @@ def _cmd_check(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Checking {len(archml_files)} architecture file(s)...")
-    # TODO: Implement full validation once the parser and validator are ready.
+
+    config_file = directory / ".archml-workspace.yaml"
+    if config_file.exists():
+        try:
+            config = load_workspace_config(config_file)
+            build_dir = directory / config.build_directory
+        except WorkspaceConfigError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+    else:
+        build_dir = directory / ".archml-build"
+
+    try:
+        compiled = compile_files(archml_files, build_dir, directory)
+    except CompilerError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    total_warnings = 0
+    total_errors = 0
+    for key, arch_file in compiled.items():
+        result = validate(arch_file)
+        for warning in result.warnings:
+            print(f"Warning in '{key}': {warning.message}")
+        for error in result.errors:
+            print(f"Error in '{key}': {error.message}", file=sys.stderr)
+        total_warnings += len(result.warnings)
+        total_errors += len(result.errors)
+
+    if total_errors > 0:
+        print(
+            f"Found {total_errors} error(s) and {total_warnings} warning(s).",
+            file=sys.stderr,
+        )
+        return 1
+
+    if total_warnings > 0:
+        print(f"Found {total_warnings} warning(s). No errors.")
+        return 0
+
     print("No issues found.")
     return 0
 
