@@ -131,8 +131,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_check(args: argparse.Namespace) -> int:
     """Handle the check subcommand."""
-    from archml.compiler.build import CompilerError, compile_files
-    from archml.workspace.config import LocalPathImport, WorkspaceConfigError, load_workspace_config
+    from archml.workspace.config import LocalPathImport
 
     directory = Path(args.directory).resolve()
 
@@ -176,9 +175,21 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     print(f"Checking {len(archml_files)} architecture file(s)...")
     try:
-        compile_files(archml_files, build_dir, source_import_map)
+        compiled = compile_files(archml_files, build_dir, source_import_map)
     except CompilerError as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    has_errors = False
+    for arch_file in compiled.values():
+        result = validate(arch_file)
+        for warning in result.warnings:
+            print(f"Warning: {warning.message}")
+        for error in result.errors:
+            print(f"Error: {error.message}", file=sys.stderr)
+            has_errors = True
+
+    if has_errors:
         return 1
 
     print("No issues found.")
