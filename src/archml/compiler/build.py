@@ -33,6 +33,7 @@ source file's repository.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import NamedTuple
 
 from archml.compiler.artifact import ARTIFACT_SUFFIX, read_artifact, write_artifact
 from archml.compiler.parser import ParseError, parse
@@ -42,6 +43,20 @@ from archml.model.entities import ArchFile
 # ###############
 # Public Interface
 # ###############
+
+
+class SourceImportKey(NamedTuple):
+    """Typed key for the source-import map.
+
+    *repo* identifies the repository: a plain workspace name (e.g. ``"myapp"``)
+    for local imports, or an ``@``-prefixed remote name (e.g. ``"@payments"``)
+    for git imports.  It must never be empty.
+
+    *mnemonic* is the named source tree within that repository.
+    """
+
+    repo: str
+    mnemonic: str
 
 
 class CompilerError(Exception):
@@ -58,7 +73,7 @@ class CompilerError(Exception):
 def compile_files(
     files: list[Path],
     build_dir: Path,
-    source_import_map: dict[tuple[str, str], Path],
+    source_import_map: dict[SourceImportKey, Path],
 ) -> dict[str, ArchFile]:
     """Compile a list of .archml source files.
 
@@ -74,10 +89,11 @@ def compile_files(
     Args:
         files: Absolute paths to the .archml source files to compile.
         build_dir: Root directory for compiled artifacts.
-        source_import_map: Mapping from ``(repo_id, mnemonic)`` pairs to
-            absolute base paths.  Local mnemonics use ``""`` as *repo_id*
-            (e.g. ``("", "myapp")``); remote repositories use their
-            ``"@name"`` identifier (e.g. ``("@payments", "lib")``).
+        source_import_map: Mapping from :class:`SourceImportKey` pairs to
+            absolute base paths.  Local mnemonics use the workspace name as
+            *repo* (e.g. ``SourceImportKey("myapp", "myapp")``); remote
+            repositories use their ``"@name"`` identifier
+            (e.g. ``SourceImportKey("@payments", "lib")``).
             Import paths of the form ``mnemonic/rel`` are resolved by
             looking up ``(source_repo, mnemonic)`` and appending *rel*.
             Remote imports ``@repo/mnemonic/rel`` use ``("@repo", mnemonic)``.
@@ -103,7 +119,7 @@ def compile_files(
 # ################
 
 
-def _get_source_repo(source_file: Path, source_import_map: dict[tuple[str, str], Path]) -> str:
+def _get_source_repo(source_file: Path, source_import_map: dict[SourceImportKey, Path]) -> str:
     """Return the repository identifier for *source_file*.
 
     Iterates over all ``(repo_id, mnemonic)`` entries and returns the
@@ -123,13 +139,13 @@ def _get_source_repo(source_file: Path, source_import_map: dict[tuple[str, str],
     )
 
 
-def _rel_key(source_file: Path, source_import_map: dict[tuple[str, str], Path]) -> str:
+def _rel_key(source_file: Path, source_import_map: dict[SourceImportKey, Path]) -> str:
     """Return the canonical key for a source file (path without extension).
 
-    For local files (repo_id ``""``), the key is ``"mnemonic/rel"``
-    (e.g. ``"myapp/shared/types"``).
+    For local files (repo not starting with ``"@"``), the key is
+    ``"mnemonic/rel"`` (e.g. ``"myapp/shared/types"``).
 
-    For remote files (repo_id ``"@repo"``), the key is
+    For remote files (repo starting with ``"@"``), the key is
     ``"@repo/mnemonic/rel"`` (e.g. ``"@payments/lib/types"``).
 
     Raises:
@@ -139,7 +155,7 @@ def _rel_key(source_file: Path, source_import_map: dict[tuple[str, str], Path]) 
         try:
             rel = source_file.relative_to(base_path)
             rel_str = str(rel.with_suffix("")).replace("\\", "/")
-            if repo_id == "":
+            if not repo_id.startswith("@"):
                 return f"{mnemonic}/{rel_str}"
             else:
                 return f"{repo_id}/{mnemonic}/{rel_str}"
@@ -171,7 +187,7 @@ def _is_up_to_date(source_file: Path, artifact: Path) -> bool:
 
 def _resolve_import_source(
     import_path: str,
-    source_import_map: dict[tuple[str, str], Path],
+    source_import_map: dict[SourceImportKey, Path],
     source_repo: str,
 ) -> Path:
     """Resolve an import path to the absolute path of the ``.archml`` source file.
@@ -182,9 +198,9 @@ def _resolve_import_source(
             - ``"mnemonic/path/to/file"`` — resolved using *source_repo*
             - ``"@repo/mnemonic/path/to/file"`` — resolved using the named
               remote repository and mnemonic
-        source_import_map: Mapping from ``(repo_id, mnemonic)`` to base paths.
+        source_import_map: Mapping from :class:`SourceImportKey` to base paths.
         source_repo: Repository identifier of the file performing the import
-            (``""`` for local workspace, ``"@repo"`` for remote).
+            (workspace name for local, ``"@repo"`` for remote).
 
     Returns:
         Absolute path to the ``.archml`` file (which may or may not exist).
@@ -210,7 +226,7 @@ def _resolve_import_source(
             )
         mnemonic = rest[:slash2]  # e.g. "lib"
         path = rest[slash2 + 1 :]  # e.g. "types" or "shared/types"
-        key = (repo_id, mnemonic)
+        key = SourceImportKey(repo_id, mnemonic)
         if key not in source_import_map:
             raise CompilerError(
                 f"Remote import '{import_path}': mnemonic '{mnemonic}' in repository '{repo_id}' "
@@ -227,7 +243,7 @@ def _resolve_import_source(
         )
     mnemonic = import_path[:slash1]  # e.g. "mylib"
     path = import_path[slash1 + 1 :]  # e.g. "types" or "shared/types"
-    key = (source_repo, mnemonic)
+    key = SourceImportKey(source_repo, mnemonic)
     if key not in source_import_map:
         raise CompilerError(
             f"Import '{import_path}': mnemonic '{mnemonic}' not found in workspace configuration"
@@ -238,7 +254,7 @@ def _resolve_import_source(
 def _compile_file(
     source_file: Path,
     build_dir: Path,
-    source_import_map: dict[tuple[str, str], Path],
+    source_import_map: dict[SourceImportKey, Path],
     compiled: dict[str, ArchFile],
     in_progress: set[str],
     *,
@@ -249,7 +265,7 @@ def _compile_file(
     Args:
         source_file: Absolute path to the .archml file to compile.
         build_dir: Root directory for compiled artifacts.
-        source_import_map: Mapping from ``(repo_id, mnemonic)`` to base paths.
+        source_import_map: Mapping from :class:`SourceImportKey` to base paths.
         compiled: Accumulator mapping already-compiled canonical keys to models.
         in_progress: Set of canonical keys currently being compiled (cycle guard).
         _key: Optional pre-computed canonical key.  When provided (always the

@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 # ###############
 # Public Interface
@@ -69,12 +69,34 @@ class WorkspaceConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
+    name: str
     build_directory: str = Field(alias="build-directory")
     remote_sync_directory: str = Field(alias="remote-sync-directory", default=".archml-remotes")
     source_imports: list[LocalPathImport | GitPathImport] = Field(
         alias="source-imports",
         min_length=1,
     )
+
+    @field_validator("name")
+    @classmethod
+    def validate_workspace_name(cls, v: str) -> str:
+        """Validate workspace name: lowercase letter, then alphanumeric/dash/underscore."""
+        if not _MNEMONIC_RE.match(v):
+            raise ValueError(
+                f"Invalid workspace name '{v}': must start with a lowercase letter "
+                "followed by lowercase letters, digits, hyphens, or underscores"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_unique_import_names(self) -> "WorkspaceConfig":
+        """Ensure all source import names are unique within this workspace."""
+        seen: set[str] = set()
+        for imp in self.source_imports:
+            if imp.name in seen:
+                raise ValueError(f"Duplicate source import name: '{imp.name}'")
+            seen.add(imp.name)
+        return self
 
 
 def load_workspace_config(path: Path) -> WorkspaceConfig:

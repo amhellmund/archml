@@ -8,7 +8,7 @@ import re
 import sys
 from pathlib import Path
 
-from archml.compiler.build import CompilerError, compile_files
+from archml.compiler.build import CompilerError, SourceImportKey, compile_files
 from archml.validation.checks import validate
 from archml.workspace.config import WorkspaceConfigError, load_workspace_config
 
@@ -165,7 +165,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         return 1
 
     workspace_yaml.write_text(
-        f"build-directory: {_DEFAULT_BUILD_DIR}\nsource-imports:\n  - name: {name}\n    local-path: .\n",
+        f"name: {name}\nbuild-directory: {_DEFAULT_BUILD_DIR}\nsource-imports:\n  - name: {name}\n    local-path: .\n",
         encoding="utf-8",
     )
 
@@ -201,13 +201,13 @@ def _cmd_check(args: argparse.Namespace) -> int:
     build_dir = directory / config.build_directory
     sync_dir = directory / config.remote_sync_directory
 
-    # Build the source import map: (repo_id, mnemonic) -> absolute base path.
-    # Local mnemonics use "" as repo_id; remote repos use "@name".
-    source_import_map: dict[tuple[str, str], Path] = {}
+    # Build the source import map: SourceImportKey(repo, mnemonic) -> absolute base path.
+    # Local mnemonics use config.name as repo; remote repos use "@name".
+    source_import_map: dict[SourceImportKey, Path] = {}
 
     for imp in config.source_imports:
         if isinstance(imp, LocalPathImport):
-            source_import_map[("", imp.name)] = (directory / imp.local_path).resolve()
+            source_import_map[SourceImportKey(config.name, imp.name)] = (directory / imp.local_path).resolve()
         elif isinstance(imp, GitPathImport):
             repo_dir = (sync_dir / imp.name).resolve()
             if repo_dir.exists():
@@ -218,12 +218,12 @@ def _cmd_check(args: argparse.Namespace) -> int:
                         for remote_imp in remote_config.source_imports:
                             if isinstance(remote_imp, LocalPathImport):
                                 mnemonic_path = (repo_dir / remote_imp.local_path).resolve()
-                                source_import_map[(f"@{imp.name}", remote_imp.name)] = mnemonic_path
+                                source_import_map[SourceImportKey(f"@{imp.name}", remote_imp.name)] = mnemonic_path
                     except WorkspaceConfigError as exc:
                         print(f"Warning: could not load workspace config from remote '{imp.name}': {exc}")
 
-    # Scan only files under local mnemonic paths (repo_id == "").
-    local_mnemonic_paths = {base_path for (repo_id, _), base_path in source_import_map.items() if repo_id == ""}
+    # Scan only files under local mnemonic paths (repo == config.name, i.e. not remote).
+    local_mnemonic_paths = {base_path for key, base_path in source_import_map.items() if key.repo == config.name}
     seen_files: set[Path] = set()
     archml_files: list[Path] = []
     for base_path in sorted(local_mnemonic_paths):
