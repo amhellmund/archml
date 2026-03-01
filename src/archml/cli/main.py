@@ -121,10 +121,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         return 1
 
     workspace_yaml.write_text(
-        f"build-directory: {_DEFAULT_BUILD_DIR}\n"
-        "source-imports:\n"
-        f"  - name: {name}\n"
-        "    local-path: .\n",
+        f"build-directory: {_DEFAULT_BUILD_DIR}\nsource-imports:\n  - name: {name}\n    local-path: .\n",
         encoding="utf-8",
     )
 

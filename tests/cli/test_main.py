@@ -36,9 +36,7 @@ def test_init_creates_workspace_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert (tmp_path / ".archml-workspace.yaml").exists()
 
 
-def test_init_workspace_yaml_has_correct_content(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_init_workspace_yaml_has_correct_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """init writes source-import mapping with the given mnemonic into the YAML config."""
     monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
