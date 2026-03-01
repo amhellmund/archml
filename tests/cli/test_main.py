@@ -142,14 +142,9 @@ def test_check_with_workspace_yaml_and_local_source_import(
 
     (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text(
-        f"build-directory: build\n"
-        f"source-imports:\n"
-        f"  - name: mylib\n"
-        f"    local-path: lib\n"
+        "build-directory: build\nsource-imports:\n  - name: mylib\n    local-path: lib\n"
     )
-    (tmp_path / "app.archml").write_text(
-        "from mylib/iface import MyIface\ncomponent C { requires MyIface }\n"
-    )
+    (tmp_path / "app.archml").write_text("from mylib/iface import MyIface\ncomponent C { requires MyIface }\n")
 
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:

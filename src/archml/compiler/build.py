@@ -124,9 +124,7 @@ def _rel_key(source_file: Path, source_import_map: dict[str, Path]) -> str:
         except ValueError:
             continue
 
-    raise CompilerError(
-        f"Source file '{source_file}' is not under any configured source import base path"
-    )
+    raise CompilerError(f"Source file '{source_file}' is not under any configured source import base path")
 
 
 def _artifact_path(key: str, build_dir: Path) -> Path:
@@ -175,13 +173,11 @@ def _resolve_import_source(
     if slash_pos != -1:
         first_segment = import_path[:slash_pos]
         if first_segment in source_import_map:
-            rel = import_path[slash_pos + 1:]
+            rel = import_path[slash_pos + 1 :]
             return source_import_map[first_segment] / (rel + ".archml")
     workspace_root = source_import_map.get("")
     if workspace_root is None:
-        raise CompilerError(
-            f"Cannot resolve import '{import_path}': no workspace root configured in source_import_map"
-        )
+        raise CompilerError(f"Cannot resolve import '{import_path}': no workspace root configured in source_import_map")
     return workspace_root / (import_path + ".archml")
 
 
@@ -278,9 +274,7 @@ def _compile_file(
                 raise CompilerError(
                     f"Dependency '{imp.source_path}' of '{source_file}' not found (expected '{dep_source}')"
                 )
-            dep = _compile_file(
-                dep_source, build_dir, source_import_map, compiled, in_progress, _key=imp.source_path
-            )
+            dep = _compile_file(dep_source, build_dir, source_import_map, compiled, in_progress, _key=imp.source_path)
             resolved_imports[imp.source_path] = dep
 
         # Semantic validation.
