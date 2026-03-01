@@ -20,9 +20,9 @@ from archml.workspace.git_ops import (
 )
 from archml.workspace.lockfile import (
     LOCKFILE_NAME,
+    LockedRevision,
     Lockfile,
     LockfileError,
-    LockedRevision,
     load_lockfile,
     save_lockfile,
 )

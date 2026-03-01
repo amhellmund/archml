@@ -5,7 +5,7 @@
 
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -107,9 +107,8 @@ class TestResolveCommit:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("subprocess.run", return_value=mock_result):
-            with pytest.raises(GitError, match="not found"):
-                resolve_commit(_REPO_URL, "nonexistent-branch")
+        with patch("subprocess.run", return_value=mock_result), pytest.raises(GitError, match="not found"):
+            resolve_commit(_REPO_URL, "nonexistent-branch")
 
     def test_raises_if_ls_remote_fails(self):
         """GitError is raised if git ls-remote exits with non-zero."""
@@ -118,21 +117,27 @@ class TestResolveCommit:
         mock_result.stdout = ""
         mock_result.stderr = "fatal: repository not found"
 
-        with patch("subprocess.run", return_value=mock_result):
-            with pytest.raises(GitError, match="Failed to query remote"):
-                resolve_commit(_REPO_URL, "main")
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            pytest.raises(GitError, match="Failed to query remote"),
+        ):
+            resolve_commit(_REPO_URL, "main")
 
     def test_raises_if_git_not_found(self):
         """GitError is raised if the git executable is not on PATH."""
-        with patch("subprocess.run", side_effect=FileNotFoundError):
-            with pytest.raises(GitError, match="git executable not found"):
-                resolve_commit(_REPO_URL, "main")
+        with (
+            patch("subprocess.run", side_effect=FileNotFoundError),
+            pytest.raises(GitError, match="git executable not found"),
+        ):
+            resolve_commit(_REPO_URL, "main")
 
     def test_raises_on_timeout(self):
         """GitError is raised if git ls-remote times out."""
-        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="git", timeout=60)):
-            with pytest.raises(GitError, match="timed out"):
-                resolve_commit(_REPO_URL, "main")
+        with (
+            patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="git", timeout=60)),
+            pytest.raises(GitError, match="timed out"),
+        ):
+            resolve_commit(_REPO_URL, "main")
 
     def test_raises_if_commit_in_output_is_malformed(self):
         """GitError is raised if ls-remote output has an unexpected format."""
@@ -141,9 +146,11 @@ class TestResolveCommit:
         mock_result.stdout = "not-a-hash\trefs/heads/main\n"
         mock_result.stderr = ""
 
-        with patch("subprocess.run", return_value=mock_result):
-            with pytest.raises(GitError, match="Unexpected output"):
-                resolve_commit(_REPO_URL, "main")
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            pytest.raises(GitError, match="Unexpected output"),
+        ):
+            resolve_commit(_REPO_URL, "main")
 
     def test_uses_first_line_when_multiple_refs(self):
         """When multiple refs match, the commit from the first line is returned."""
@@ -199,9 +206,8 @@ class TestCloneAtCommit:
                 return MagicMock(returncode=128, stdout="", stderr="fatal: error")
             return MagicMock(returncode=0, stdout="", stderr="")
 
-        with patch("subprocess.run", side_effect=side_effect):
-            with pytest.raises(GitError):
-                clone_at_commit(_REPO_URL, _COMMIT, target)
+        with patch("subprocess.run", side_effect=side_effect), pytest.raises(GitError):
+            clone_at_commit(_REPO_URL, _COMMIT, target)
 
         assert not target.exists()
 
@@ -218,17 +224,18 @@ class TestCloneAtCommit:
                 return MagicMock(returncode=0, stdout="", stderr="")
             return MagicMock(returncode=128, stdout="", stderr="fatal: couldn't find remote ref")
 
-        with patch("subprocess.run", side_effect=side_effect):
-            with pytest.raises(GitError):
-                clone_at_commit(_REPO_URL, _COMMIT, target)
+        with patch("subprocess.run", side_effect=side_effect), pytest.raises(GitError):
+            clone_at_commit(_REPO_URL, _COMMIT, target)
 
     def test_raises_if_git_not_found(self, tmp_path: Path):
         """GitError is raised if git is not on PATH."""
         target = tmp_path / "repo"
 
-        with patch("subprocess.run", side_effect=FileNotFoundError):
-            with pytest.raises(GitError, match="git executable not found"):
-                clone_at_commit(_REPO_URL, _COMMIT, target)
+        with (
+            patch("subprocess.run", side_effect=FileNotFoundError),
+            pytest.raises(GitError, match="git executable not found"),
+        ):
+            clone_at_commit(_REPO_URL, _COMMIT, target)
 
 
 class TestGetCurrentCommit:
@@ -282,9 +289,11 @@ class TestGetCurrentCommit:
 
     def test_raises_if_git_not_found(self, tmp_path: Path):
         """GitError is raised if the git executable is not on PATH."""
-        with patch("subprocess.run", side_effect=FileNotFoundError):
-            with pytest.raises(GitError, match="git executable not found"):
-                get_current_commit(tmp_path)
+        with (
+            patch("subprocess.run", side_effect=FileNotFoundError),
+            pytest.raises(GitError, match="git executable not found"),
+        ):
+            get_current_commit(tmp_path)
 
     def test_passes_repo_dir_to_git_c_flag(self, tmp_path: Path):
         """The directory is passed using the -C flag to git."""

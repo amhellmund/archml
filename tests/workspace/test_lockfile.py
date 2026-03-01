@@ -7,9 +7,9 @@ import pytest
 
 from archml.workspace.lockfile import (
     LOCKFILE_NAME,
+    LockedRevision,
     Lockfile,
     LockfileError,
-    LockedRevision,
     load_lockfile,
     save_lockfile,
 )
@@ -169,12 +169,8 @@ def test_load_lockfile_missing_required_field(tmp_path):
     """A lockfile entry missing a required field raises LockfileError."""
     lf = tmp_path / LOCKFILE_NAME
     lf.write_text(
-        "locked-revisions:\n"
-        "  - name: incomplete\n"
-        "    git-repository: https://example.com\n"
-        "    revision: main\n"
+        "locked-revisions:\n  - name: incomplete\n    git-repository: https://example.com\n    revision: main\n",
         # missing 'commit' field
-        ,
         encoding="utf-8",
     )
 

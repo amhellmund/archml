@@ -379,7 +379,6 @@ class TestSourceImports:
 
         assert _artifact(build, "@ext/types").exists()
 
-
     def test_remote_git_import_with_mnemonic_resolves_from_two_segment_key(self, tmp_path: Path) -> None:
         """@repo/mnemonic/path imports resolve via @repo/mnemonic key in source_import_map."""
         src = tmp_path / "src"

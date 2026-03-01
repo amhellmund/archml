@@ -219,15 +219,9 @@ def _cmd_check(args: argparse.Namespace) -> int:
                                     mnemonic_path = (repo_dir / remote_imp.local_path).resolve()
                                     source_import_map[f"@{imp.name}/{remote_imp.name}"] = mnemonic_path
                         except WorkspaceConfigError as exc:
-                            print(
-                                f"Warning: could not load workspace config from remote '{imp.name}': {exc}"
-                            )
+                            print(f"Warning: could not load workspace config from remote '{imp.name}': {exc}")
 
-    archml_files = [
-        f
-        for f in directory.rglob("*.archml")
-        if build_dir not in f.parents and sync_dir not in f.parents
-    ]
+    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents and sync_dir not in f.parents]
     if not archml_files:
         print("No .archml files found in the workspace.")
         return 0
@@ -374,9 +368,9 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
     from archml.workspace.git_ops import GitError, is_commit_hash, resolve_commit
     from archml.workspace.lockfile import (
         LOCKFILE_NAME,
+        LockedRevision,
         Lockfile,
         LockfileError,
-        LockedRevision,
         load_lockfile,
         save_lockfile,
     )
@@ -438,11 +432,13 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
                 has_errors = True
                 continue
 
-        locked_by_name[imp.name] = LockedRevision(
-            name=imp.name,
-            git_repository=imp.git_repository,
-            revision=imp.revision,
-            commit=commit,
+        locked_by_name[imp.name] = LockedRevision.model_validate(
+            {
+                "name": imp.name,
+                "git-repository": imp.git_repository,
+                "revision": imp.revision,
+                "commit": commit,
+            }
         )
 
     if has_errors:

@@ -182,9 +182,7 @@ def _resolve_import_source(
     if import_path.startswith("@"):
         slash_pos = import_path.find("/", 1)
         if slash_pos == -1:
-            raise CompilerError(
-                f"Invalid remote git import path '{import_path}': expected '@repo/path/to/file'"
-            )
+            raise CompilerError(f"Invalid remote git import path '{import_path}': expected '@repo/path/to/file'")
         # Try a two-segment key (@repo/mnemonic) first so that remote-repo
         # mnemonics take precedence over literal subdirectory paths.
         second_slash = import_path.find("/", slash_pos + 1)
