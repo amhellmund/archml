@@ -3,14 +3,17 @@
 
 """Workspace configuration loading and data models."""
 
+import re
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 # ###############
 # Public Interface
 # ###############
+
+_MNEMONIC_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 class WorkspaceConfigError(Exception):
@@ -25,6 +28,17 @@ class LocalPathImport(BaseModel):
     name: str
     local_path: str = Field(alias="local-path")
 
+    @field_validator("name")
+    @classmethod
+    def validate_mnemonic_name(cls, v: str) -> str:
+        """Validate mnemonic: lowercase letter, then alphanumeric/dash/underscore."""
+        if not _MNEMONIC_RE.match(v):
+            raise ValueError(
+                f"Invalid mnemonic name '{v}': must start with a lowercase letter "
+                "followed by lowercase letters, digits, hyphens, or underscores (no slashes)"
+            )
+        return v
+
 
 class GitPathImport(BaseModel):
     """A source import resolved from a git repository."""
@@ -34,6 +48,17 @@ class GitPathImport(BaseModel):
     name: str
     git_repository: str = Field(alias="git-repository")
     revision: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_mnemonic_name(cls, v: str) -> str:
+        """Validate repo name: lowercase letter, then alphanumeric/dash/underscore."""
+        if not _MNEMONIC_RE.match(v):
+            raise ValueError(
+                f"Invalid repo name '{v}': must start with a lowercase letter "
+                "followed by lowercase letters, digits, hyphens, or underscores (no slashes)"
+            )
+        return v
 
 
 SourceImport = LocalPathImport | GitPathImport
@@ -46,7 +71,10 @@ class WorkspaceConfig(BaseModel):
 
     build_directory: str = Field(alias="build-directory")
     remote_sync_directory: str = Field(alias="remote-sync-directory", default=".archml-remotes")
-    source_imports: list[LocalPathImport | GitPathImport] = Field(alias="source-imports", default_factory=list)
+    source_imports: list[LocalPathImport | GitPathImport] = Field(
+        alias="source-imports",
+        min_length=1,
+    )
 
 
 def load_workspace_config(path: Path) -> WorkspaceConfig:

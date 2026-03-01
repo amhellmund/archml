@@ -10,24 +10,24 @@ compiled recursively before the dependent file is validated.
 Two forms of cross-file import are supported:
 
 * **Local workspace imports** — ``from mnemonic/path/to/file import …``
-  The first path segment is looked up as a mnemonic in the caller-supplied
-  *source_import_map* (``{mnemonic: absolute_base_path}``), derived from the
-  workspace ``source-imports`` configuration.
+  The first path segment is the mnemonic name.  It is looked up as
+  ``(source_repo, mnemonic)`` in the caller-supplied *source_import_map*
+  (``{(repo_id, mnemonic): absolute_base_path}``), where *source_repo* is the
+  repository identifier of the file performing the import.
 
-* **Remote git imports** — ``from @repo/path/to/file import …``
+* **Remote git imports** — ``from @repo/mnemonic/path/to/file import …``
   The ``@repo`` prefix identifies a named Git repository configured in the
-  workspace.  The caller-supplied *source_import_map* must contain an entry
-  keyed as ``"@repo"`` pointing to the locally synced directory (populated by
-  ``archml sync-remote``).  If the key is absent, :class:`CompilerError` is
-  raised with a message directing the user to run ``archml sync-remote``.
+  workspace.  The ``mnemonic`` segment selects a named source tree within
+  that repository.  The caller-supplied *source_import_map* must contain an
+  entry keyed as ``("@repo", "mnemonic")`` pointing to the locally synced
+  directory (populated by ``archml sync-remote``).  If the key is absent,
+  :class:`CompilerError` is raised with a message directing the user to run
+  ``archml sync-remote``.
 
-* **Remote git imports with mnemonics** — ``from @repo/mnemonic/path/to/file import …``
-  When the remote repository defines its own ``source-imports`` in its
-  ``.archml-workspace.yaml``, those mnemonics are exposed as two-segment keys
-  ``"@repo/mnemonic"`` in *source_import_map*.  Resolution tries the
-  two-segment key before falling back to the bare ``"@repo"`` key so that
-  mnemonic-rooted paths take precedence over literal subdirectory paths in the
-  repository root.
+Every source file belongs to exactly one repository, identified by the
+*repo_id* of the ``(repo_id, mnemonic)`` entry whose base path contains the
+file.  Bare mnemonic imports (without ``@repo``) are resolved relative to the
+source file's repository.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ class CompilerError(Exception):
 def compile_files(
     files: list[Path],
     build_dir: Path,
-    source_import_map: dict[str, Path],
+    source_import_map: dict[tuple[str, str], Path],
 ) -> dict[str, ArchFile]:
     """Compile a list of .archml source files.
 
@@ -74,17 +74,18 @@ def compile_files(
     Args:
         files: Absolute paths to the .archml source files to compile.
         build_dir: Root directory for compiled artifacts.
-        source_import_map: Mapping from mnemonic names to absolute base paths.
-            The empty-string key ``""`` represents the workspace root (used to
-            resolve non-mnemonic imports and compute artifact keys for files
-            that do not belong to a named mnemonic).  Import paths of the form
-            ``mnemonic/rel`` are resolved by looking up *mnemonic* in this map
-            and appending *rel*.
+        source_import_map: Mapping from ``(repo_id, mnemonic)`` pairs to
+            absolute base paths.  Local mnemonics use ``""`` as *repo_id*
+            (e.g. ``("", "myapp")``); remote repositories use their
+            ``"@name"`` identifier (e.g. ``("@payments", "lib")``).
+            Import paths of the form ``mnemonic/rel`` are resolved by
+            looking up ``(source_repo, mnemonic)`` and appending *rel*.
+            Remote imports ``@repo/mnemonic/rel`` use ``("@repo", mnemonic)``.
 
     Returns:
-        A mapping from canonical path keys (e.g. ``"shared/types"`` or
-        ``"common/types"``) to their compiled :class:`~archml.model.entities.ArchFile`
-        models.
+        A mapping from canonical path keys (e.g. ``"myapp/types"`` or
+        ``"@payments/lib/types"``) to their compiled
+        :class:`~archml.model.entities.ArchFile` models.
 
     Raises:
         CompilerError: On parse errors, missing imports, unsupported remote
@@ -93,8 +94,6 @@ def compile_files(
     compiled: dict[str, ArchFile] = {}
     in_progress: set[str] = set()
     for f in files:
-        # For top-level files, compute the key from the filesystem path.
-        # Dependency keys are always the import path string (passed via _key).
         _compile_file(f, build_dir, source_import_map, compiled, in_progress)
     return compiled
 
@@ -104,44 +103,57 @@ def compile_files(
 # ################
 
 
-def _rel_key(source_file: Path, source_import_map: dict[str, Path]) -> str:
+def _get_source_repo(source_file: Path, source_import_map: dict[tuple[str, str], Path]) -> str:
+    """Return the repository identifier for *source_file*.
+
+    Iterates over all ``(repo_id, mnemonic)`` entries and returns the
+    *repo_id* of the entry whose base path contains *source_file*.
+
+    Raises:
+        CompilerError: If the file is not under any configured mnemonic base path.
+    """
+    for (repo_id, _mnemonic), base_path in source_import_map.items():
+        try:
+            source_file.relative_to(base_path)
+            return repo_id
+        except ValueError:
+            continue
+    raise CompilerError(
+        f"Source file '{source_file}' is not under any configured mnemonic base path"
+    )
+
+
+def _rel_key(source_file: Path, source_import_map: dict[tuple[str, str], Path]) -> str:
     """Return the canonical key for a source file (path without extension).
 
-    For files under the workspace root (``source_import_map[""]``), the key is
-    the relative path without the ``.archml`` suffix (e.g. ``"shared/types"``).
+    For local files (repo_id ``""``), the key is ``"mnemonic/rel"``
+    (e.g. ``"myapp/shared/types"``).
 
-    For files under a named mnemonic base path, the key is ``"mnemonic/rel"``
-    (e.g. ``"common/types"``).
+    For remote files (repo_id ``"@repo"``), the key is
+    ``"@repo/mnemonic/rel"`` (e.g. ``"@payments/lib/types"``).
 
     Raises:
         CompilerError: If the file is not under any configured base path.
     """
-    # Try the workspace root (empty-string key) first — its key has no prefix.
-    workspace_root = source_import_map.get("")
-    if workspace_root is not None:
-        try:
-            rel = source_file.relative_to(workspace_root)
-            return str(rel.with_suffix("")).replace("\\", "/")
-        except ValueError:
-            pass
-
-    for mnemonic, base_path in source_import_map.items():
-        if mnemonic == "":
-            continue
+    for (repo_id, mnemonic), base_path in source_import_map.items():
         try:
             rel = source_file.relative_to(base_path)
-            return f"{mnemonic}/" + str(rel.with_suffix("")).replace("\\", "/")
+            rel_str = str(rel.with_suffix("")).replace("\\", "/")
+            if repo_id == "":
+                return f"{mnemonic}/{rel_str}"
+            else:
+                return f"{repo_id}/{mnemonic}/{rel_str}"
         except ValueError:
             continue
 
-    raise CompilerError(f"Source file '{source_file}' is not under any configured source import base path")
+    raise CompilerError(f"Source file '{source_file}' is not under any configured mnemonic base path")
 
 
 def _artifact_path(key: str, build_dir: Path) -> Path:
     """Return the artifact path for a given canonical key.
 
     The key segments (split on ``/``) map directly to subdirectory components
-    under *build_dir* (e.g. ``"common/types"`` → ``build_dir/common/types.archml.json``).
+    under *build_dir* (e.g. ``"myapp/types"`` → ``build_dir/myapp/types.archml.json``).
     """
     parts = key.split("/")
     artifact_dir = build_dir
@@ -159,62 +171,74 @@ def _is_up_to_date(source_file: Path, artifact: Path) -> bool:
 
 def _resolve_import_source(
     import_path: str,
-    source_import_map: dict[str, Path],
+    source_import_map: dict[tuple[str, str], Path],
+    source_repo: str,
 ) -> Path:
     """Resolve an import path to the absolute path of the ``.archml`` source file.
 
     Args:
-        import_path: The raw import path string as stored in :class:`ImportDeclaration`
-            (e.g. ``"shared/types"``, ``"common/types"``, ``"@repo/path/to/file"``,
-            or ``"@repo/mnemonic/path/to/file"``).
-        source_import_map: Mapping from mnemonic names to base paths.  The
-            empty-string key ``""`` is the workspace root used for
-            non-mnemonic imports.  Remote repositories are keyed as ``"@repo"``
-            and their mnemonics as ``"@repo/mnemonic"``.
+        import_path: The raw import path string as stored in :class:`ImportDeclaration`.
+            Must be one of:
+            - ``"mnemonic/path/to/file"`` — resolved using *source_repo*
+            - ``"@repo/mnemonic/path/to/file"`` — resolved using the named
+              remote repository and mnemonic
+        source_import_map: Mapping from ``(repo_id, mnemonic)`` to base paths.
+        source_repo: Repository identifier of the file performing the import
+            (``""`` for local workspace, ``"@repo"`` for remote).
 
     Returns:
         Absolute path to the ``.archml`` file (which may or may not exist).
 
     Raises:
-        CompilerError: If *import_path* is a remote git import (starts with
-            ``@``) whose repository key is absent from *source_import_map*.
+        CompilerError: If *import_path* has an invalid format or if the
+            required mnemonic is absent from *source_import_map*.
     """
     if import_path.startswith("@"):
-        slash_pos = import_path.find("/", 1)
-        if slash_pos == -1:
-            raise CompilerError(f"Invalid remote git import path '{import_path}': expected '@repo/path/to/file'")
-        # Try a two-segment key (@repo/mnemonic) first so that remote-repo
-        # mnemonics take precedence over literal subdirectory paths.
-        second_slash = import_path.find("/", slash_pos + 1)
-        if second_slash != -1:
-            two_seg_key = import_path[:second_slash]  # e.g. "@payments/utils"
-            if two_seg_key in source_import_map:
-                rel = import_path[second_slash + 1 :]
-                return source_import_map[two_seg_key] / (rel + ".archml")
-        repo_key = import_path[:slash_pos]
-        if repo_key not in source_import_map:
+        # Format: @repo/mnemonic/path/to/file
+        slash1 = import_path.find("/", 1)
+        if slash1 == -1:
             raise CompilerError(
-                f"Remote git import '{import_path}': repository '{repo_key}' not found in workspace. "
-                "Run 'archml sync-remote' to download remote repositories."
+                f"Invalid remote import '{import_path}': expected '@repo/mnemonic/path' format"
             )
-        rel = import_path[slash_pos + 1 :]
-        return source_import_map[repo_key] / (rel + ".archml")
-    slash_pos = import_path.find("/")
-    if slash_pos != -1:
-        first_segment = import_path[:slash_pos]
-        if first_segment in source_import_map:
-            rel = import_path[slash_pos + 1 :]
-            return source_import_map[first_segment] / (rel + ".archml")
-    workspace_root = source_import_map.get("")
-    if workspace_root is None:
-        raise CompilerError(f"Cannot resolve import '{import_path}': no workspace root configured in source_import_map")
-    return workspace_root / (import_path + ".archml")
+        repo_id = import_path[:slash1]  # e.g. "@payments"
+        rest = import_path[slash1 + 1 :]  # e.g. "lib/types" or "lib/shared/types"
+        slash2 = rest.find("/")
+        if slash2 == -1:
+            raise CompilerError(
+                f"Invalid remote import '{import_path}': expected '@repo/mnemonic/path' format "
+                "(missing path component after mnemonic)"
+            )
+        mnemonic = rest[:slash2]  # e.g. "lib"
+        path = rest[slash2 + 1 :]  # e.g. "types" or "shared/types"
+        key = (repo_id, mnemonic)
+        if key not in source_import_map:
+            raise CompilerError(
+                f"Remote import '{import_path}': mnemonic '{mnemonic}' in repository '{repo_id}' "
+                "not found in workspace. Run 'archml sync-remote' to download remote repositories."
+            )
+        return source_import_map[key] / (path + ".archml")
+
+    # Format: mnemonic/path/to/file
+    slash1 = import_path.find("/")
+    if slash1 == -1:
+        raise CompilerError(
+            f"Invalid import '{import_path}': expected 'mnemonic/path' format "
+            "(imports must start with a mnemonic name followed by a path)"
+        )
+    mnemonic = import_path[:slash1]  # e.g. "mylib"
+    path = import_path[slash1 + 1 :]  # e.g. "types" or "shared/types"
+    key = (source_repo, mnemonic)
+    if key not in source_import_map:
+        raise CompilerError(
+            f"Import '{import_path}': mnemonic '{mnemonic}' not found in workspace configuration"
+        )
+    return source_import_map[key] / (path + ".archml")
 
 
 def _compile_file(
     source_file: Path,
     build_dir: Path,
-    source_import_map: dict[str, Path],
+    source_import_map: dict[tuple[str, str], Path],
     compiled: dict[str, ArchFile],
     in_progress: set[str],
     *,
@@ -225,16 +249,13 @@ def _compile_file(
     Args:
         source_file: Absolute path to the .archml file to compile.
         build_dir: Root directory for compiled artifacts.
-        source_import_map: Mapping from mnemonic names to base paths for
-            cross-workspace import resolution.  The empty-string key ``""``
-            is the workspace root.
+        source_import_map: Mapping from ``(repo_id, mnemonic)`` to base paths.
         compiled: Accumulator mapping already-compiled canonical keys to models.
         in_progress: Set of canonical keys currently being compiled (cycle guard).
-        _key: Optional pre-computed canonical key. When provided (always the case
-            for dependency files resolved via ``_resolve_import_source``), the key
-            is used directly without inferring it from the filesystem path. This
-            prevents ambiguity when a mnemonic base path is nested inside the
-            workspace root.
+        _key: Optional pre-computed canonical key.  When provided (always the
+            case for dependency files resolved via ``_resolve_import_source``),
+            the key is used directly without inferring it from the filesystem
+            path.
 
     Returns:
         The compiled :class:`~archml.model.entities.ArchFile` for *source_file*.
@@ -243,6 +264,7 @@ def _compile_file(
         CompilerError: On any compilation failure.
     """
     key = _key if _key is not None else _rel_key(source_file, source_import_map)
+    source_repo = _get_source_repo(source_file, source_import_map)
 
     if key in compiled:
         return compiled[key]
@@ -260,7 +282,7 @@ def _compile_file(
         deps_valid = True
         for imp in arch_file.imports:
             try:
-                dep_source = _resolve_import_source(imp.source_path, source_import_map)
+                dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo)
             except CompilerError:
                 deps_valid = False
                 break
@@ -271,7 +293,7 @@ def _compile_file(
             # Recursively ensure all dependencies are also loaded into the
             # result map so callers see the full transitive closure.
             for imp in arch_file.imports:
-                dep_source = _resolve_import_source(imp.source_path, source_import_map)
+                dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo)
                 _compile_file(
                     dep_source,
                     build_dir,
@@ -299,7 +321,7 @@ def _compile_file(
         # Recursively compile all imported dependencies.
         resolved_imports: dict[str, ArchFile] = {}
         for imp in arch_file.imports:
-            dep_source = _resolve_import_source(imp.source_path, source_import_map)
+            dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo)
             if not dep_source.exists():
                 raise CompilerError(
                     f"Dependency '{imp.source_path}' of '{source_file}' not found (expected '{dep_source}')"

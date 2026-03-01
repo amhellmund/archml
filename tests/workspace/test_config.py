@@ -18,18 +18,6 @@ from archml.workspace.config import (
 # ###############
 
 
-def test_load_minimal_config(tmp_path):
-    """A config with only build-directory and no source-imports is valid."""
-    cfg_file = tmp_path / ".archml-workspace.yaml"
-    cfg_file.write_text("build-directory: build\n", encoding="utf-8")
-
-    config = load_workspace_config(cfg_file)
-
-    assert isinstance(config, WorkspaceConfig)
-    assert config.build_directory == "build"
-    assert config.source_imports == []
-
-
 def test_load_config_with_local_path_import(tmp_path):
     """A source import with local-path is parsed as LocalPathImport."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
@@ -91,19 +79,6 @@ def test_load_config_with_mixed_imports(tmp_path):
     assert isinstance(config.source_imports[1], GitPathImport)
 
 
-def test_load_config_with_empty_source_imports(tmp_path):
-    """An explicit empty source-imports list is accepted."""
-    cfg_file = tmp_path / ".archml-workspace.yaml"
-    cfg_file.write_text(
-        "build-directory: build\nsource-imports: []\n",
-        encoding="utf-8",
-    )
-
-    config = load_workspace_config(cfg_file)
-
-    assert config.source_imports == []
-
-
 def test_error_file_not_found(tmp_path):
     """Loading a nonexistent file raises WorkspaceConfigError."""
     missing = tmp_path / "no-such-file.yaml"
@@ -124,7 +99,10 @@ def test_error_invalid_yaml_syntax(tmp_path):
 def test_error_missing_build_directory(tmp_path):
     """Omitting build-directory raises WorkspaceConfigError."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
-    cfg_file.write_text("source-imports: []\n", encoding="utf-8")
+    cfg_file.write_text(
+        "source-imports:\n  - name: src\n    local-path: .\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
         load_workspace_config(cfg_file)
@@ -199,7 +177,9 @@ def test_error_unknown_top_level_field(tmp_path):
     """An unrecognised top-level key raises WorkspaceConfigError."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
     cfg_file.write_text(
-        "build-directory: build\nunknown-field: oops\n",
+        "build-directory: build\n"
+        "source-imports:\n  - name: src\n    local-path: .\n"
+        "unknown-field: oops\n",
         encoding="utf-8",
     )
 
@@ -211,7 +191,9 @@ def test_load_config_with_remote_sync_directory(tmp_path):
     """A config with remote-sync-directory is parsed correctly."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
     cfg_file.write_text(
-        "build-directory: build\nremote-sync-directory: .remotes\n",
+        "build-directory: build\n"
+        "remote-sync-directory: .remotes\n"
+        "source-imports:\n  - name: src\n    local-path: .\n",
         encoding="utf-8",
     )
 
@@ -223,8 +205,126 @@ def test_load_config_with_remote_sync_directory(tmp_path):
 def test_load_config_default_remote_sync_directory(tmp_path):
     """When remote-sync-directory is absent, the default is '.archml-remotes'."""
     cfg_file = tmp_path / ".archml-workspace.yaml"
-    cfg_file.write_text("build-directory: build\n", encoding="utf-8")
+    cfg_file.write_text(
+        "build-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n",
+        encoding="utf-8",
+    )
 
     config = load_workspace_config(cfg_file)
 
     assert config.remote_sync_directory == ".archml-remotes"
+
+
+# ###############
+# Mnemonic name validation
+# ###############
+
+
+def test_error_mnemonic_missing_source_imports(tmp_path):
+    """Omitting source-imports entirely raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text("build-directory: build\n", encoding="utf-8")
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_empty_source_imports_list(tmp_path):
+    """An empty source-imports list raises WorkspaceConfigError (at least one required)."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\nsource-imports: []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_mnemonic_name_with_uppercase(tmp_path):
+    """A mnemonic name with uppercase letters raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\nsource-imports:\n  - name: MyLib\n    local-path: .\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_mnemonic_name_starts_with_digit(tmp_path):
+    """A mnemonic name starting with a digit raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\nsource-imports:\n  - name: 1lib\n    local-path: .\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_mnemonic_name_with_slash(tmp_path):
+    """A mnemonic name containing a slash raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\nsource-imports:\n  - name: my/lib\n    local-path: .\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_mnemonic_name_with_space(tmp_path):
+    """A mnemonic name containing a space raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\nsource-imports:\n  - name: my lib\n    local-path: .\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_error_mnemonic_name_starts_with_dash(tmp_path):
+    """A mnemonic name starting with a dash raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\nsource-imports:\n  - name: -mylib\n    local-path: .\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)
+
+
+def test_valid_mnemonic_names(tmp_path):
+    """Valid mnemonic names using letters, digits, dashes, and underscores are accepted."""
+    valid_names = ["src", "mylib", "my-lib", "my-lib-2", "a", "lib123", "my_lib"]
+    for name in valid_names:
+        cfg_file = tmp_path / f".archml-workspace-{name}.yaml"
+        cfg_file.write_text(
+            f"build-directory: build\nsource-imports:\n  - name: {name}\n    local-path: .\n",
+            encoding="utf-8",
+        )
+        config = load_workspace_config(cfg_file)
+        assert config.source_imports[0].name == name
+
+
+def test_error_git_repo_name_with_slash(tmp_path):
+    """A git repo name containing a slash raises WorkspaceConfigError."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: my/repo\n"
+        "    git-repository: https://github.com/example/repo\n"
+        "    revision: main\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
+        load_workspace_config(cfg_file)

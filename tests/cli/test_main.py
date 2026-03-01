@@ -62,7 +62,9 @@ def test_init_creates_workspace_dir_if_not_exists(tmp_path: Path, monkeypatch: p
 
 def test_init_fails_if_workspace_yaml_already_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """init exits with error code 1 when .archml-workspace.yaml already exists."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: .archml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
+    )
     monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -77,6 +79,30 @@ def test_init_fails_if_name_is_empty(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert exc_info.value.code == 1
 
 
+def test_init_fails_if_name_has_invalid_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """init exits with error code 1 when the mnemonic name has an invalid format."""
+    monkeypatch.setattr(sys, "argv", ["archml", "init", "MyRepo", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_init_fails_if_name_has_slash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """init exits with error code 1 when the mnemonic name contains a slash."""
+    monkeypatch.setattr(sys, "argv", ["archml", "init", "my/repo", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
 def test_init_succeeds_if_dir_exists_without_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """init succeeds when the directory exists but has no .archml-workspace.yaml."""
     monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
@@ -87,10 +113,12 @@ def test_init_succeeds_if_dir_exists_without_yaml(tmp_path: Path, monkeypatch: p
 
 # -------- check tests --------
 
+_MINIMAL_WORKSPACE = "build-directory: .archml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
+
 
 def test_check_with_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """check exits with code 0 and reports no files when workspace has none."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -103,7 +131,7 @@ def test_check_with_valid_archml_file(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check discovers .archml files, compiles them, and reports success."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -120,7 +148,7 @@ def test_check_reports_compile_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 when a .archml file has a parse error."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "bad.archml").write_text("component {}")  # missing name
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -136,7 +164,7 @@ def test_check_reports_validation_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 when business validation finds errors."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     # Connection cycle: A -> B -> A (inline components inside system)
     (tmp_path / "cycle.archml").write_text(
         "interface I { field v: Int }\n"
@@ -159,7 +187,7 @@ def test_check_reports_validation_warnings(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 0 but prints warnings for isolated components."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     # An isolated component triggers a warning but not an error.
     (tmp_path / "isolated.archml").write_text("component Isolated {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
@@ -175,7 +203,9 @@ def test_check_uses_workspace_yaml_build_dir(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """check uses the build-directory from .archml-workspace.yaml when present."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: custom-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: custom-build\nsource-imports:\n  - name: src\n    local-path: .\n"
+    )
     (tmp_path / "arch.archml").write_text("interface Signal { field v: Int }\ncomponent A { provides Signal }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -223,7 +253,7 @@ def test_check_reports_parse_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 and prints error message on parse failure."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "bad.archml").write_text("component {}\n")  # missing name
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -244,7 +274,10 @@ def test_check_with_workspace_yaml_and_local_source_import(
     (lib_dir / "iface.archml").write_text("interface MyIface { field v: Int }\n")
 
     (tmp_path / ".archml-workspace.yaml").write_text(
-        "build-directory: build\nsource-imports:\n  - name: mylib\n    local-path: lib\n"
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: src\n    local-path: .\n"
+        "  - name: mylib\n    local-path: lib\n"
     )
     (tmp_path / "app.archml").write_text("from mylib/iface import MyIface\ncomponent C { requires MyIface }\n")
 
@@ -277,7 +310,9 @@ def test_check_excludes_build_directory_from_scan(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Artifacts in the build directory are not re-scanned as source files."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n"
+    )
 
     # Place a valid source file and compile it once to create the artifact.
     (tmp_path / "comp.archml").write_text("component Good {}\n")
@@ -292,6 +327,21 @@ def test_check_excludes_build_directory_from_scan(
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
     assert "No issues found." in captured.out
+
+
+def test_check_fails_if_workspace_config_has_no_source_imports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """check exits with code 1 when workspace config has no source-imports."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
 
 
 # -------- serve tests --------
@@ -316,7 +366,7 @@ def test_serve_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: py
 
 def test_serve_launches_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve creates and runs the web app when workspace exists."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     monkeypatch.setattr(sys, "argv", ["archml", "serve", str(tmp_path)])
     mock_app = MagicMock()
     with (
@@ -330,7 +380,7 @@ def test_serve_launches_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_serve_custom_host_and_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve passes custom host and port to the app."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -380,7 +430,9 @@ def test_sync_remote_no_workspace_yaml(tmp_path: Path, monkeypatch: pytest.Monke
 def test_sync_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """sync-remote exits 0 when no git imports are configured."""
     (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n"
+    )
     monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -586,7 +638,9 @@ def test_update_remote_no_workspace_yaml(tmp_path: Path, monkeypatch: pytest.Mon
 def test_update_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """update-remote exits 0 when no git imports are configured."""
     (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n"
+    )
     monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -709,20 +763,27 @@ def test_update_remote_exits_1_on_resolution_failure(
 def test_check_command_uses_synced_remote_repos(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """check includes synced remote repos in the source import map when they exist."""
+    """check includes synced remote repos' mnemonics in the source import map when they exist."""
     remote_dir = tmp_path / ".archml-remotes" / "payments"
-    remote_dir.mkdir(parents=True)
-    (remote_dir / "api.archml").write_text("interface PaymentAPI { field amount: Decimal }\n")
+    remote_api_dir = remote_dir / "api"
+    remote_api_dir.mkdir(parents=True)
+    (remote_api_dir / "types.archml").write_text("interface PaymentAPI { field amount: Decimal }\n")
+    # Remote repo defines its own workspace config with the "api" mnemonic.
+    (remote_dir / ".archml-workspace.yaml").write_text(
+        "build-directory: build\nsource-imports:\n  - name: api\n    local-path: api\n"
+    )
 
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text(
         "build-directory: build\n"
         "source-imports:\n"
+        "  - name: src\n    local-path: .\n"
         "  - name: payments\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    (tmp_path / "app.archml").write_text("from @payments/api import PaymentAPI\ncomponent C { requires PaymentAPI }\n")
+    (tmp_path / "app.archml").write_text(
+        "from @payments/api/types import PaymentAPI\ncomponent C { requires PaymentAPI }\n"
+    )
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -745,10 +806,10 @@ def test_check_command_loads_remote_repo_mnemonics(
         "build-directory: build\nsource-imports:\n  - name: lib\n    local-path: src/lib\n"
     )
 
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text(
         "build-directory: build\n"
         "source-imports:\n"
+        "  - name: src\n    local-path: .\n"
         "  - name: payments\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
@@ -771,19 +832,19 @@ def test_check_command_warns_on_invalid_remote_workspace_yaml(
     """check emits a warning when a remote repo's .archml-workspace.yaml is invalid."""
     remote_dir = tmp_path / ".archml-remotes" / "payments"
     remote_dir.mkdir(parents=True)
-    (remote_dir / "api.archml").write_text("interface PaymentAPI { field amount: Decimal }\n")
-    # Malformed remote workspace config
+    # Malformed remote workspace config — no mnemonics loaded for @payments.
     (remote_dir / ".archml-workspace.yaml").write_text("bad yaml: [unterminated\n")
 
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text(
         "build-directory: build\n"
         "source-imports:\n"
+        "  - name: src\n    local-path: .\n"
         "  - name: payments\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    (tmp_path / "app.archml").write_text("from @payments/api import PaymentAPI\ncomponent C { requires PaymentAPI }\n")
+    # Local file with no imports from @payments — compilation succeeds despite bad remote config.
+    (tmp_path / "app.archml").write_text("component C {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()

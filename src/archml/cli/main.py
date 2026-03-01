@@ -4,6 +4,7 @@
 """Entry point for the ArchML command-line interface."""
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -144,6 +145,13 @@ def _cmd_init(args: argparse.Namespace) -> int:
     if not name:
         print("Error: mnemonic name cannot be empty.", file=sys.stderr)
         return 1
+    if not re.match(r"^[a-z][a-z0-9_-]*$", name):
+        print(
+            f"Error: invalid mnemonic name '{name}': must start with a lowercase letter "
+            "followed by lowercase letters, digits, hyphens, or underscores.",
+            file=sys.stderr,
+        )
+        return 1
 
     workspace_dir = Path(args.workspace_dir).resolve()
     workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -184,9 +192,6 @@ def _cmd_check(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # The empty-string key represents the workspace root for non-mnemonic imports.
-    source_import_map: dict[str, Path] = {"": directory}
-
     try:
         config = load_workspace_config(workspace_yaml)
     except WorkspaceConfigError as exc:
@@ -196,13 +201,16 @@ def _cmd_check(args: argparse.Namespace) -> int:
     build_dir = directory / config.build_directory
     sync_dir = directory / config.remote_sync_directory
 
+    # Build the source import map: (repo_id, mnemonic) -> absolute base path.
+    # Local mnemonics use "" as repo_id; remote repos use "@name".
+    source_import_map: dict[tuple[str, str], Path] = {}
+
     for imp in config.source_imports:
         if isinstance(imp, LocalPathImport):
-            source_import_map[imp.name] = (directory / imp.local_path).resolve()
+            source_import_map[("", imp.name)] = (directory / imp.local_path).resolve()
         elif isinstance(imp, GitPathImport):
             repo_dir = (sync_dir / imp.name).resolve()
             if repo_dir.exists():
-                source_import_map[f"@{imp.name}"] = repo_dir
                 remote_workspace_yaml = repo_dir / ".archml-workspace.yaml"
                 if remote_workspace_yaml.exists():
                     try:
@@ -210,11 +218,20 @@ def _cmd_check(args: argparse.Namespace) -> int:
                         for remote_imp in remote_config.source_imports:
                             if isinstance(remote_imp, LocalPathImport):
                                 mnemonic_path = (repo_dir / remote_imp.local_path).resolve()
-                                source_import_map[f"@{imp.name}/{remote_imp.name}"] = mnemonic_path
+                                source_import_map[(f"@{imp.name}", remote_imp.name)] = mnemonic_path
                     except WorkspaceConfigError as exc:
                         print(f"Warning: could not load workspace config from remote '{imp.name}': {exc}")
 
-    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents and sync_dir not in f.parents]
+    # Scan only files under local mnemonic paths (repo_id == "").
+    local_mnemonic_paths = {base_path for (repo_id, _), base_path in source_import_map.items() if repo_id == ""}
+    seen_files: set[Path] = set()
+    archml_files: list[Path] = []
+    for base_path in sorted(local_mnemonic_paths):
+        for f in base_path.rglob("*.archml"):
+            if f not in seen_files and build_dir not in f.parents and sync_dir not in f.parents:
+                seen_files.add(f)
+                archml_files.append(f)
+
     if not archml_files:
         print("No .archml files found in the workspace.")
         return 0
