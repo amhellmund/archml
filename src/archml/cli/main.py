@@ -148,7 +148,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
     # Load optional extended workspace configuration for source imports and build dir.
     workspace_yaml = directory / ".archml-workspace.yaml"
     build_dir = directory / _DEFAULT_BUILD_DIR
-    source_import_map: dict[str, Path] = {}
+    # The empty-string key represents the workspace root for non-mnemonic imports.
+    source_import_map: dict[str, Path] = {"": directory}
 
     if workspace_yaml.exists():
         try:
@@ -171,7 +172,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     print(f"Checking {len(archml_files)} architecture file(s)...")
     try:
-        compile_files(archml_files, build_dir, directory, source_import_map)
+        compile_files(archml_files, build_dir, source_import_map)
     except CompilerError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

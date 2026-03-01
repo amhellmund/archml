@@ -48,8 +48,7 @@ class CompilerError(Exception):
 def compile_files(
     files: list[Path],
     build_dir: Path,
-    source_root: Path,
-    source_import_map: dict[str, Path] | None = None,
+    source_import_map: dict[str, Path],
 ) -> dict[str, ArchFile]:
     """Compile a list of .archml source files.
 
@@ -65,13 +64,12 @@ def compile_files(
     Args:
         files: Absolute paths to the .archml source files to compile.
         build_dir: Root directory for compiled artifacts.
-        source_root: Root directory that all local source files are relative to;
-            used to compute artifact paths and import resolution.
-        source_import_map: Mapping from mnemonic names to absolute base paths for
-            local cross-workspace imports.  Import paths of the form
+        source_import_map: Mapping from mnemonic names to absolute base paths.
+            The empty-string key ``""`` represents the workspace root (used to
+            resolve non-mnemonic imports and compute artifact keys for files
+            that do not belong to a named mnemonic).  Import paths of the form
             ``mnemonic/rel`` are resolved by looking up *mnemonic* in this map
-            and appending *rel*.  Defaults to an empty map (no external imports
-            configured).
+            and appending *rel*.
 
     Returns:
         A mapping from canonical path keys (e.g. ``"shared/types"`` or
@@ -82,14 +80,12 @@ def compile_files(
         CompilerError: On parse errors, missing imports, unsupported remote
             imports, semantic errors, or circular dependencies.
     """
-    if source_import_map is None:
-        source_import_map = {}
     compiled: dict[str, ArchFile] = {}
     in_progress: set[str] = set()
     for f in files:
         # For top-level files, compute the key from the filesystem path.
         # Dependency keys are always the import path string (passed via _key).
-        _compile_file(f, build_dir, source_root, source_import_map, compiled, in_progress)
+        _compile_file(f, build_dir, source_import_map, compiled, in_progress)
     return compiled
 
 
@@ -98,26 +94,30 @@ def compile_files(
 # ################
 
 
-def _rel_key(source_file: Path, source_root: Path, source_import_map: dict[str, Path]) -> str:
+def _rel_key(source_file: Path, source_import_map: dict[str, Path]) -> str:
     """Return the canonical key for a source file (path without extension).
 
-    For files under *source_root*, the key is the relative path without the
-    ``.archml`` suffix (e.g. ``"shared/types"``).
+    For files under the workspace root (``source_import_map[""]``), the key is
+    the relative path without the ``.archml`` suffix (e.g. ``"shared/types"``).
 
-    For files under a local mnemonic base path, the key is ``"mnemonic/rel"``
+    For files under a named mnemonic base path, the key is ``"mnemonic/rel"``
     (e.g. ``"common/types"``).
 
     Raises:
-        CompilerError: If the file is not under *source_root* or any known
-            source import base path.
+        CompilerError: If the file is not under any configured base path.
     """
-    try:
-        rel = source_file.relative_to(source_root)
-        return str(rel.with_suffix("")).replace("\\", "/")
-    except ValueError:
-        pass
+    # Try the workspace root (empty-string key) first — its key has no prefix.
+    workspace_root = source_import_map.get("")
+    if workspace_root is not None:
+        try:
+            rel = source_file.relative_to(workspace_root)
+            return str(rel.with_suffix("")).replace("\\", "/")
+        except ValueError:
+            pass
 
     for mnemonic, base_path in source_import_map.items():
+        if mnemonic == "":
+            continue
         try:
             rel = source_file.relative_to(base_path)
             return f"{mnemonic}/" + str(rel.with_suffix("")).replace("\\", "/")
@@ -125,8 +125,7 @@ def _rel_key(source_file: Path, source_root: Path, source_import_map: dict[str, 
             continue
 
     raise CompilerError(
-        f"Source file '{source_file}' is not under the source root '{source_root}' "
-        f"or any configured source import"
+        f"Source file '{source_file}' is not under any configured source import base path"
     )
 
 
@@ -152,7 +151,6 @@ def _is_up_to_date(source_file: Path, artifact: Path) -> bool:
 
 def _resolve_import_source(
     import_path: str,
-    source_root: Path,
     source_import_map: dict[str, Path],
 ) -> Path:
     """Resolve an import path to the absolute path of the ``.archml`` source file.
@@ -160,8 +158,9 @@ def _resolve_import_source(
     Args:
         import_path: The raw import path string as stored in :class:`ImportDeclaration`
             (e.g. ``"shared/types"`` or ``"common/types"``).
-        source_root: Root directory for local (non-mnemonic) imports.
-        source_import_map: Mapping from mnemonic names to base paths.
+        source_import_map: Mapping from mnemonic names to base paths.  The
+            empty-string key ``""`` is the workspace root used for
+            non-mnemonic imports.
 
     Returns:
         Absolute path to the ``.archml`` file (which may or may not exist).
@@ -178,13 +177,17 @@ def _resolve_import_source(
         if first_segment in source_import_map:
             rel = import_path[slash_pos + 1:]
             return source_import_map[first_segment] / (rel + ".archml")
-    return source_root / (import_path + ".archml")
+    workspace_root = source_import_map.get("")
+    if workspace_root is None:
+        raise CompilerError(
+            f"Cannot resolve import '{import_path}': no workspace root configured in source_import_map"
+        )
+    return workspace_root / (import_path + ".archml")
 
 
 def _compile_file(
     source_file: Path,
     build_dir: Path,
-    source_root: Path,
     source_import_map: dict[str, Path],
     compiled: dict[str, ArchFile],
     in_progress: set[str],
@@ -196,16 +199,16 @@ def _compile_file(
     Args:
         source_file: Absolute path to the .archml file to compile.
         build_dir: Root directory for compiled artifacts.
-        source_root: Root directory that local source files are relative to.
         source_import_map: Mapping from mnemonic names to base paths for
-            cross-workspace import resolution.
+            cross-workspace import resolution.  The empty-string key ``""``
+            is the workspace root.
         compiled: Accumulator mapping already-compiled canonical keys to models.
         in_progress: Set of canonical keys currently being compiled (cycle guard).
         _key: Optional pre-computed canonical key. When provided (always the case
             for dependency files resolved via ``_resolve_import_source``), the key
             is used directly without inferring it from the filesystem path. This
             prevents ambiguity when a mnemonic base path is nested inside the
-            source root.
+            workspace root.
 
     Returns:
         The compiled :class:`~archml.model.entities.ArchFile` for *source_file*.
@@ -213,7 +216,7 @@ def _compile_file(
     Raises:
         CompilerError: On any compilation failure.
     """
-    key = _key if _key is not None else _rel_key(source_file, source_root, source_import_map)
+    key = _key if _key is not None else _rel_key(source_file, source_import_map)
 
     if key in compiled:
         return compiled[key]
@@ -231,7 +234,7 @@ def _compile_file(
         deps_valid = True
         for imp in arch_file.imports:
             try:
-                dep_source = _resolve_import_source(imp.source_path, source_root, source_import_map)
+                dep_source = _resolve_import_source(imp.source_path, source_import_map)
             except CompilerError:
                 deps_valid = False
                 break
@@ -242,11 +245,10 @@ def _compile_file(
             # Recursively ensure all dependencies are also loaded into the
             # result map so callers see the full transitive closure.
             for imp in arch_file.imports:
-                dep_source = _resolve_import_source(imp.source_path, source_root, source_import_map)
+                dep_source = _resolve_import_source(imp.source_path, source_import_map)
                 _compile_file(
                     dep_source,
                     build_dir,
-                    source_root,
                     source_import_map,
                     compiled,
                     in_progress,
@@ -271,13 +273,13 @@ def _compile_file(
         # Recursively compile all imported dependencies.
         resolved_imports: dict[str, ArchFile] = {}
         for imp in arch_file.imports:
-            dep_source = _resolve_import_source(imp.source_path, source_root, source_import_map)
+            dep_source = _resolve_import_source(imp.source_path, source_import_map)
             if not dep_source.exists():
                 raise CompilerError(
                     f"Dependency '{imp.source_path}' of '{source_file}' not found (expected '{dep_source}')"
                 )
             dep = _compile_file(
-                dep_source, build_dir, source_root, source_import_map, compiled, in_progress, _key=imp.source_path
+                dep_source, build_dir, source_import_map, compiled, in_progress, _key=imp.source_path
             )
             resolved_imports[imp.source_path] = dep
 
