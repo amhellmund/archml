@@ -335,15 +335,112 @@ class TestSourceImports:
         assert "mid" in result
         assert "ext/iface" in result
 
-    def test_remote_git_import_raises_compiler_error(self, tmp_path: Path) -> None:
-        """Importing via @repo/mnemonic/path (remote git) raises CompilerError."""
+    def test_remote_git_import_raises_if_repo_not_in_source_import_map(self, tmp_path: Path) -> None:
+        """Importing via @repo/path raises CompilerError when @repo is not in source_import_map."""
         src = tmp_path / "src"
         build = tmp_path / "build"
 
         _write(src / "app.archml", "from @myrepo/mylib/types import X\ncomponent C {}")
 
-        with pytest.raises(CompilerError, match="Remote git imports are not yet supported"):
+        with pytest.raises(CompilerError, match="not found in workspace"):
             compile_files([src / "app.archml"], build, {"": src})
+
+    def test_remote_git_import_resolves_from_source_import_map(self, tmp_path: Path) -> None:
+        """Files imported via @repo/path are resolved when @repo is in source_import_map."""
+        src = tmp_path / "src"
+        remote = tmp_path / "remote"
+        build = tmp_path / "build"
+
+        _write(remote / "services" / "payment.archml", "interface PaymentService { field amount: Decimal }")
+        _write(
+            src / "app.archml",
+            "from @payments/services/payment import PaymentService\ncomponent C { requires PaymentService }",
+        )
+
+        result = compile_files(
+            [src / "app.archml"],
+            build,
+            {"": src, "@payments": remote},
+        )
+
+        assert "app" in result
+        assert "@payments/services/payment" in result
+
+    def test_remote_git_import_artifact_stored_under_at_prefix(self, tmp_path: Path) -> None:
+        """Artifacts for remote git imports are stored under @repo/ in the build dir."""
+        src = tmp_path / "src"
+        remote = tmp_path / "remote"
+        build = tmp_path / "build"
+
+        _write(remote / "types.archml", "interface RemoteType { field v: Int }")
+        _write(src / "app.archml", "from @ext/types import RemoteType\ncomponent C { requires RemoteType }")
+
+        compile_files([src / "app.archml"], build, {"": src, "@ext": remote})
+
+        assert _artifact(build, "@ext/types").exists()
+
+    def test_remote_git_import_with_mnemonic_resolves_from_two_segment_key(self, tmp_path: Path) -> None:
+        """@repo/mnemonic/path imports resolve via @repo/mnemonic key in source_import_map."""
+        src = tmp_path / "src"
+        remote_utils = tmp_path / "remote" / "src" / "utils"
+        build = tmp_path / "build"
+
+        _write(remote_utils / "helpers.archml", "interface Helper { field v: Int }")
+        _write(
+            src / "app.archml",
+            "from @payments/utils/helpers import Helper\ncomponent C { requires Helper }",
+        )
+
+        result = compile_files(
+            [src / "app.archml"],
+            build,
+            {"": src, "@payments": tmp_path / "remote", "@payments/utils": remote_utils},
+        )
+
+        assert "app" in result
+        assert "@payments/utils/helpers" in result
+
+    def test_remote_git_import_mnemonic_key_takes_precedence_over_root(self, tmp_path: Path) -> None:
+        """When @repo/mnemonic key exists it is used instead of @repo root for that prefix."""
+        src = tmp_path / "src"
+        remote_root = tmp_path / "remote"
+        remote_lib = tmp_path / "remote-lib"
+        build = tmp_path / "build"
+
+        # File exists in lib dir (via mnemonic), NOT under remote_root/lib/
+        _write(remote_lib / "types.archml", "interface LibType { field v: Int }")
+        _write(
+            src / "app.archml",
+            "from @ext/lib/types import LibType\ncomponent C { requires LibType }",
+        )
+
+        result = compile_files(
+            [src / "app.archml"],
+            build,
+            {"": src, "@ext": remote_root, "@ext/lib": remote_lib},
+        )
+
+        assert "@ext/lib/types" in result
+
+    def test_remote_git_import_falls_back_to_root_when_no_mnemonic_key(self, tmp_path: Path) -> None:
+        """When no @repo/mnemonic key matches, resolution falls back to @repo root."""
+        src = tmp_path / "src"
+        remote = tmp_path / "remote"
+        build = tmp_path / "build"
+
+        _write(remote / "lib" / "types.archml", "interface T { field v: Int }")
+        _write(
+            src / "app.archml",
+            "from @ext/lib/types import T\ncomponent C { requires T }",
+        )
+
+        result = compile_files(
+            [src / "app.archml"],
+            build,
+            {"": src, "@ext": remote},  # no "@ext/lib" mnemonic key
+        )
+
+        assert "@ext/lib/types" in result
 
     def test_mnemonic_missing_file_raises_compiler_error(self, tmp_path: Path) -> None:
         """A mnemonic import that refers to a non-existent file raises CompilerError."""

@@ -76,6 +76,38 @@ def main() -> None:
         help="Host to bind the server to (default: 127.0.0.1)",
     )
 
+    # sync-remote subcommand
+    sync_remote_parser = subparsers.add_parser(
+        "sync-remote",
+        help="Download configured remote git repositories",
+        description=(
+            "Download remote git repositories listed in the workspace configuration "
+            "to the configured sync directory at the commits pinned in the lockfile."
+        ),
+    )
+    sync_remote_parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="Directory containing the ArchML workspace (default: current directory)",
+    )
+
+    # update-remote subcommand
+    update_remote_parser = subparsers.add_parser(
+        "update-remote",
+        help="Update remote git repository commits in the lockfile",
+        description=(
+            "Resolve branch or tag references to their latest commit SHAs and "
+            "write the results to the lockfile. Commit-hash revisions are pinned as-is."
+        ),
+    )
+    update_remote_parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="Directory containing the ArchML workspace (default: current directory)",
+    )
+
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -99,6 +131,10 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_check(args)
     if args.command == "serve":
         return _cmd_serve(args)
+    if args.command == "sync-remote":
+        return _cmd_sync_remote(args)
+    if args.command == "update-remote":
+        return _cmd_update_remote(args)
     return 0
 
 
@@ -131,7 +167,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_check(args: argparse.Namespace) -> int:
     """Handle the check subcommand."""
-    from archml.workspace.config import LocalPathImport
+    from archml.workspace.config import GitPathImport, LocalPathImport
 
     directory = Path(args.directory).resolve()
 
@@ -158,13 +194,27 @@ def _cmd_check(args: argparse.Namespace) -> int:
         return 1
 
     build_dir = directory / config.build_directory
+    sync_dir = directory / config.remote_sync_directory
 
     for imp in config.source_imports:
         if isinstance(imp, LocalPathImport):
             source_import_map[imp.name] = (directory / imp.local_path).resolve()
-        # GitPathImport requires repository fetching which is not yet supported.
+        elif isinstance(imp, GitPathImport):
+            repo_dir = (sync_dir / imp.name).resolve()
+            if repo_dir.exists():
+                source_import_map[f"@{imp.name}"] = repo_dir
+                remote_workspace_yaml = repo_dir / ".archml-workspace.yaml"
+                if remote_workspace_yaml.exists():
+                    try:
+                        remote_config = load_workspace_config(remote_workspace_yaml)
+                        for remote_imp in remote_config.source_imports:
+                            if isinstance(remote_imp, LocalPathImport):
+                                mnemonic_path = (repo_dir / remote_imp.local_path).resolve()
+                                source_import_map[f"@{imp.name}/{remote_imp.name}"] = mnemonic_path
+                    except WorkspaceConfigError as exc:
+                        print(f"Warning: could not load workspace config from remote '{imp.name}': {exc}")
 
-    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents]
+    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents and sync_dir not in f.parents]
     if not archml_files:
         print("No .archml files found in the workspace.")
         return 0
@@ -214,4 +264,185 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     print(f"Serving architecture view at http://{args.host}:{args.port}/")
     app = create_app(directory=directory)
     app.run(host=args.host, port=args.port, debug=False)
+    return 0
+
+
+def _cmd_sync_remote(args: argparse.Namespace) -> int:
+    """Handle the sync-remote subcommand."""
+    from archml.workspace.config import GitPathImport
+    from archml.workspace.git_ops import GitError, clone_at_commit, get_current_commit
+    from archml.workspace.lockfile import LOCKFILE_NAME, LockfileError, load_lockfile
+
+    directory = Path(args.directory).resolve()
+
+    if not directory.exists():
+        print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
+        return 1
+
+    workspace_file = directory / ".archml-workspace"
+    if not workspace_file.exists():
+        print(
+            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
+            file=sys.stderr,
+        )
+        return 1
+
+    workspace_yaml = directory / ".archml-workspace.yaml"
+    if not workspace_yaml.exists():
+        print("No workspace configuration found. Nothing to sync.")
+        return 0
+
+    try:
+        config = load_workspace_config(workspace_yaml)
+    except WorkspaceConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    git_imports = [imp for imp in config.source_imports if isinstance(imp, GitPathImport)]
+    if not git_imports:
+        print("No remote git repositories configured. Nothing to sync.")
+        return 0
+
+    lockfile_path = directory / LOCKFILE_NAME
+    if not lockfile_path.exists():
+        print(
+            "Error: lockfile not found. Run 'archml update-remote' to create the lockfile.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        lockfile = load_lockfile(lockfile_path)
+    except LockfileError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    locked_by_name = {entry.name: entry for entry in lockfile.locked_revisions}
+    sync_dir = directory / config.remote_sync_directory
+
+    has_errors = False
+    for imp in git_imports:
+        if imp.name not in locked_by_name:
+            print(
+                f"Error: '{imp.name}' is not in the lockfile. Run 'archml update-remote' first.",
+                file=sys.stderr,
+            )
+            has_errors = True
+            continue
+
+        pinned_commit = locked_by_name[imp.name].commit
+        target_dir = sync_dir / imp.name
+
+        try:
+            current = get_current_commit(target_dir)
+        except GitError as exc:
+            print(f"Error: cannot check current state of '{imp.name}': {exc}", file=sys.stderr)
+            has_errors = True
+            continue
+
+        if current == pinned_commit:
+            print(f"  {imp.name}: already at {pinned_commit[:8]}")
+            continue
+
+        print(f"  {imp.name}: syncing to {pinned_commit[:8]}...")
+        try:
+            clone_at_commit(imp.git_repository, pinned_commit, target_dir)
+            print(f"  {imp.name}: done.")
+        except GitError as exc:
+            print(f"Error: failed to sync '{imp.name}': {exc}", file=sys.stderr)
+            has_errors = True
+
+    return 1 if has_errors else 0
+
+
+def _cmd_update_remote(args: argparse.Namespace) -> int:
+    """Handle the update-remote subcommand."""
+    from archml.workspace.config import GitPathImport
+    from archml.workspace.git_ops import GitError, is_commit_hash, resolve_commit
+    from archml.workspace.lockfile import (
+        LOCKFILE_NAME,
+        LockedRevision,
+        Lockfile,
+        LockfileError,
+        load_lockfile,
+        save_lockfile,
+    )
+
+    directory = Path(args.directory).resolve()
+
+    if not directory.exists():
+        print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
+        return 1
+
+    workspace_file = directory / ".archml-workspace"
+    if not workspace_file.exists():
+        print(
+            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
+            file=sys.stderr,
+        )
+        return 1
+
+    workspace_yaml = directory / ".archml-workspace.yaml"
+    if not workspace_yaml.exists():
+        print("No workspace configuration found. Nothing to update.")
+        return 0
+
+    try:
+        config = load_workspace_config(workspace_yaml)
+    except WorkspaceConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    git_imports = [imp for imp in config.source_imports if isinstance(imp, GitPathImport)]
+    if not git_imports:
+        print("No remote git repositories configured. Nothing to update.")
+        return 0
+
+    lockfile_path = directory / LOCKFILE_NAME
+    if lockfile_path.exists():
+        try:
+            lockfile = load_lockfile(lockfile_path)
+        except LockfileError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+    else:
+        lockfile = Lockfile()
+
+    locked_by_name = {entry.name: entry for entry in lockfile.locked_revisions}
+
+    has_errors = False
+    for imp in git_imports:
+        if is_commit_hash(imp.revision):
+            commit = imp.revision
+            print(f"  {imp.name}: pinned at {commit[:8]} (commit hash, no update needed)")
+        else:
+            print(f"  {imp.name}: resolving '{imp.revision}'...")
+            try:
+                commit = resolve_commit(imp.git_repository, imp.revision)
+                print(f"  {imp.name}: resolved to {commit[:8]}")
+            except GitError as exc:
+                print(f"Error: failed to resolve '{imp.name}': {exc}", file=sys.stderr)
+                has_errors = True
+                continue
+
+        locked_by_name[imp.name] = LockedRevision.model_validate(
+            {
+                "name": imp.name,
+                "git-repository": imp.git_repository,
+                "revision": imp.revision,
+                "commit": commit,
+            }
+        )
+
+    if has_errors:
+        return 1
+
+    lockfile.locked_revisions = list(locked_by_name.values())
+    try:
+        save_lockfile(lockfile, lockfile_path)
+    except LockfileError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Lockfile updated: {lockfile_path}")
     return 0

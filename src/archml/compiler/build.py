@@ -14,10 +14,20 @@ Two forms of cross-file import are supported:
   *source_import_map* (``{mnemonic: absolute_base_path}``), derived from the
   workspace ``source-imports`` configuration.
 
-* **Remote git imports** — ``from @repo/mnemonic/path/to/file import …``
-  The ``@repo`` prefix identifies a Git repository.  This form is recognised
-  but **not yet implemented**; attempting to compile such an import raises
-  :class:`CompilerError`.
+* **Remote git imports** — ``from @repo/path/to/file import …``
+  The ``@repo`` prefix identifies a named Git repository configured in the
+  workspace.  The caller-supplied *source_import_map* must contain an entry
+  keyed as ``"@repo"`` pointing to the locally synced directory (populated by
+  ``archml sync-remote``).  If the key is absent, :class:`CompilerError` is
+  raised with a message directing the user to run ``archml sync-remote``.
+
+* **Remote git imports with mnemonics** — ``from @repo/mnemonic/path/to/file import …``
+  When the remote repository defines its own ``source-imports`` in its
+  ``.archml-workspace.yaml``, those mnemonics are exposed as two-segment keys
+  ``"@repo/mnemonic"`` in *source_import_map*.  Resolution tries the
+  two-segment key before falling back to the bare ``"@repo"`` key so that
+  mnemonic-rooted paths take precedence over literal subdirectory paths in the
+  repository root.
 """
 
 from __future__ import annotations
@@ -155,20 +165,40 @@ def _resolve_import_source(
 
     Args:
         import_path: The raw import path string as stored in :class:`ImportDeclaration`
-            (e.g. ``"shared/types"`` or ``"common/types"``).
+            (e.g. ``"shared/types"``, ``"common/types"``, ``"@repo/path/to/file"``,
+            or ``"@repo/mnemonic/path/to/file"``).
         source_import_map: Mapping from mnemonic names to base paths.  The
             empty-string key ``""`` is the workspace root used for
-            non-mnemonic imports.
+            non-mnemonic imports.  Remote repositories are keyed as ``"@repo"``
+            and their mnemonics as ``"@repo/mnemonic"``.
 
     Returns:
         Absolute path to the ``.archml`` file (which may or may not exist).
 
     Raises:
         CompilerError: If *import_path* is a remote git import (starts with
-            ``@``), which is not yet supported.
+            ``@``) whose repository key is absent from *source_import_map*.
     """
     if import_path.startswith("@"):
-        raise CompilerError(f"Remote git imports are not yet supported: '{import_path}'")
+        slash_pos = import_path.find("/", 1)
+        if slash_pos == -1:
+            raise CompilerError(f"Invalid remote git import path '{import_path}': expected '@repo/path/to/file'")
+        # Try a two-segment key (@repo/mnemonic) first so that remote-repo
+        # mnemonics take precedence over literal subdirectory paths.
+        second_slash = import_path.find("/", slash_pos + 1)
+        if second_slash != -1:
+            two_seg_key = import_path[:second_slash]  # e.g. "@payments/utils"
+            if two_seg_key in source_import_map:
+                rel = import_path[second_slash + 1 :]
+                return source_import_map[two_seg_key] / (rel + ".archml")
+        repo_key = import_path[:slash_pos]
+        if repo_key not in source_import_map:
+            raise CompilerError(
+                f"Remote git import '{import_path}': repository '{repo_key}' not found in workspace. "
+                "Run 'archml sync-remote' to download remote repositories."
+            )
+        rel = import_path[slash_pos + 1 :]
+        return source_import_map[repo_key] / (rel + ".archml")
     slash_pos = import_path.find("/")
     if slash_pos != -1:
         first_segment = import_path[:slash_pos]

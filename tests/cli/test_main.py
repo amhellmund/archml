@@ -344,3 +344,451 @@ def test_serve_custom_host_and_port(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         main()
     assert exc_info.value.code == 0
     mock_app.run.assert_called_once_with(host="0.0.0.0", port=9000, debug=False)
+
+
+# -------- sync-remote tests --------
+
+_COMMIT_40 = "a" * 40
+
+
+def test_sync_remote_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """sync-remote exits with code 1 when no workspace file is found."""
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_sync_remote_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """sync-remote exits with code 1 when directory does not exist."""
+    missing = tmp_path / "nonexistent"
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(missing)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_sync_remote_no_workspace_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """sync-remote exits 0 with a message when no workspace YAML is present."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+
+def test_sync_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """sync-remote exits 0 when no git imports are configured."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+
+def test_sync_remote_fails_without_lockfile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """sync-remote exits 1 when the lockfile is missing."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_sync_remote_fails_if_repo_not_in_lockfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """sync-remote exits 1 when a configured repo is missing from the lockfile."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    (tmp_path / ".archml-lockfile.yaml").write_text("locked-revisions: []\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "not in the lockfile" in captured.err
+
+
+def test_sync_remote_skips_repo_already_at_pinned_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """sync-remote skips a repo that is already at the pinned commit."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    (tmp_path / ".archml-lockfile.yaml").write_text(
+        f"locked-revisions:\n"
+        f"  - name: payments\n"
+        f"    git-repository: https://example.com/payments\n"
+        f"    revision: main\n"
+        f"    commit: {_COMMIT_40}\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with (
+        patch("archml.workspace.git_ops.get_current_commit", return_value=_COMMIT_40),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "already at" in captured.out
+
+
+def test_sync_remote_clones_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """sync-remote calls clone_at_commit when repo is not at the pinned commit."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    (tmp_path / ".archml-lockfile.yaml").write_text(
+        f"locked-revisions:\n"
+        f"  - name: payments\n"
+        f"    git-repository: https://example.com/payments\n"
+        f"    revision: main\n"
+        f"    commit: {_COMMIT_40}\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with (
+        patch("archml.workspace.git_ops.get_current_commit", return_value=None),
+        patch("archml.workspace.git_ops.clone_at_commit") as mock_clone,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 0
+    mock_clone.assert_called_once_with(
+        "https://example.com/payments",
+        _COMMIT_40,
+        tmp_path / ".archml-remotes" / "payments",
+    )
+
+
+def test_sync_remote_reports_error_on_clone_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """sync-remote exits 1 and reports an error if clone_at_commit fails."""
+    from archml.workspace.git_ops import GitError
+
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    (tmp_path / ".archml-lockfile.yaml").write_text(
+        f"locked-revisions:\n"
+        f"  - name: payments\n"
+        f"    git-repository: https://example.com/payments\n"
+        f"    revision: main\n"
+        f"    commit: {_COMMIT_40}\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with (
+        patch("archml.workspace.git_ops.get_current_commit", return_value=None),
+        patch("archml.workspace.git_ops.clone_at_commit", side_effect=GitError("network error")),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_sync_remote_uses_custom_sync_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """sync-remote uses the remote-sync-directory from workspace config."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "remote-sync-directory: custom-remotes\n"
+        "source-imports:\n"
+        "  - name: lib\n"
+        "    git-repository: https://example.com/lib\n"
+        "    revision: main\n"
+    )
+    (tmp_path / ".archml-lockfile.yaml").write_text(
+        f"locked-revisions:\n"
+        f"  - name: lib\n"
+        f"    git-repository: https://example.com/lib\n"
+        f"    revision: main\n"
+        f"    commit: {_COMMIT_40}\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    with (
+        patch("archml.workspace.git_ops.get_current_commit", return_value=None),
+        patch("archml.workspace.git_ops.clone_at_commit") as mock_clone,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 0
+    mock_clone.assert_called_once_with(
+        "https://example.com/lib",
+        _COMMIT_40,
+        tmp_path / "custom-remotes" / "lib",
+    )
+
+
+# -------- update-remote tests --------
+
+
+def test_update_remote_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """update-remote exits with code 1 when no workspace file is found."""
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_update_remote_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """update-remote exits with code 1 when directory does not exist."""
+    missing = tmp_path / "nonexistent"
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(missing)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_update_remote_no_workspace_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """update-remote exits 0 with a message when no workspace YAML is present."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+
+def test_update_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """update-remote exits 0 when no git imports are configured."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+
+def test_update_remote_creates_lockfile_from_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """update-remote creates a lockfile by resolving branch revisions."""
+    resolved_commit = "c" * 40
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    with (
+        patch("archml.workspace.git_ops.resolve_commit", return_value=resolved_commit),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 0
+    lockfile_path = tmp_path / ".archml-lockfile.yaml"
+    assert lockfile_path.exists()
+
+    from archml.workspace.lockfile import load_lockfile
+
+    lockfile = load_lockfile(lockfile_path)
+    assert len(lockfile.locked_revisions) == 1
+    assert lockfile.locked_revisions[0].name == "payments"
+    assert lockfile.locked_revisions[0].commit == resolved_commit
+    assert lockfile.locked_revisions[0].revision == "main"
+
+
+def test_update_remote_pins_commit_hash_without_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """update-remote does not call git for revisions that are already commit hashes."""
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: lib\n"
+        "    git-repository: https://example.com/lib\n"
+        f"    revision: {_COMMIT_40}\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    with (
+        patch("archml.workspace.git_ops.resolve_commit") as mock_resolve,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 0
+    mock_resolve.assert_not_called()
+
+    from archml.workspace.lockfile import load_lockfile
+
+    lockfile = load_lockfile(tmp_path / ".archml-lockfile.yaml")
+    assert lockfile.locked_revisions[0].commit == _COMMIT_40
+
+
+def test_update_remote_updates_existing_lockfile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """update-remote updates an existing lockfile with new commits."""
+    old_commit = "0" * 40
+    new_commit = "1" * 40
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    (tmp_path / ".archml-lockfile.yaml").write_text(
+        f"locked-revisions:\n"
+        f"  - name: payments\n"
+        f"    git-repository: https://example.com/payments\n"
+        f"    revision: main\n"
+        f"    commit: '{old_commit}'\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    with (
+        patch("archml.workspace.git_ops.resolve_commit", return_value=new_commit),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 0
+
+    from archml.workspace.lockfile import load_lockfile
+
+    lockfile = load_lockfile(tmp_path / ".archml-lockfile.yaml")
+    assert lockfile.locked_revisions[0].commit == new_commit
+
+
+def test_update_remote_exits_1_on_resolution_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """update-remote exits 1 if a revision cannot be resolved."""
+    from archml.workspace.git_ops import GitError
+
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: lib\n"
+        "    git-repository: https://example.com/lib\n"
+        "    revision: nonexistent-branch\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    with (
+        patch("archml.workspace.git_ops.resolve_commit", side_effect=GitError("not found")),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_check_command_uses_synced_remote_repos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """check includes synced remote repos in the source import map when they exist."""
+    remote_dir = tmp_path / ".archml-remotes" / "payments"
+    remote_dir.mkdir(parents=True)
+    (remote_dir / "api.archml").write_text("interface PaymentAPI { field amount: Decimal }\n")
+
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    (tmp_path / "app.archml").write_text("from @payments/api import PaymentAPI\ncomponent C { requires PaymentAPI }\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "No issues found." in captured.out
+
+
+def test_check_command_loads_remote_repo_mnemonics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """check exposes @repo/mnemonic keys from the remote repo's workspace config."""
+    remote_dir = tmp_path / ".archml-remotes" / "payments"
+    remote_lib_dir = remote_dir / "src" / "lib"
+    remote_lib_dir.mkdir(parents=True)
+    (remote_lib_dir / "types.archml").write_text("interface PaymentType { field amount: Decimal }\n")
+
+    # Remote repo has its own .archml-workspace.yaml defining a "lib" mnemonic.
+    (remote_dir / ".archml-workspace.yaml").write_text(
+        "build-directory: build\nsource-imports:\n  - name: lib\n    local-path: src/lib\n"
+    )
+
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    # Import using the remote mnemonic: @payments/lib/types
+    (tmp_path / "app.archml").write_text(
+        "from @payments/lib/types import PaymentType\ncomponent C { requires PaymentType }\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "No issues found." in captured.out
+
+
+def test_check_command_warns_on_invalid_remote_workspace_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """check emits a warning when a remote repo's .archml-workspace.yaml is invalid."""
+    remote_dir = tmp_path / ".archml-remotes" / "payments"
+    remote_dir.mkdir(parents=True)
+    (remote_dir / "api.archml").write_text("interface PaymentAPI { field amount: Decimal }\n")
+    # Malformed remote workspace config
+    (remote_dir / ".archml-workspace.yaml").write_text("bad yaml: [unterminated\n")
+
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    (tmp_path / "app.archml").write_text("from @payments/api import PaymentAPI\ncomponent C { requires PaymentAPI }\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    # Still succeeds: invalid remote config just produces a warning, not a hard error.
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "Warning" in captured.out
+    assert "No issues found." in captured.out

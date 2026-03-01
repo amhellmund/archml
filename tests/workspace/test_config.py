@@ -205,3 +205,26 @@ def test_error_unknown_top_level_field(tmp_path):
 
     with pytest.raises(WorkspaceConfigError, match="Invalid workspace config"):
         load_workspace_config(cfg_file)
+
+
+def test_load_config_with_remote_sync_directory(tmp_path):
+    """A config with remote-sync-directory is parsed correctly."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "build-directory: build\nremote-sync-directory: .remotes\n",
+        encoding="utf-8",
+    )
+
+    config = load_workspace_config(cfg_file)
+
+    assert config.remote_sync_directory == ".remotes"
+
+
+def test_load_config_default_remote_sync_directory(tmp_path):
+    """When remote-sync-directory is absent, the default is '.archml-remotes'."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text("build-directory: build\n", encoding="utf-8")
+
+    config = load_workspace_config(cfg_file)
+
+    assert config.remote_sync_directory == ".archml-remotes"
