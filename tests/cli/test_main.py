@@ -344,3 +344,67 @@ def test_serve_custom_host_and_port(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         main()
     assert exc_info.value.code == 0
     mock_app.run.assert_called_once_with(host="0.0.0.0", port=9000, debug=False)
+
+
+# -------- visualize tests --------
+
+
+def test_visualize_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """visualize exits with error code 1 when directory does not exist."""
+    missing = tmp_path / "nonexistent"
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", str(missing)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_visualize_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """visualize exits with error code 1 when no workspace file is found."""
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_visualize_fails_if_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """visualize exits with error code 1 when no .archml files are found."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_visualize_fails_if_entity_not_found(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """visualize exits with error code 1 when entity path is not found."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / "arch.archml").write_text("component Worker {}\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "NonExistent", "out.png", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_visualize_succeeds_with_mocked_renderer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """visualize exits with code 0 and writes the diagram when entity is found."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    (tmp_path / "arch.archml").write_text("component Worker {}\n")
+    out_file = tmp_path / "diagram.png"
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), str(tmp_path)])
+    with patch("archml.views.diagram.render_diagram") as mock_render:
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+    assert exc_info.value.code == 0
+    mock_render.assert_called_once()
+    captured = capsys.readouterr()
+    assert "diagram.png" in captured.out

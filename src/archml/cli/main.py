@@ -76,6 +76,27 @@ def main() -> None:
         help="Host to bind the server to (default: 127.0.0.1)",
     )
 
+    # visualize subcommand
+    visualize_parser = subparsers.add_parser(
+        "visualize",
+        help="Generate a diagram for a system or component",
+        description="Render a box diagram for the specified architecture entity.",
+    )
+    visualize_parser.add_argument(
+        "entity",
+        help="Entity path to visualize (e.g. 'SystemA' or 'SystemA::ComponentB')",
+    )
+    visualize_parser.add_argument(
+        "output",
+        help="Output file path for the rendered diagram (e.g. 'diagram.png')",
+    )
+    visualize_parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="Directory containing the ArchML workspace (default: current directory)",
+    )
+
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -99,6 +120,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_check(args)
     if args.command == "serve":
         return _cmd_serve(args)
+    if args.command == "visualize":
+        return _cmd_visualize(args)
     return 0
 
 
@@ -189,6 +212,74 @@ def _cmd_check(args: argparse.Namespace) -> int:
         return 1
 
     print("No issues found.")
+    return 0
+
+
+def _cmd_visualize(args: argparse.Namespace) -> int:
+    """Handle the visualize subcommand."""
+    from archml.views.diagram import build_diagram_data, render_diagram
+    from archml.views.resolver import EntityNotFoundError, resolve_entity
+    from archml.workspace.config import LocalPathImport
+
+    directory = Path(args.directory).resolve()
+
+    if not directory.exists():
+        print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
+        return 1
+
+    workspace_yaml = directory / ".archml-workspace.yaml"
+
+    if not workspace_yaml.exists():
+        print(
+            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
+            file=sys.stderr,
+        )
+        return 1
+
+    source_import_map: dict[str, Path] = {"": directory}
+
+    try:
+        config = load_workspace_config(workspace_yaml)
+    except WorkspaceConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    build_dir = directory / config.build_directory
+
+    for imp in config.source_imports:
+        if isinstance(imp, LocalPathImport):
+            source_import_map[imp.name] = (directory / imp.local_path).resolve()
+
+    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents]
+    if not archml_files:
+        print("No .archml files found in the workspace.", file=sys.stderr)
+        return 1
+
+    try:
+        compiled = compile_files(archml_files, build_dir, source_import_map)
+    except CompilerError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        entity = resolve_entity(compiled, args.entity)
+    except EntityNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    output_path = Path(args.output)
+    data = build_diagram_data(entity)
+
+    try:
+        render_diagram(data, output_path)
+    except ImportError:
+        print(
+            "Error: 'pydiagrams' is not installed. Run 'pip install pydiagrams' to enable visualization.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"Diagram written to '{output_path}'.")
     return 0
 
 
