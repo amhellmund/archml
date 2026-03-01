@@ -14,10 +14,12 @@ Two forms of cross-file import are supported:
   *source_import_map* (``{mnemonic: absolute_base_path}``), derived from the
   workspace ``source-imports`` configuration.
 
-* **Remote git imports** — ``from @repo/mnemonic/path/to/file import …``
-  The ``@repo`` prefix identifies a Git repository.  This form is recognised
-  but **not yet implemented**; attempting to compile such an import raises
-  :class:`CompilerError`.
+* **Remote git imports** — ``from @repo/path/to/file import …``
+  The ``@repo`` prefix identifies a named Git repository configured in the
+  workspace.  The caller-supplied *source_import_map* must contain an entry
+  keyed as ``"@repo"`` pointing to the locally synced directory (populated by
+  ``archml sync-remote``).  If the key is absent, :class:`CompilerError` is
+  raised with a message directing the user to run ``archml sync-remote``.
 """
 
 from __future__ import annotations
@@ -168,7 +170,19 @@ def _resolve_import_source(
             ``@``), which is not yet supported.
     """
     if import_path.startswith("@"):
-        raise CompilerError(f"Remote git imports are not yet supported: '{import_path}'")
+        slash_pos = import_path.find("/", 1)
+        if slash_pos == -1:
+            raise CompilerError(
+                f"Invalid remote git import path '{import_path}': expected '@repo/path/to/file'"
+            )
+        repo_key = import_path[:slash_pos]
+        if repo_key not in source_import_map:
+            raise CompilerError(
+                f"Remote git import '{import_path}': repository '{repo_key}' not found in workspace. "
+                "Run 'archml sync-remote' to download remote repositories."
+            )
+        rel = import_path[slash_pos + 1 :]
+        return source_import_map[repo_key] / (rel + ".archml")
     slash_pos = import_path.find("/")
     if slash_pos != -1:
         first_segment = import_path[:slash_pos]

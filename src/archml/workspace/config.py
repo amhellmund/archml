@@ -45,6 +45,7 @@ class WorkspaceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     build_directory: str = Field(alias="build-directory")
+    remote_sync_directory: str = Field(alias="remote-sync-directory", default=".archml-remotes")
     source_imports: list[LocalPathImport | GitPathImport] = Field(alias="source-imports", default_factory=list)
 
 

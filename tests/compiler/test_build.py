@@ -335,15 +335,50 @@ class TestSourceImports:
         assert "mid" in result
         assert "ext/iface" in result
 
-    def test_remote_git_import_raises_compiler_error(self, tmp_path: Path) -> None:
-        """Importing via @repo/mnemonic/path (remote git) raises CompilerError."""
+    def test_remote_git_import_raises_if_repo_not_in_source_import_map(self, tmp_path: Path) -> None:
+        """Importing via @repo/path raises CompilerError when @repo is not in source_import_map."""
         src = tmp_path / "src"
         build = tmp_path / "build"
 
         _write(src / "app.archml", "from @myrepo/mylib/types import X\ncomponent C {}")
 
-        with pytest.raises(CompilerError, match="Remote git imports are not yet supported"):
+        with pytest.raises(CompilerError, match="not found in workspace"):
             compile_files([src / "app.archml"], build, {"": src})
+
+    def test_remote_git_import_resolves_from_source_import_map(self, tmp_path: Path) -> None:
+        """Files imported via @repo/path are resolved when @repo is in source_import_map."""
+        src = tmp_path / "src"
+        remote = tmp_path / "remote"
+        build = tmp_path / "build"
+
+        _write(remote / "services" / "payment.archml", "interface PaymentService { field amount: Decimal }")
+        _write(
+            src / "app.archml",
+            "from @payments/services/payment import PaymentService\ncomponent C { requires PaymentService }",
+        )
+
+        result = compile_files(
+            [src / "app.archml"],
+            build,
+            {"": src, "@payments": remote},
+        )
+
+        assert "app" in result
+        assert "@payments/services/payment" in result
+
+    def test_remote_git_import_artifact_stored_under_at_prefix(self, tmp_path: Path) -> None:
+        """Artifacts for remote git imports are stored under @repo/ in the build dir."""
+        src = tmp_path / "src"
+        remote = tmp_path / "remote"
+        build = tmp_path / "build"
+
+        _write(remote / "types.archml", "interface RemoteType { field v: Int }")
+        _write(src / "app.archml", "from @ext/types import RemoteType\ncomponent C { requires RemoteType }")
+
+        compile_files([src / "app.archml"], build, {"": src, "@ext": remote})
+
+        assert _artifact(build, "@ext/types").exists()
+
 
     def test_mnemonic_missing_file_raises_compiler_error(self, tmp_path: Path) -> None:
         """A mnemonic import that refers to a non-existent file raises CompilerError."""
