@@ -4,7 +4,7 @@
 """Diagram generation for ArchML architecture views.
 
 Builds a diagram representation from a resolved model entity and renders it
-to an image file using the ``pydiagrams`` library.
+to an image file using the ``diagrams`` library.
 
 The diagram shows:
 - The target entity as the outer container / title.
@@ -103,14 +103,10 @@ def build_diagram_data(entity: Component | System) -> DiagramData:
         A :class:`DiagramData` instance describing the diagram.
     """
     children: list[ChildBox] = [
-        ChildBox(name=comp.name, description=comp.description, kind="component")
-        for comp in entity.components
+        ChildBox(name=comp.name, description=comp.description, kind="component") for comp in entity.components
     ]
     if isinstance(entity, System):
-        children += [
-            ChildBox(name=sys.name, description=sys.description, kind="system")
-            for sys in entity.systems
-        ]
+        children += [ChildBox(name=sys.name, description=sys.description, kind="system") for sys in entity.systems]
 
     terminals: list[InterfaceTerminal] = [
         InterfaceTerminal(
@@ -145,7 +141,7 @@ def build_diagram_data(entity: Component | System) -> DiagramData:
 
 
 def render_diagram(data: DiagramData, output_path: Path) -> None:
-    """Render *data* to an image file at *output_path* using ``pydiagrams``.
+    """Render *data* to an image file at *output_path* using ``diagrams``.
 
     The output format is determined by the file extension of *output_path*
     (e.g. ``.png``, ``.svg``).
@@ -155,22 +151,34 @@ def render_diagram(data: DiagramData, output_path: Path) -> None:
         output_path: Destination file path for the rendered image.
 
     Raises:
-        ImportError: If the ``pydiagrams`` package is not installed.
+        ImportError: If the ``diagrams`` package is not installed.
     """
-    from pydiagrams import ComponentDiagram  # type: ignore[import-untyped]
+    try:
+        import diagrams as _diagrams
+        from diagrams import Edge
+        from diagrams.c4 import Container, Person
+    except ImportError as exc:
+        raise ImportError("'diagrams' is not installed. Run 'pip install diagrams' to enable visualization.") from exc
 
-    diag = ComponentDiagram(title=data.title, description=data.description or "")
+    output_stem = str(output_path.parent / output_path.stem)
+    output_format = output_path.suffix.lstrip(".") or "png"
 
-    for terminal in data.terminals:
-        diag.add_interface(name=terminal.name, direction=terminal.direction)
+    with _diagrams.Diagram(data.title, filename=output_stem, outformat=output_format, show=False):
+        for terminal in data.terminals:
+            if terminal.direction == "in":
+                Person(terminal.name)
 
-    for child in data.children:
-        diag.add_component(name=child.name, description=child.description or "")
+        child_nodes: dict[str, object] = {}
+        for child in data.children:
+            child_nodes[child.name] = Container(child.name, technology=child.kind, description=child.description or "")
 
-    for conn in data.connections:
-        diag.add_connection(source=conn.source, target=conn.target, label=conn.label)
+        for terminal in data.terminals:
+            if terminal.direction == "out":
+                Person(terminal.name)
 
-    diag.render(str(output_path))
+        for conn in data.connections:
+            if conn.source in child_nodes and conn.target in child_nodes:
+                child_nodes[conn.source] >> Edge(label=conn.label) >> child_nodes[conn.target]  # type: ignore[operator]
 
 
 # ################

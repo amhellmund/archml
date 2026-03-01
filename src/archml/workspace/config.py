@@ -3,14 +3,17 @@
 
 """Workspace configuration loading and data models."""
 
+import re
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 # ###############
 # Public Interface
 # ###############
+
+_MNEMONIC_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 class WorkspaceConfigError(Exception):
@@ -25,6 +28,17 @@ class LocalPathImport(BaseModel):
     name: str
     local_path: str = Field(alias="local-path")
 
+    @field_validator("name")
+    @classmethod
+    def validate_mnemonic_name(cls, v: str) -> str:
+        """Validate mnemonic: lowercase letter, then alphanumeric/dash/underscore."""
+        if not _MNEMONIC_RE.match(v):
+            raise ValueError(
+                f"Invalid mnemonic name '{v}': must start with a lowercase letter "
+                "followed by lowercase letters, digits, hyphens, or underscores (no slashes)"
+            )
+        return v
+
 
 class GitPathImport(BaseModel):
     """A source import resolved from a git repository."""
@@ -35,6 +49,17 @@ class GitPathImport(BaseModel):
     git_repository: str = Field(alias="git-repository")
     revision: str
 
+    @field_validator("name")
+    @classmethod
+    def validate_mnemonic_name(cls, v: str) -> str:
+        """Validate repo name: lowercase letter, then alphanumeric/dash/underscore."""
+        if not _MNEMONIC_RE.match(v):
+            raise ValueError(
+                f"Invalid repo name '{v}': must start with a lowercase letter "
+                "followed by lowercase letters, digits, hyphens, or underscores (no slashes)"
+            )
+        return v
+
 
 SourceImport = LocalPathImport | GitPathImport
 
@@ -44,8 +69,59 @@ class WorkspaceConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
+    name: str
     build_directory: str = Field(alias="build-directory")
-    source_imports: list[LocalPathImport | GitPathImport] = Field(alias="source-imports", default_factory=list)
+    remote_sync_directory: str = Field(alias="remote-sync-directory", default=".archml-remotes")
+    source_imports: list[LocalPathImport | GitPathImport] = Field(
+        alias="source-imports",
+        min_length=1,
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_workspace_name(cls, v: str) -> str:
+        """Validate workspace name: lowercase letter, then alphanumeric/dash/underscore."""
+        if not _MNEMONIC_RE.match(v):
+            raise ValueError(
+                f"Invalid workspace name '{v}': must start with a lowercase letter "
+                "followed by lowercase letters, digits, hyphens, or underscores"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_unique_import_names(self) -> "WorkspaceConfig":
+        """Ensure all source import names are unique within this workspace."""
+        seen: set[str] = set()
+        for imp in self.source_imports:
+            if imp.name in seen:
+                raise ValueError(f"Duplicate source import name: '{imp.name}'")
+            seen.add(imp.name)
+        return self
+
+
+WORKSPACE_CONFIG_FILENAME = ".archml-workspace.yaml"
+
+
+def find_workspace_root(start_dir: Path) -> Path | None:
+    """Walk up the directory tree to find the ArchML workspace root.
+
+    Searches for a .archml-workspace.yaml file starting from start_dir and
+    ascending through parent directories until the filesystem root is reached.
+
+    Args:
+        start_dir: Directory to start the search from.
+
+    Returns:
+        The directory containing .archml-workspace.yaml, or None if not found.
+    """
+    current = start_dir.resolve()
+    while True:
+        if (current / WORKSPACE_CONFIG_FILENAME).exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
 
 
 def load_workspace_config(path: Path) -> WorkspaceConfig:

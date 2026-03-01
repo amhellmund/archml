@@ -59,16 +59,12 @@ def resolve_entity(
     first = segments[0]
     entity: Component | System | None = _find_top_level(arch_files, first)
     if entity is None:
-        raise EntityNotFoundError(
-            f"Top-level entity '{first}' not found in any architecture file"
-        )
+        raise EntityNotFoundError(f"Top-level entity '{first}' not found in any architecture file")
 
     for segment in segments[1:]:
         entity = _find_child(entity, segment)
         if entity is None:
-            raise EntityNotFoundError(
-                f"Entity '{segment}' not found in path '{path}'"
-            )
+            raise EntityNotFoundError(f"Entity '{segment}' not found in path '{path}'")
 
     return entity
 

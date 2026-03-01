@@ -5,18 +5,11 @@
 
 import sys
 from pathlib import Path
-from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from archml.model.entities import (
-    Component,
-    Connection,
-    ConnectionEndpoint,
-    InterfaceRef,
-    System,
-)
+from archml.model.entities import Component, Connection, ConnectionEndpoint, InterfaceRef, System
 from archml.views.diagram import (
     ChildBox,
     ConnectionData,
@@ -167,35 +160,40 @@ def test_build_no_connections_for_leaf() -> None:
 
 
 # ###############
-# render_diagram — mocked pydiagrams
+# render_diagram — mocked diagrams
 # ###############
 
 
-def _make_pydiagrams_mock() -> MagicMock:
-    """Return a mock pydiagrams module with ComponentDiagram."""
-    mock_module = MagicMock(spec=ModuleType)
-    mock_diagram = MagicMock()
-    mock_module.ComponentDiagram.return_value = mock_diagram
-    return mock_module
+def _make_diagrams_mock() -> tuple[MagicMock, MagicMock]:
+    """Return (mock_diagrams_module, mock_diagrams_c4_module)."""
+    mock_diagrams = MagicMock()
+    mock_c4 = MagicMock()
+    return mock_diagrams, mock_c4
 
 
-def test_render_diagram_calls_pydiagrams(tmp_path: Path) -> None:
-    """render_diagram imports pydiagrams and calls ComponentDiagram."""
-    mock_pydiagrams = _make_pydiagrams_mock()
+def _diagrams_patch(mock_diagrams: MagicMock, mock_c4: MagicMock) -> ...:  # type: ignore[type-arg]
+    return patch.dict(sys.modules, {"diagrams": mock_diagrams, "diagrams.c4": mock_c4})
+
+
+def test_render_diagram_calls_diagrams(tmp_path: Path) -> None:
+    """render_diagram imports diagrams and calls Diagram with the entity title."""
+    mock_diagrams, mock_c4 = _make_diagrams_mock()
     data = DiagramData(title="SystemA", description="Test system")
 
-    with patch.dict(sys.modules, {"pydiagrams": mock_pydiagrams}):
+    with _diagrams_patch(mock_diagrams, mock_c4):
         render_diagram(data, tmp_path / "out.png")
 
-    mock_pydiagrams.ComponentDiagram.assert_called_once_with(
-        title="SystemA", description="Test system"
+    mock_diagrams.Diagram.assert_called_once_with(
+        "SystemA",
+        filename=str(tmp_path / "out"),
+        outformat="png",
+        show=False,
     )
 
 
 def test_render_diagram_adds_terminals(tmp_path: Path) -> None:
-    """render_diagram calls add_interface for each terminal."""
-    mock_pydiagrams = _make_pydiagrams_mock()
-    mock_diag = mock_pydiagrams.ComponentDiagram.return_value
+    """render_diagram creates a Person node for each terminal."""
+    mock_diagrams, mock_c4 = _make_diagrams_mock()
 
     data = DiagramData(
         title="S",
@@ -206,18 +204,17 @@ def test_render_diagram_adds_terminals(tmp_path: Path) -> None:
         ],
     )
 
-    with patch.dict(sys.modules, {"pydiagrams": mock_pydiagrams}):
+    with _diagrams_patch(mock_diagrams, mock_c4):
         render_diagram(data, tmp_path / "out.png")
 
-    calls = [str(c) for c in mock_diag.add_interface.call_args_list]
+    calls = [str(c) for c in mock_c4.Person.call_args_list]
     assert any("Input" in c for c in calls)
     assert any("Output" in c for c in calls)
 
 
 def test_render_diagram_adds_children(tmp_path: Path) -> None:
-    """render_diagram calls add_component for each child box."""
-    mock_pydiagrams = _make_pydiagrams_mock()
-    mock_diag = mock_pydiagrams.ComponentDiagram.return_value
+    """render_diagram creates a Container node for each child box."""
+    mock_diagrams, mock_c4 = _make_diagrams_mock()
 
     data = DiagramData(
         title="S",
@@ -228,47 +225,56 @@ def test_render_diagram_adds_children(tmp_path: Path) -> None:
         ],
     )
 
-    with patch.dict(sys.modules, {"pydiagrams": mock_pydiagrams}):
+    with _diagrams_patch(mock_diagrams, mock_c4):
         render_diagram(data, tmp_path / "out.png")
 
-    assert mock_diag.add_component.call_count == 2
+    assert mock_c4.Container.call_count == 2
 
 
 def test_render_diagram_adds_connections(tmp_path: Path) -> None:
-    """render_diagram calls add_connection for each connection."""
-    mock_pydiagrams = _make_pydiagrams_mock()
-    mock_diag = mock_pydiagrams.ComponentDiagram.return_value
+    """render_diagram creates an Edge for each connection."""
+    mock_diagrams, mock_c4 = _make_diagrams_mock()
 
     data = DiagramData(
         title="S",
         description=None,
+        children=[
+            ChildBox(name="A", description=None, kind="component"),
+            ChildBox(name="B", description=None, kind="component"),
+        ],
         connections=[ConnectionData(source="A", target="B", label="IFace")],
     )
 
-    with patch.dict(sys.modules, {"pydiagrams": mock_pydiagrams}):
+    with _diagrams_patch(mock_diagrams, mock_c4):
         render_diagram(data, tmp_path / "out.png")
 
-    mock_diag.add_connection.assert_called_once_with(source="A", target="B", label="IFace")
+    mock_diagrams.Edge.assert_called_once_with(label="IFace")
 
 
-def test_render_diagram_calls_render_with_output_path(tmp_path: Path) -> None:
-    """render_diagram calls diag.render() with the string output path."""
-    mock_pydiagrams = _make_pydiagrams_mock()
-    mock_diag = mock_pydiagrams.ComponentDiagram.return_value
+def test_render_diagram_uses_output_path(tmp_path: Path) -> None:
+    """render_diagram passes the correct filename stem and format to Diagram."""
+    mock_diagrams, mock_c4 = _make_diagrams_mock()
 
     out = tmp_path / "diagram.svg"
     data = DiagramData(title="S", description=None)
 
-    with patch.dict(sys.modules, {"pydiagrams": mock_pydiagrams}):
+    with _diagrams_patch(mock_diagrams, mock_c4):
         render_diagram(data, out)
 
-    mock_diag.render.assert_called_once_with(str(out))
+    mock_diagrams.Diagram.assert_called_once_with(
+        "S",
+        filename=str(tmp_path / "diagram"),
+        outformat="svg",
+        show=False,
+    )
 
 
-def test_render_diagram_raises_import_error_without_pydiagrams(tmp_path: Path) -> None:
-    """render_diagram raises ImportError when pydiagrams is not installed."""
+def test_render_diagram_raises_import_error_without_diagrams(tmp_path: Path) -> None:
+    """render_diagram raises ImportError when diagrams is not installed."""
     data = DiagramData(title="S", description=None)
-    # Setting pydiagrams to None in sys.modules makes `import pydiagrams` raise ImportError.
-    with patch.dict(sys.modules, {"pydiagrams": None}):  # type: ignore[dict-item]
-        with pytest.raises(ImportError):
-            render_diagram(data, tmp_path / "out.png")
+    # Setting diagrams to None in sys.modules makes `import diagrams` raise ImportError.
+    with (
+        patch.dict(sys.modules, {"diagrams": None}),  # type: ignore[dict-item]
+        pytest.raises(ImportError),
+    ):
+        render_diagram(data, tmp_path / "out.png")
