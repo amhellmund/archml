@@ -161,7 +161,7 @@ def render_diagram(data: DiagramData, output_path: Path) -> None:
         raise ImportError("'diagrams' is not installed. Run 'pip install diagrams' to enable visualization.") from exc
 
     output_stem = str(output_path.parent / output_path.stem)
-    output_format = output_path.suffix.lstrip(".") or "png"
+    output_format = output_path.suffix.lstrip(".") or "svg"
 
     with _diagrams.Diagram(data.title, filename=output_stem, outformat=output_format, show=False):
         for terminal in data.terminals:
