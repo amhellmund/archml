@@ -20,6 +20,14 @@ Two forms of cross-file import are supported:
   keyed as ``"@repo"`` pointing to the locally synced directory (populated by
   ``archml sync-remote``).  If the key is absent, :class:`CompilerError` is
   raised with a message directing the user to run ``archml sync-remote``.
+
+* **Remote git imports with mnemonics** — ``from @repo/mnemonic/path/to/file import …``
+  When the remote repository defines its own ``source-imports`` in its
+  ``.archml-workspace.yaml``, those mnemonics are exposed as two-segment keys
+  ``"@repo/mnemonic"`` in *source_import_map*.  Resolution tries the
+  two-segment key before falling back to the bare ``"@repo"`` key so that
+  mnemonic-rooted paths take precedence over literal subdirectory paths in the
+  repository root.
 """
 
 from __future__ import annotations
@@ -157,10 +165,12 @@ def _resolve_import_source(
 
     Args:
         import_path: The raw import path string as stored in :class:`ImportDeclaration`
-            (e.g. ``"shared/types"`` or ``"common/types"``).
+            (e.g. ``"shared/types"``, ``"common/types"``, ``"@repo/path/to/file"``,
+            or ``"@repo/mnemonic/path/to/file"``).
         source_import_map: Mapping from mnemonic names to base paths.  The
             empty-string key ``""`` is the workspace root used for
-            non-mnemonic imports.
+            non-mnemonic imports.  Remote repositories are keyed as ``"@repo"``
+            and their mnemonics as ``"@repo/mnemonic"``.
 
     Returns:
         Absolute path to the ``.archml`` file (which may or may not exist).
@@ -175,6 +185,14 @@ def _resolve_import_source(
             raise CompilerError(
                 f"Invalid remote git import path '{import_path}': expected '@repo/path/to/file'"
             )
+        # Try a two-segment key (@repo/mnemonic) first so that remote-repo
+        # mnemonics take precedence over literal subdirectory paths.
+        second_slash = import_path.find("/", slash_pos + 1)
+        if second_slash != -1:
+            two_seg_key = import_path[:second_slash]  # e.g. "@payments/utils"
+            if two_seg_key in source_import_map:
+                rel = import_path[second_slash + 1 :]
+                return source_import_map[two_seg_key] / (rel + ".archml")
         repo_key = import_path[:slash_pos]
         if repo_key not in source_import_map:
             raise CompilerError(

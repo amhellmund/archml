@@ -208,6 +208,20 @@ def _cmd_check(args: argparse.Namespace) -> int:
                 repo_dir = (sync_dir / imp.name).resolve()
                 if repo_dir.exists():
                     source_import_map[f"@{imp.name}"] = repo_dir
+                    # Also expose mnemonics defined in the remote repo's own workspace config
+                    # so that @repo/mnemonic/path/to/file imports resolve correctly.
+                    remote_workspace_yaml = repo_dir / ".archml-workspace.yaml"
+                    if remote_workspace_yaml.exists():
+                        try:
+                            remote_config = load_workspace_config(remote_workspace_yaml)
+                            for remote_imp in remote_config.source_imports:
+                                if isinstance(remote_imp, LocalPathImport):
+                                    mnemonic_path = (repo_dir / remote_imp.local_path).resolve()
+                                    source_import_map[f"@{imp.name}/{remote_imp.name}"] = mnemonic_path
+                        except WorkspaceConfigError as exc:
+                            print(
+                                f"Warning: could not load workspace config from remote '{imp.name}': {exc}"
+                            )
 
     archml_files = [
         f

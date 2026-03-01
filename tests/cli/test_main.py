@@ -729,3 +729,71 @@ def test_check_command_uses_synced_remote_repos(
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
     assert "No issues found." in captured.out
+
+
+def test_check_command_loads_remote_repo_mnemonics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """check exposes @repo/mnemonic keys from the remote repo's workspace config."""
+    remote_dir = tmp_path / ".archml-remotes" / "payments"
+    remote_lib_dir = remote_dir / "src" / "lib"
+    remote_lib_dir.mkdir(parents=True)
+    (remote_lib_dir / "types.archml").write_text("interface PaymentType { field amount: Decimal }\n")
+
+    # Remote repo has its own .archml-workspace.yaml defining a "lib" mnemonic.
+    (remote_dir / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: lib\n"
+        "    local-path: src/lib\n"
+    )
+
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    # Import using the remote mnemonic: @payments/lib/types
+    (tmp_path / "app.archml").write_text(
+        "from @payments/lib/types import PaymentType\ncomponent C { requires PaymentType }\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "No issues found." in captured.out
+
+
+def test_check_command_warns_on_invalid_remote_workspace_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """check emits a warning when a remote repo's .archml-workspace.yaml is invalid."""
+    remote_dir = tmp_path / ".archml-remotes" / "payments"
+    remote_dir.mkdir(parents=True)
+    (remote_dir / "api.archml").write_text("interface PaymentAPI { field amount: Decimal }\n")
+    # Malformed remote workspace config
+    (remote_dir / ".archml-workspace.yaml").write_text("bad yaml: [unterminated\n")
+
+    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "build-directory: build\n"
+        "source-imports:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+    )
+    (tmp_path / "app.archml").write_text(
+        "from @payments/api import PaymentAPI\ncomponent C { requires PaymentAPI }\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    # Still succeeds: invalid remote config just produces a warning, not a hard error.
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "Warning" in captured.out
+    assert "No issues found." in captured.out

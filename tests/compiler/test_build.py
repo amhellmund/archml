@@ -380,6 +380,69 @@ class TestSourceImports:
         assert _artifact(build, "@ext/types").exists()
 
 
+    def test_remote_git_import_with_mnemonic_resolves_from_two_segment_key(self, tmp_path: Path) -> None:
+        """@repo/mnemonic/path imports resolve via @repo/mnemonic key in source_import_map."""
+        src = tmp_path / "src"
+        remote_utils = tmp_path / "remote" / "src" / "utils"
+        build = tmp_path / "build"
+
+        _write(remote_utils / "helpers.archml", "interface Helper { field v: Int }")
+        _write(
+            src / "app.archml",
+            "from @payments/utils/helpers import Helper\ncomponent C { requires Helper }",
+        )
+
+        result = compile_files(
+            [src / "app.archml"],
+            build,
+            {"": src, "@payments": tmp_path / "remote", "@payments/utils": remote_utils},
+        )
+
+        assert "app" in result
+        assert "@payments/utils/helpers" in result
+
+    def test_remote_git_import_mnemonic_key_takes_precedence_over_root(self, tmp_path: Path) -> None:
+        """When @repo/mnemonic key exists it is used instead of @repo root for that prefix."""
+        src = tmp_path / "src"
+        remote_root = tmp_path / "remote"
+        remote_lib = tmp_path / "remote-lib"
+        build = tmp_path / "build"
+
+        # File exists in lib dir (via mnemonic), NOT under remote_root/lib/
+        _write(remote_lib / "types.archml", "interface LibType { field v: Int }")
+        _write(
+            src / "app.archml",
+            "from @ext/lib/types import LibType\ncomponent C { requires LibType }",
+        )
+
+        result = compile_files(
+            [src / "app.archml"],
+            build,
+            {"": src, "@ext": remote_root, "@ext/lib": remote_lib},
+        )
+
+        assert "@ext/lib/types" in result
+
+    def test_remote_git_import_falls_back_to_root_when_no_mnemonic_key(self, tmp_path: Path) -> None:
+        """When no @repo/mnemonic key matches, resolution falls back to @repo root."""
+        src = tmp_path / "src"
+        remote = tmp_path / "remote"
+        build = tmp_path / "build"
+
+        _write(remote / "lib" / "types.archml", "interface T { field v: Int }")
+        _write(
+            src / "app.archml",
+            "from @ext/lib/types import T\ncomponent C { requires T }",
+        )
+
+        result = compile_files(
+            [src / "app.archml"],
+            build,
+            {"": src, "@ext": remote},  # no "@ext/lib" mnemonic key
+        )
+
+        assert "@ext/lib/types" in result
+
     def test_mnemonic_missing_file_raises_compiler_error(self, tmp_path: Path) -> None:
         """A mnemonic import that refers to a non-existent file raises CompilerError."""
         src = tmp_path / "src"
