@@ -120,17 +120,6 @@ def _cmd_init(args: argparse.Namespace) -> int:
         )
         return 1
 
-    workspace_marker = workspace_dir / ".archml-workspace"
-    if not workspace_marker.exists():
-        workspace_marker.write_text(
-            "# ArchML Workspace Configuration\n"
-            "# This file marks the root of an ArchML workspace.\n"
-            "\n"
-            "[workspace]\n"
-            'version = "1"\n',
-            encoding="utf-8",
-        )
-
     workspace_yaml.write_text(
         f"build-directory: {_DEFAULT_BUILD_DIR}\n"
         "source-imports:\n"
@@ -153,34 +142,30 @@ def _cmd_check(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_file = directory / ".archml-workspace"
+    workspace_yaml = directory / ".archml-workspace.yaml"
 
-    if not workspace_file.exists():
+    if not workspace_yaml.exists():
         print(
             f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
             file=sys.stderr,
         )
         return 1
 
-    # Load optional extended workspace configuration for source imports and build dir.
-    workspace_yaml = directory / ".archml-workspace.yaml"
-    build_dir = directory / _DEFAULT_BUILD_DIR
     # The empty-string key represents the workspace root for non-mnemonic imports.
     source_import_map: dict[str, Path] = {"": directory}
 
-    if workspace_yaml.exists():
-        try:
-            config = load_workspace_config(workspace_yaml)
-        except WorkspaceConfigError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 1
+    try:
+        config = load_workspace_config(workspace_yaml)
+    except WorkspaceConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
-        build_dir = directory / config.build_directory
+    build_dir = directory / config.build_directory
 
-        for imp in config.source_imports:
-            if isinstance(imp, LocalPathImport):
-                source_import_map[imp.name] = (directory / imp.local_path).resolve()
-            # GitPathImport requires repository fetching which is not yet supported.
+    for imp in config.source_imports:
+        if isinstance(imp, LocalPathImport):
+            source_import_map[imp.name] = (directory / imp.local_path).resolve()
+        # GitPathImport requires repository fetching which is not yet supported.
 
     archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents]
     if not archml_files:
@@ -218,9 +203,9 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_file = directory / ".archml-workspace"
+    workspace_yaml = directory / ".archml-workspace.yaml"
 
-    if not workspace_file.exists():
+    if not workspace_yaml.exists():
         print(
             f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
             file=sys.stderr,
