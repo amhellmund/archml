@@ -87,7 +87,7 @@ Every new feature requires thorough testing before it is considered complete. Th
 1. Write or update the relevant specification/design if needed.
 2. Implement the feature in `src/archml/`.
 3. Write tests in `tests/` covering normal cases, edge cases, and error cases.
-4. Ensure all tests pass, ruff reports no issues, and ty finds no type errors.
+4. Ensure all tests pass, ruff reports no issues, and ty finds no type errors using `uv run tools/ci.py`.
 5. Commit with a clear message describing the change.
 
 Tests are not optional. A feature without tests is not done.
