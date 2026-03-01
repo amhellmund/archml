@@ -27,45 +27,62 @@ def test_main_no_args_prints_help_and_exits(monkeypatch: pytest.MonkeyPatch) -> 
 # -------- init tests --------
 
 
-def test_init_creates_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init creates .archml-workspace file in the specified directory."""
-    monkeypatch.setattr(sys, "argv", ["archml", "init", str(tmp_path)])
+def test_init_creates_workspace_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """init creates .archml-workspace.yaml in the specified directory."""
+    monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
-    workspace_file = tmp_path / ".archml-workspace"
-    assert workspace_file.exists()
-    content = workspace_file.read_text()
-    assert "[workspace]" in content
-    assert 'version = "1"' in content
+    assert (tmp_path / ".archml-workspace.yaml").exists()
 
 
-def test_init_default_directory_uses_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init with no directory argument uses the current working directory."""
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["archml", "init"])
+def test_init_workspace_yaml_has_correct_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """init writes source-import mapping with the given mnemonic into the YAML config."""
+    monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
-    assert (tmp_path / ".archml-workspace").exists()
+    content = (tmp_path / ".archml-workspace.yaml").read_text()
+    assert "name: myrepo" in content
+    assert "local-path: ." in content
+    assert "build-directory:" in content
 
 
-def test_init_fails_if_workspace_already_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init exits with error code 1 when workspace already exists."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "init", str(tmp_path)])
+def test_init_creates_workspace_dir_if_not_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """init creates the workspace directory when it does not yet exist."""
+    new_dir = tmp_path / "new_workspace"
+    assert not new_dir.exists()
+    monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(new_dir)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    assert new_dir.exists()
+    assert (new_dir / ".archml-workspace.yaml").exists()
+
+
+def test_init_fails_if_workspace_yaml_already_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """init exits with error code 1 when .archml-workspace.yaml already exists."""
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
 
 
-def test_init_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init exits with error code 1 when target directory does not exist."""
-    missing = tmp_path / "nonexistent"
-    monkeypatch.setattr(sys, "argv", ["archml", "init", str(missing)])
+def test_init_fails_if_name_is_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """init exits with error code 1 when the mnemonic name is an empty string."""
+    monkeypatch.setattr(sys, "argv", ["archml", "init", "", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
+
+
+def test_init_succeeds_if_dir_exists_without_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """init succeeds when the directory exists but has no .archml-workspace.yaml."""
+    monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
 
 
 # -------- check tests --------
@@ -73,7 +90,7 @@ def test_init_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pyt
 
 def test_check_with_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """check exits with code 0 and reports no files when workspace has none."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -86,7 +103,7 @@ def test_check_with_valid_archml_file(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check discovers .archml files, compiles them, and reports success."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -103,7 +120,7 @@ def test_check_reports_compile_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 when a .archml file has a parse error."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     (tmp_path / "bad.archml").write_text("component {}")  # missing name
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -119,7 +136,7 @@ def test_check_reports_validation_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 when business validation finds errors."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     # Connection cycle: A -> B -> A (inline components inside system)
     (tmp_path / "cycle.archml").write_text(
         "interface I { field v: Int }\n"
@@ -142,7 +159,7 @@ def test_check_reports_validation_warnings(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 0 but prints warnings for isolated components."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     # An isolated component triggers a warning but not an error.
     (tmp_path / "isolated.archml").write_text("component Isolated {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
@@ -158,7 +175,6 @@ def test_check_uses_workspace_yaml_build_dir(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """check uses the build-directory from .archml-workspace.yaml when present."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text("build-directory: custom-build\n")
     (tmp_path / "arch.archml").write_text("interface Signal { field v: Int }\ncomponent A { provides Signal }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
@@ -174,7 +190,6 @@ def test_check_invalid_workspace_yaml(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 when .archml-workspace.yaml is invalid."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text("bad yaml: [unterminated\n")
     (tmp_path / "arch.archml").write_text("component A {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
@@ -208,7 +223,7 @@ def test_check_reports_parse_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 and prints error message on parse failure."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     (tmp_path / "bad.archml").write_text("component {}\n")  # missing name
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -228,7 +243,6 @@ def test_check_with_workspace_yaml_and_local_source_import(
     lib_dir.mkdir()
     (lib_dir / "iface.archml").write_text("interface MyIface { field v: Int }\n")
 
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text(
         "build-directory: build\nsource-imports:\n  - name: mylib\n    local-path: lib\n"
     )
@@ -248,7 +262,6 @@ def test_check_with_workspace_yaml_invalid_config(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 when .archml-workspace.yaml is invalid."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text("invalid: yaml: [broken\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -264,7 +277,6 @@ def test_check_excludes_build_directory_from_scan(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Artifacts in the build directory are not re-scanned as source files."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
     (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
 
     # Place a valid source file and compile it once to create the artifact.
@@ -304,7 +316,7 @@ def test_serve_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: py
 
 def test_serve_launches_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve creates and runs the web app when workspace exists."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     monkeypatch.setattr(sys, "argv", ["archml", "serve", str(tmp_path)])
     mock_app = MagicMock()
     with (
@@ -318,7 +330,7 @@ def test_serve_launches_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_serve_custom_host_and_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve passes custom host and port to the app."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     monkeypatch.setattr(
         sys,
         "argv",
