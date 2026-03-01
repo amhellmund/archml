@@ -321,9 +321,7 @@ def test_serve_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert exc_info.value.code == 1
 
 
-def test_serve_autodetects_workspace_in_parent_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_serve_autodetects_workspace_in_parent_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve finds the workspace by walking up from a subdirectory."""
     (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     subdir = tmp_path / "src" / "components"

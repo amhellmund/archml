@@ -181,7 +181,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
         root = find_workspace_root(directory)
         if root is None:
             print(
-                f"Error: no ArchML workspace found at '{directory}' or any parent directory. Run 'archml init' to initialize a workspace.",
+                f"Error: no ArchML workspace found at '{directory}' or any parent directory."
+                "Run 'archml init' to initialize a workspace.",
                 file=sys.stderr,
             )
             return 1
@@ -262,7 +263,8 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         root = find_workspace_root(directory)
         if root is None:
             print(
-                f"Error: no ArchML workspace found at '{directory}' or any parent directory. Run 'archml init' to initialize a workspace.",
+                f"Error: no ArchML workspace found at '{directory}' or any parent directory."
+                "Run 'archml init' to initialize a workspace.",
                 file=sys.stderr,
             )
             return 1
@@ -294,7 +296,8 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
         root = find_workspace_root(directory)
         if root is None:
             print(
-                f"Error: no ArchML workspace found at '{directory}' or any parent directory. Run 'archml init' to initialize a workspace.",
+                f"Error: no ArchML workspace found at '{directory}' or any parent directory."
+                "Run 'archml init' to initialize a workspace.",
                 file=sys.stderr,
             )
             return 1
@@ -388,7 +391,8 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
         root = find_workspace_root(directory)
         if root is None:
             print(
-                f"Error: no ArchML workspace found at '{directory}' or any parent directory. Run 'archml init' to initialize a workspace.",
+                f"Error: no ArchML workspace found at '{directory}' or any parent directory."
+                "Run 'archml init' to initialize a workspace.",
                 file=sys.stderr,
             )
             return 1
