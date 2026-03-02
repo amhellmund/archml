@@ -173,7 +173,7 @@ def render_diagram(data: DiagramData, output_path: Path) -> None:
     # Custom node classes are defined locally to keep the diagrams import lazy
     # (it is an optional dependency that requires Graphviz to be installed).
 
-    class _TerminalNode(Node):  # type: ignore[misc]
+    class _TerminalNode(Node):
         """Styled box for an interface terminal (requires or provides)."""
 
         _icon_dir = None
@@ -187,7 +187,7 @@ def render_diagram(data: DiagramData, output_path: Path) -> None:
             "penwidth": "1.5",
         }
 
-    class _EntityNode(Node):  # type: ignore[misc]
+    class _EntityNode(Node):
         """Styled box for a leaf entity (component or system with no children)."""
 
         _icon_dir = None
@@ -201,7 +201,7 @@ def render_diagram(data: DiagramData, output_path: Path) -> None:
             "penwidth": "2",
         }
 
-    class _ChildNode(Node):  # type: ignore[misc]
+    class _ChildNode(Node):
         """Styled box for a child component or system inside an entity cluster."""
 
         _icon_dir = None
@@ -234,7 +234,7 @@ def render_diagram(data: DiagramData, output_path: Path) -> None:
             # that cross-cluster edges are handled correctly by Graphviz).
             for conn in data.connections:
                 if conn.source in child_nodes and conn.target in child_nodes:
-                    child_nodes[conn.source] >> Edge(label=conn.label) >> child_nodes[conn.target]  # type: ignore[operator]
+                    child_nodes[conn.source] >> Edge(label=conn.label) >> child_nodes[conn.target]
 
             # Children with no incoming internal connection are natural entry
             # points for requires terminals; those with no outgoing connection
@@ -259,11 +259,11 @@ def render_diagram(data: DiagramData, output_path: Path) -> None:
         # --- Terminal ↔ entity edges ---
         for req_node in req_nodes.values():
             for entry in entry_nodes:
-                req_node >> Edge() >> entry  # type: ignore[operator]
+                req_node >> Edge() >> entry
 
         for prov_node in prov_nodes.values():
             for exit_node in exit_nodes:
-                exit_node >> Edge() >> prov_node  # type: ignore[operator]
+                exit_node >> Edge() >> prov_node
 
 
 # ################
