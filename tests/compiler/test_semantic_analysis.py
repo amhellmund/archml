@@ -255,8 +255,12 @@ class TestDuplicateTopLevelNames:
     def test_duplicate_enum_name(self) -> None:
         _assert_error(
             """
-enum Status { Active }
-enum Status { Inactive }
+enum Status {
+    Active
+}
+enum Status {
+    Inactive
+}
 """,
             "Duplicate enum name 'Status'",
         )
@@ -315,7 +319,9 @@ interface OrderRequest @v2 { field b: Int }
     def test_enum_and_type_same_name_conflict(self) -> None:
         _assert_error(
             """
-enum Foo { Bar }
+enum Foo {
+    Bar
+}
 type Foo { field x: String }
 """,
             "Name 'Foo' is defined as both an enum and a type",
@@ -323,9 +329,15 @@ type Foo { field x: String }
 
     def test_third_occurrence_of_duplicate_name(self) -> None:
         errors = _analyze("""
-enum Status { Active }
-enum Status { Inactive }
-enum Status { Deleted }
+enum Status {
+    Active
+}
+enum Status {
+    Inactive
+}
+enum Status {
+    Deleted
+}
 """)
         # Only one error reported per unique duplicate name
         messages = _messages(errors)
@@ -333,8 +345,12 @@ enum Status { Deleted }
 
     def test_multiple_duplicates_in_same_file(self) -> None:
         errors = _analyze("""
-enum Status { Active }
-enum Status { Inactive }
+enum Status {
+    Active
+}
+enum Status {
+    Inactive
+}
 type Address { field x: String }
 type Address { field y: String }
 """)
@@ -372,8 +388,16 @@ enum Status {
 
     def test_duplicate_in_one_enum_not_other(self) -> None:
         errors = _analyze("""
-enum A { X X Y }
-enum B { X Y Z }
+enum A {
+    X
+    X
+    Y
+}
+enum B {
+    X
+    Y
+    Z
+}
 """)
         messages = _messages(errors)
         assert any("in enum 'A'" in m for m in messages)
@@ -381,7 +405,11 @@ enum B { X Y Z }
 
     def test_triple_duplicate_reports_once(self) -> None:
         errors = _analyze("""
-enum Foo { A A A }
+enum Foo {
+    A
+    A
+    A
+}
 """)
         messages = _messages(errors)
         assert messages.count("Duplicate value 'A' in enum 'Foo'") == 1
@@ -460,7 +488,9 @@ interface Request {
 
     def test_enum_used_as_field_type_ok(self) -> None:
         _assert_clean("""
-enum Status { Active }
+enum Status {
+    Active
+}
 type Record { field status: Status }
 """)
 
@@ -880,7 +910,7 @@ type OrderItem { field name: String }
         )
 
     def test_imported_enum_found_in_resolved(self) -> None:
-        source_file = parse("enum Status { Active Inactive }")
+        source_file = parse("enum Status {\n    Active\n    Inactive\n}")
         _assert_clean(
             "from enums import Status",
             resolved_imports={"enums": source_file},

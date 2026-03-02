@@ -20,6 +20,18 @@ ArchML files use the `.archml` extension. A file contains one or more top-level 
 
 Strings use double quotes. Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional human-readable `title` and `description`.
 
+Multi-line text is written with triple-quoted strings (`"""`):
+
+```
+description = """
+Accepts and validates customer orders.
+Delegates payment processing to the PaymentGateway
+and inventory checks to the InventoryManager.
+"""
+```
+
+Single-quoted strings may not contain a literal newline character but support the same `\n`, `\t`, `\\`, `\"` escape sequences as triple-quoted strings.
+
 ## Type System
 
 ### Primitive Types
@@ -53,7 +65,7 @@ field artifact: Directory {
 
 ### Enumerations
 
-The `enum` keyword defines a constrained set of named values:
+The `enum` keyword defines a constrained set of named values. Each value must appear on its own line:
 
 ```
 enum OrderStatus {
@@ -222,7 +234,7 @@ connect ServiceA -> ServiceB by RequestToB
 connect ServiceB -> ServiceA by ResponseToA
 ```
 
-Connections may carry annotations:
+Connections may carry annotations. Each attribute must appear on its own line:
 
 ```
 connect OrderService -> PaymentGateway by PaymentRequest {
@@ -463,6 +475,7 @@ system ECommerce {
     connect PaymentGateway -> StripeAPI by PaymentRequest {
         protocol = "HTTP"
         async = true
+        description = "Delegate payment processing to Stripe."
     }
 }
 ```

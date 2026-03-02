@@ -278,8 +278,25 @@ class _Lexer:
     # ------------------------------------------------------------------
 
     def _scan_string(self, line: int, col: int) -> None:
-        """Scan a double-quoted string literal with escape sequences."""
+        """Scan a double-quoted string literal.
+
+        Triple-quoted strings (\"\"\"...\"\"\") allow literal newlines in the
+        content and are used for multi-line descriptions.  Single-quoted
+        strings support \\n, \\t, \\\\, and \\\" escape sequences but may not
+        contain a literal newline character.
+        """
         self._advance()  # opening "
+        # Check for triple-quoted string: "" or """
+        if self._pos < len(self._source) and self._current() == '"':
+            self._advance()  # second "
+            if self._pos < len(self._source) and self._current() == '"':
+                self._advance()  # third "
+                self._scan_triple_quoted_string(line, col)
+                return
+            # Two quotes consumed → empty string
+            self._tokens.append(Token(TokenType.STRING, "", line, col))
+            return
+        # Regular single-quoted string
         chars: list[str] = []
         while self._pos < len(self._source):
             ch = self._current()
@@ -313,6 +330,52 @@ class _Lexer:
                 chars.append(ch)
                 self._advance()
         raise LexerError("Unterminated string literal", line, col)
+
+    def _scan_triple_quoted_string(self, line: int, col: int) -> None:
+        """Scan a triple-quoted string (\"\"\"...\"\"\").
+
+        Allows literal newlines. Supports the same escape sequences as
+        single-quoted strings (\\n, \\t, \\\\, \\\").
+        """
+        chars: list[str] = []
+        while self._pos < len(self._source):
+            ch = self._current()
+            # Check for closing """
+            if (
+                ch == '"'
+                and self._pos + 2 < len(self._source)
+                and self._source[self._pos + 1] == '"'
+                and self._source[self._pos + 2] == '"'
+            ):
+                self._advance()  # first "
+                self._advance()  # second "
+                self._advance()  # third "
+                self._tokens.append(Token(TokenType.STRING, "".join(chars), line, col))
+                return
+            if ch == "\\":
+                self._advance()
+                if self._pos >= len(self._source):
+                    raise LexerError("Unterminated triple-quoted string literal", line, col)
+                esc = self._current()
+                if esc == "n":
+                    chars.append("\n")
+                elif esc == "t":
+                    chars.append("\t")
+                elif esc == "\\":
+                    chars.append("\\")
+                elif esc == '"':
+                    chars.append('"')
+                else:
+                    raise LexerError(
+                        f"Invalid escape sequence: '\\{esc}'",
+                        self._line,
+                        self._column,
+                    )
+                self._advance()
+            else:
+                chars.append(ch)
+                self._advance()
+        raise LexerError("Unterminated triple-quoted string literal", line, col)
 
     def _scan_number(self, line: int, col: int) -> None:
         """Scan an integer or floating-point literal.

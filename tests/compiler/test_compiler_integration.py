@@ -337,8 +337,12 @@ system ECommerce {
     def test_multiple_errors_in_one_file(self) -> None:
         """A file with many problems should report all of them, not just the first."""
         source = """
-enum Dup { A }
-enum Dup { B }
+enum Dup {
+    A
+}
+enum Dup {
+    B
+}
 
 type Bad { field x: UnknownType }
 

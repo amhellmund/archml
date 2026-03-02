@@ -346,6 +346,105 @@ class TestStringLiterals:
 
 
 # ###############
+# Triple-Quoted String Literals
+# ###############
+
+
+class TestTripleQuotedStrings:
+    def test_simple_triple_quoted_string(self) -> None:
+        tokens = _tokens_no_eof('"""hello"""')
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].value == "hello"
+
+    def test_empty_triple_quoted_string(self) -> None:
+        tokens = _tokens_no_eof('""""""')
+        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].value == ""
+
+    def test_triple_quoted_with_literal_newline(self) -> None:
+        tokens = _tokens_no_eof('"""line1\nline2"""')
+        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].value == "line1\nline2"
+
+    def test_triple_quoted_with_multiple_newlines(self) -> None:
+        source = '"""\nfirst\nsecond\nthird\n"""'
+        tokens = _tokens_no_eof(source)
+        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].value == "\nfirst\nsecond\nthird\n"
+
+    def test_triple_quoted_with_single_double_quote_inside(self) -> None:
+        tokens = _tokens_no_eof('"""say "hi" there"""')
+        assert tokens[0].value == 'say "hi" there'
+
+    def test_triple_quoted_with_two_double_quotes_inside(self) -> None:
+        tokens = _tokens_no_eof('"""a ""b"""')
+        assert tokens[0].value == 'a ""b'
+
+    def test_triple_quoted_with_escape_newline(self) -> None:
+        tokens = _tokens_no_eof(r'"""col1\ncol2"""')
+        assert tokens[0].value == "col1\ncol2"
+
+    def test_triple_quoted_with_escape_tab(self) -> None:
+        tokens = _tokens_no_eof(r'"""a\tb"""')
+        assert tokens[0].value == "a\tb"
+
+    def test_triple_quoted_with_escape_backslash(self) -> None:
+        tokens = _tokens_no_eof(r'"""back\\slash"""')
+        assert tokens[0].value == "back\\slash"
+
+    def test_triple_quoted_with_escape_quote(self) -> None:
+        tokens = _tokens_no_eof(r'"""say \"hi\""""')
+        assert tokens[0].value == 'say "hi"'
+
+    def test_triple_quoted_produces_string_token(self) -> None:
+        tokens = _tokens_no_eof('"""content"""')
+        assert tokens[0].type == TokenType.STRING
+
+    def test_triple_quoted_start_position_at_opening_quotes(self) -> None:
+        tokens = _tokens_no_eof('   """hello"""')
+        assert tokens[0].column == 4
+
+    def test_triple_quoted_multiline_source_location(self) -> None:
+        # Token line/col recorded at opening """
+        source = '"""line1\nline2"""'
+        tokens = _tokens_no_eof(source)
+        assert tokens[0].line == 1
+        assert tokens[0].column == 1
+
+    def test_unterminated_triple_quoted_raises(self) -> None:
+        with pytest.raises(LexerError) as exc_info:
+            tokenize('"""unterminated')
+        assert "Unterminated triple-quoted string" in str(exc_info.value)
+
+    def test_unterminated_triple_quoted_two_closing_raises(self) -> None:
+        with pytest.raises(LexerError):
+            tokenize('"""only two closing""')
+
+    def test_triple_quoted_invalid_escape_raises(self) -> None:
+        with pytest.raises(LexerError) as exc_info:
+            tokenize(r'"""bad\xescape"""')
+        assert "Invalid escape sequence" in str(exc_info.value)
+
+    def test_regular_empty_string_still_works(self) -> None:
+        tokens = _tokens_no_eof('""')
+        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].value == ""
+
+    def test_triple_quoted_followed_by_token(self) -> None:
+        tokens = _tokens_no_eof('"""hello""" system')
+        assert len(tokens) == 2
+        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].value == "hello"
+        assert tokens[1].type == TokenType.SYSTEM
+
+    def test_triple_quoted_in_description_assignment(self) -> None:
+        source = 'description = """multi\nline"""'
+        types = _types(source)
+        assert types == [TokenType.DESCRIPTION, TokenType.EQUALS, TokenType.STRING]
+
+
+# ###############
 # Number Literals
 # ###############
 

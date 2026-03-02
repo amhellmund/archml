@@ -268,11 +268,16 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_enum(self) -> EnumDef:
-        """Parse: enum <Name> { [attrs] <Value>* }"""
+        """Parse: enum <Name> { [attrs] <Value>* }
+
+        Each enum value must appear on its own line (line number strictly
+        greater than the opening brace or the previous value).
+        """
         self._expect(TokenType.ENUM)
         name_tok = self._expect(TokenType.IDENTIFIER)
-        self._expect(TokenType.LBRACE)
+        lbrace = self._expect(TokenType.LBRACE)
         enum_def = EnumDef(name=name_tok.value)
+        last_value_line = lbrace.line
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TITLE):
                 enum_def.title = self._parse_string_attr(TokenType.TITLE)
@@ -281,7 +286,15 @@ class _Parser:
             elif self._check(TokenType.TAGS):
                 enum_def.tags = self._parse_tags()
             elif self._check(TokenType.IDENTIFIER):
-                value_tok = self._advance()
+                value_tok = self._current()
+                if value_tok.line <= last_value_line:
+                    raise ParseError(
+                        f"Enum value {value_tok.value!r} must be on a new line",
+                        value_tok.line,
+                        value_tok.column,
+                    )
+                last_value_line = value_tok.line
+                self._advance()
                 enum_def.values.append(value_tok.value)
             else:
                 tok = self._current()
@@ -482,7 +495,12 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_connection(self) -> Connection:
-        """Parse: connect <source> -> <target> by <interface> [@version] [{ ... }]"""
+        """Parse: connect <source> -> <target> by <interface> [@version] [{ ... }]
+
+        Each attribute inside the annotation block must appear on its own line
+        (line number strictly greater than the opening brace or the previous
+        attribute's last token).
+        """
         self._expect(TokenType.CONNECT)
         source_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.ARROW)
@@ -500,9 +518,18 @@ class _Parser:
             interface=InterfaceRef(name=iface_name_tok.value, version=version),
         )
         if self._check(TokenType.LBRACE):
-            self._advance()  # consume {
+            lbrace = self._advance()  # consume {
+            last_attr_line = lbrace.line
             while not self._check(TokenType.RBRACE, TokenType.EOF):
+                attr_tok = self._current()
+                if attr_tok.line <= last_attr_line:
+                    raise ParseError(
+                        "Connection attributes must each be on a new line",
+                        attr_tok.line,
+                        attr_tok.column,
+                    )
                 self._parse_connection_attr(conn)
+                last_attr_line = self._tokens[self._pos - 1].line
             self._expect(TokenType.RBRACE)
         return conn
 

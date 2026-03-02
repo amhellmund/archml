@@ -131,7 +131,7 @@ class TestEnumDeclarations:
         assert enum.values == []
 
     def test_enum_with_single_value(self) -> None:
-        result = _parse("enum Status { Active }")
+        result = _parse("enum Status {\n    Active\n}")
         assert result.enums[0].values == ["Active"]
 
     def test_enum_with_multiple_values(self) -> None:
@@ -201,23 +201,33 @@ enum OrderStatus {
         assert enum.values == ["Pending", "Confirmed"]
 
     def test_enum_title_default_is_none(self) -> None:
-        result = _parse("enum Status { Active }")
+        result = _parse("enum Status {\n    Active\n}")
         assert result.enums[0].title is None
 
     def test_enum_description_default_is_none(self) -> None:
-        result = _parse("enum Status { Active }")
+        result = _parse("enum Status {\n    Active\n}")
         assert result.enums[0].description is None
 
     def test_enum_tags_default_is_empty(self) -> None:
-        result = _parse("enum Status { Active }")
+        result = _parse("enum Status {\n    Active\n}")
         assert result.enums[0].tags == []
 
     def test_multiple_enums(self) -> None:
-        source = "enum A { X }\nenum B { Y }"
+        source = "enum A {\n    X\n}\nenum B {\n    Y\n}"
         result = _parse(source)
         assert len(result.enums) == 2
         assert result.enums[0].name == "A"
         assert result.enums[1].name == "B"
+
+    def test_enum_value_on_same_line_as_lbrace_raises(self) -> None:
+        with pytest.raises(ParseError) as exc_info:
+            _parse("enum Status { Active }")
+        assert "new line" in str(exc_info.value)
+
+    def test_enum_values_on_same_line_as_each_other_raises(self) -> None:
+        with pytest.raises(ParseError) as exc_info:
+            _parse("enum Status {\n    Active Inactive\n}")
+        assert "new line" in str(exc_info.value)
 
 
 # ###############
@@ -1060,6 +1070,112 @@ system ECommerce {
         assert conn.source.entity == "SourceService"
         assert conn.target.entity == "TargetService"
 
+    def test_connection_attr_on_same_line_as_lbrace_raises(self) -> None:
+        with pytest.raises(ParseError) as exc_info:
+            _parse('system S { connect A -> B by X { protocol = "HTTP" } }')
+        assert "new line" in str(exc_info.value)
+
+    def test_connection_attrs_on_same_line_as_each_other_raises(self) -> None:
+        source = """\
+system S {
+    connect A -> B by X {
+        protocol = "HTTP"  async = true
+    }
+}"""
+        with pytest.raises(ParseError) as exc_info:
+            _parse(source)
+        assert "new line" in str(exc_info.value)
+
+
+# ###############
+# Multi-Line Descriptions
+# ###############
+
+
+class TestMultiLineDescriptions:
+    def test_triple_quoted_description_on_interface(self) -> None:
+        source = '''\
+interface OrderRequest {
+    description = """
+    A multi-line
+    description.
+    """
+}'''
+        result = _parse(source)
+        desc = result.interfaces[0].description
+        assert desc is not None
+        assert "multi-line" in desc
+        assert "\n" in desc
+
+    def test_triple_quoted_description_on_component(self) -> None:
+        source = '''\
+component OrderService {
+    description = """Accepts and validates
+customer orders across multiple channels."""
+}'''
+        result = _parse(source)
+        desc = result.components[0].description
+        assert desc is not None
+        assert "channels" in desc
+
+    def test_triple_quoted_description_on_system(self) -> None:
+        source = '''\
+system ECommerce {
+    description = """
+    Customer-facing online store.
+    Handles orders, payments, and inventory.
+    """
+}'''
+        result = _parse(source)
+        assert result.systems[0].description is not None
+
+    def test_triple_quoted_description_on_enum(self) -> None:
+        source = '''\
+enum OrderStatus {
+    description = """
+    Lifecycle states of a customer order.
+    Used throughout the order processing pipeline.
+    """
+    Pending
+    Confirmed
+}'''
+        result = _parse(source)
+        enum = result.enums[0]
+        assert enum.description is not None
+        assert "Lifecycle" in enum.description
+        assert enum.values == ["Pending", "Confirmed"]
+
+    def test_triple_quoted_description_on_type(self) -> None:
+        source = '''\
+type OrderItem {
+    description = """Represents a single line
+item within an order."""
+    field product_id: String
+}'''
+        result = _parse(source)
+        assert result.types[0].description is not None
+
+    def test_triple_quoted_schema_on_field(self) -> None:
+        source = '''\
+interface Report {
+    field summary: File {
+        filetype = "PDF"
+        schema = """
+        Page 1: executive summary.
+        Page 2+: detailed breakdown by region.
+        """
+    }
+}'''
+        result = _parse(source)
+        field = result.interfaces[0].fields[0]
+        assert field.schema_ref is not None
+        assert "executive" in field.schema_ref
+
+    def test_triple_quoted_and_single_quoted_interchangeable(self) -> None:
+        single = _parse('interface I { description = "Simple description." }')
+        triple = _parse('interface I { description = """Simple description.""" }')
+        assert single.interfaces[0].description == triple.interfaces[0].description
+
 
 # ###############
 # Tags Parsing
@@ -1088,7 +1204,7 @@ class TestTagsParsing:
         assert result.systems[0].tags == ["platform"]
 
     def test_tags_on_enum(self) -> None:
-        result = _parse('enum E { tags = ["domain"] Active }')
+        result = _parse('enum E {\n    tags = ["domain"]\n    Active\n}')
         assert result.enums[0].tags == ["domain"]
 
     def test_tags_on_type(self) -> None:
@@ -1109,7 +1225,9 @@ class TestMixedTopLevelDeclarations:
     def test_all_top_level_kinds_in_sequence(self) -> None:
         source = """\
 from interfaces/order import OrderRequest
-enum OrderStatus { Pending }
+enum OrderStatus {
+    Pending
+}
 type OrderItem { field product_id: String }
 interface OrderRequest { field order_id: String }
 component OrderService { requires OrderRequest }
@@ -1571,7 +1689,7 @@ class TestParseErrors:
 
     def test_unknown_connection_attribute(self) -> None:
         with pytest.raises(ParseError) as exc_info:
-            _parse("system S { connect A -> B by I { timeout = 30 } }")
+            _parse("system S {\n    connect A -> B by I {\n        timeout = 30\n    }\n}")
         assert "Unknown connection attribute" in str(exc_info.value)
 
     def test_unknown_field_annotation(self) -> None:
@@ -1671,7 +1789,7 @@ type Artifact {
         assert "manifests" in field.schema_ref  # type: ignore[operator]
 
     def test_enum_values_preserve_order(self) -> None:
-        source = "enum Color { Red Green Blue }"
+        source = "enum Color {\n    Red\n    Green\n    Blue\n}"
         result = _parse(source)
         assert result.enums[0].values == ["Red", "Green", "Blue"]
 
