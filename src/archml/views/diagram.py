@@ -4,14 +4,17 @@
 """Diagram generation for ArchML architecture views.
 
 Builds a diagram representation from a resolved model entity and renders it
-to an image file using the ``diagrams`` library.
+to an image file using the ``diagrams`` library (which delegates layout to
+Graphviz).
 
 The diagram shows:
 - The target entity as the outer container / title.
-- All direct child components and systems as inner boxes.
-- The target entity's ``requires`` interfaces as incoming terminal elements.
-- The target entity's ``provides`` interfaces as outgoing terminal elements.
-- Connections between child entities as labelled arrows.
+- All direct child components and systems as inner boxes inside a Cluster.
+- The target entity's ``requires`` interfaces as incoming terminal nodes
+  (left side, arrows pointing into the entity).
+- The target entity's ``provides`` interfaces as outgoing terminal nodes
+  (right side, arrows pointing out of the entity).
+- Connections between child entities as labelled directed edges.
 """
 
 from __future__ import annotations
@@ -141,10 +144,18 @@ def build_diagram_data(entity: Component | System) -> DiagramData:
 
 
 def render_diagram(data: DiagramData, output_path: Path) -> None:
-    """Render *data* to an image file at *output_path* using ``diagrams``.
+    """Render *data* to an image file at *output_path* using the ``diagrams`` library.
+
+    Custom styled nodes are used for the entity, its children, and its interface
+    terminals. Graphviz (via the ``diagrams`` library) handles layout automatically.
+
+    For leaf entities (no children) a single entity node is placed between the
+    terminal nodes. For entities with children a ``Cluster`` groups the children
+    visually; requires terminals connect to the natural entry children and provides
+    terminals connect from the natural exit children.
 
     The output format is determined by the file extension of *output_path*
-    (e.g. ``.png``, ``.svg``).
+    (e.g. ``.svg``, ``.png``).
 
     Args:
         data: The diagram description to render.
@@ -155,30 +166,104 @@ def render_diagram(data: DiagramData, output_path: Path) -> None:
     """
     try:
         import diagrams as _diagrams
-        from diagrams import Edge
-        from diagrams.c4 import Container, Person
+        from diagrams import Cluster, Edge, Node
     except ImportError as exc:
         raise ImportError("'diagrams' is not installed. Run 'pip install diagrams' to enable visualization.") from exc
+
+    # Custom node classes are defined locally to keep the diagrams import lazy
+    # (it is an optional dependency that requires Graphviz to be installed).
+
+    class _TerminalNode(Node):  # type: ignore[misc]
+        """Styled box for an interface terminal (requires or provides)."""
+
+        _icon_dir = None
+        _icon = None
+        _height = 1.2
+        _attr = {
+            "shape": "box",
+            "style": "rounded,filled",
+            "fillcolor": "#fff8e1",
+            "color": "#aa8833",
+            "penwidth": "1.5",
+        }
+
+    class _EntityNode(Node):  # type: ignore[misc]
+        """Styled box for a leaf entity (component or system with no children)."""
+
+        _icon_dir = None
+        _icon = None
+        _height = 1.5
+        _attr = {
+            "shape": "box",
+            "style": "rounded,filled",
+            "fillcolor": "#ddeeff",
+            "color": "#4466aa",
+            "penwidth": "2",
+        }
+
+    class _ChildNode(Node):  # type: ignore[misc]
+        """Styled box for a child component or system inside an entity cluster."""
+
+        _icon_dir = None
+        _icon = None
+        _height = 1.2
+        _attr = {
+            "shape": "box",
+            "style": "rounded,filled",
+            "fillcolor": "#e8f4e8",
+            "color": "#448844",
+            "penwidth": "1.5",
+        }
 
     output_stem = str(output_path.parent / output_path.stem)
     output_format = output_path.suffix.lstrip(".") or "svg"
 
-    with _diagrams.Diagram(data.title, filename=output_stem, outformat=output_format, show=False):
-        for terminal in data.terminals:
-            if terminal.direction == "in":
-                Person(terminal.name)
+    with _diagrams.Diagram(data.title, filename=output_stem, outformat=output_format, show=False, direction="LR"):
+        # --- Requires terminals (rendered left by Graphviz) ---
+        req_nodes = {t.name: _TerminalNode(t.name) for t in data.terminals if t.direction == "in"}
 
-        child_nodes: dict[str, object] = {}
-        for child in data.children:
-            child_nodes[child.name] = Container(child.name, technology=child.kind, description=child.description or "")
+        # --- Entity representation ---
+        if data.children:
+            # A Cluster groups children inside a visible border labelled with
+            # the entity name; children are instantiated inside the context so
+            # Graphviz assigns them to the subgraph automatically.
+            with Cluster(data.title):
+                child_nodes = {child.name: _ChildNode(child.name) for child in data.children}
 
-        for terminal in data.terminals:
-            if terminal.direction == "out":
-                Person(terminal.name)
+            # Internal connections between children (drawn after the Cluster so
+            # that cross-cluster edges are handled correctly by Graphviz).
+            for conn in data.connections:
+                if conn.source in child_nodes and conn.target in child_nodes:
+                    child_nodes[conn.source] >> Edge(label=conn.label) >> child_nodes[conn.target]  # type: ignore[operator]
 
-        for conn in data.connections:
-            if conn.source in child_nodes and conn.target in child_nodes:
-                child_nodes[conn.source] >> Edge(label=conn.label) >> child_nodes[conn.target]  # type: ignore[operator]
+            # Children with no incoming internal connection are natural entry
+            # points for requires terminals; those with no outgoing connection
+            # are natural exit points for provides terminals.
+            conn_targets = {c.target for c in data.connections if c.target in child_nodes}
+            conn_sources = {c.source for c in data.connections if c.source in child_nodes}
+            entry_nodes = [child_nodes[c.name] for c in data.children if c.name not in conn_targets]
+            exit_nodes = [child_nodes[c.name] for c in data.children if c.name not in conn_sources]
+            if not entry_nodes:
+                entry_nodes = list(child_nodes.values())
+            if not exit_nodes:
+                exit_nodes = list(child_nodes.values())
+        else:
+            # Leaf entity: a single styled node represents the whole entity.
+            entity_node = _EntityNode(data.title)
+            entry_nodes = [entity_node]
+            exit_nodes = [entity_node]
+
+        # --- Provides terminals (rendered right by Graphviz) ---
+        prov_nodes = {t.name: _TerminalNode(t.name) for t in data.terminals if t.direction == "out"}
+
+        # --- Terminal ↔ entity edges ---
+        for req_node in req_nodes.values():
+            for entry in entry_nodes:
+                req_node >> Edge() >> entry  # type: ignore[operator]
+
+        for prov_node in prov_nodes.values():
+            for exit_node in exit_nodes:
+                exit_node >> Edge() >> prov_node  # type: ignore[operator]
 
 
 # ################

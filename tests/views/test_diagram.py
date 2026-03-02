@@ -160,81 +160,209 @@ def test_build_no_connections_for_leaf() -> None:
 
 
 # ###############
-# render_diagram — mocked diagrams
+# render_diagram — mock infrastructure
 # ###############
 
 
-def _make_diagrams_mock() -> tuple[MagicMock, MagicMock]:
-    """Return (mock_diagrams_module, mock_diagrams_c4_module)."""
-    mock_diagrams = MagicMock()
-    mock_c4 = MagicMock()
-    return mock_diagrams, mock_c4
+class _NodeStub:
+    """Minimal stub for diagrams.Node that supports subclassing and tracks labels."""
+
+    _icon_dir = None
+    _icon = None
+    _height = 1.9
+    _attr: dict[str, str] = {}
+
+    # Collects labels of every instance created; reset via the autouse fixture.
+    created_labels: list[str] = []
+
+    def __init__(self, label: str = "", **attrs: object) -> None:
+        _NodeStub.created_labels.append(label)
+
+    def __rshift__(self, other: object) -> object:
+        return other
+
+    def __lshift__(self, other: object) -> object:
+        return other
 
 
-def _diagrams_patch(mock_diagrams: MagicMock, mock_c4: MagicMock) -> ...:  # type: ignore[type-arg]
-    return patch.dict(sys.modules, {"diagrams": mock_diagrams, "diagrams.c4": mock_c4})
+@pytest.fixture(autouse=True)
+def _reset_node_stub() -> None:
+    """Clear _NodeStub tracking before every test."""
+    _NodeStub.created_labels.clear()
 
 
-def test_render_diagram_calls_diagrams(tmp_path: Path) -> None:
-    """render_diagram imports diagrams and calls Diagram with the entity title."""
-    mock_diagrams, mock_c4 = _make_diagrams_mock()
-    data = DiagramData(title="SystemA", description="Test system")
+def _make_diagrams_mock() -> MagicMock:
+    """Return a mock diagrams module with a proper Node stub class."""
+    mock = MagicMock()
+    mock.Node = _NodeStub
+    return mock
 
-    with _diagrams_patch(mock_diagrams, mock_c4):
+
+def _diagrams_patch(mock_diagrams: MagicMock) -> ...:  # type: ignore[type-arg]
+    return patch.dict(sys.modules, {"diagrams": mock_diagrams})
+
+
+# ###############
+# render_diagram — Diagram construction
+# ###############
+
+
+def test_render_diagram_calls_diagram_with_title(tmp_path: Path) -> None:
+    """render_diagram creates a Diagram context with the entity title."""
+    mock = _make_diagrams_mock()
+    data = DiagramData(title="SystemA", description=None)
+
+    with _diagrams_patch(mock):
         render_diagram(data, tmp_path / "out.png")
 
-    mock_diagrams.Diagram.assert_called_once_with(
+    mock.Diagram.assert_called_once_with(
         "SystemA",
         filename=str(tmp_path / "out"),
         outformat="png",
         show=False,
+        direction="LR",
     )
 
 
-def test_render_diagram_adds_terminals(tmp_path: Path) -> None:
-    """render_diagram creates a Person node for each terminal."""
-    mock_diagrams, mock_c4 = _make_diagrams_mock()
+def test_render_diagram_svg_format_from_extension(tmp_path: Path) -> None:
+    """The output format is derived from the path extension."""
+    mock = _make_diagrams_mock()
+    data = DiagramData(title="S", description=None)
 
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "diagram.svg")
+
+    _, kwargs = mock.Diagram.call_args
+    assert kwargs["outformat"] == "svg"
+
+
+def test_render_diagram_default_format_is_svg(tmp_path: Path) -> None:
+    """When the path has no extension the format defaults to svg."""
+    mock = _make_diagrams_mock()
+    data = DiagramData(title="S", description=None)
+
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out")
+
+    _, kwargs = mock.Diagram.call_args
+    assert kwargs["outformat"] == "svg"
+
+
+# ###############
+# render_diagram — terminal nodes
+# ###############
+
+
+def test_render_diagram_creates_node_for_requires_terminal(tmp_path: Path) -> None:
+    """A _TerminalNode is instantiated for each requires interface."""
+    mock = _make_diagrams_mock()
+    data = DiagramData(
+        title="S",
+        description=None,
+        terminals=[InterfaceTerminal(name="DataFeed", direction="in")],
+    )
+
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out.svg")
+
+    assert "DataFeed" in _NodeStub.created_labels
+
+
+def test_render_diagram_creates_node_for_provides_terminal(tmp_path: Path) -> None:
+    """A _TerminalNode is instantiated for each provides interface."""
+    mock = _make_diagrams_mock()
+    data = DiagramData(
+        title="S",
+        description=None,
+        terminals=[InterfaceTerminal(name="Result", direction="out")],
+    )
+
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out.svg")
+
+    assert "Result" in _NodeStub.created_labels
+
+
+def test_render_diagram_creates_nodes_for_both_terminals(tmp_path: Path) -> None:
+    """Terminal nodes are created for both requires and provides interfaces."""
+    mock = _make_diagrams_mock()
     data = DiagramData(
         title="S",
         description=None,
         terminals=[
-            InterfaceTerminal(name="Input", direction="in"),
-            InterfaceTerminal(name="Output", direction="out"),
+            InterfaceTerminal(name="In", direction="in"),
+            InterfaceTerminal(name="Out", direction="out"),
         ],
     )
 
-    with _diagrams_patch(mock_diagrams, mock_c4):
-        render_diagram(data, tmp_path / "out.png")
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out.svg")
 
-    calls = [str(c) for c in mock_c4.Person.call_args_list]
-    assert any("Input" in c for c in calls)
-    assert any("Output" in c for c in calls)
+    assert "In" in _NodeStub.created_labels
+    assert "Out" in _NodeStub.created_labels
 
 
-def test_render_diagram_adds_children(tmp_path: Path) -> None:
-    """render_diagram creates a Container node for each child box."""
-    mock_diagrams, mock_c4 = _make_diagrams_mock()
+# ###############
+# render_diagram — leaf vs cluster
+# ###############
 
+
+def test_render_diagram_uses_entity_node_for_leaf(tmp_path: Path) -> None:
+    """A leaf entity (no children) creates a single entity node."""
+    mock = _make_diagrams_mock()
+    data = DiagramData(title="Leaf", description=None)
+
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out.svg")
+
+    # No Cluster for leaf entities
+    mock.Cluster.assert_not_called()
+    # The entity title appears as a node label
+    assert "Leaf" in _NodeStub.created_labels
+
+
+def test_render_diagram_uses_cluster_for_entity_with_children(tmp_path: Path) -> None:
+    """An entity with children wraps them in a Cluster."""
+    mock = _make_diagrams_mock()
+    data = DiagramData(
+        title="Parent",
+        description=None,
+        children=[ChildBox(name="Alpha", description=None, kind="component")],
+    )
+
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out.svg")
+
+    mock.Cluster.assert_called_once_with("Parent")
+
+
+def test_render_diagram_creates_child_nodes(tmp_path: Path) -> None:
+    """A node is instantiated for each child inside the cluster."""
+    mock = _make_diagrams_mock()
     data = DiagramData(
         title="S",
         description=None,
         children=[
-            ChildBox(name="Alpha", description="first", kind="component"),
+            ChildBox(name="Alpha", description=None, kind="component"),
             ChildBox(name="Beta", description=None, kind="system"),
         ],
     )
 
-    with _diagrams_patch(mock_diagrams, mock_c4):
-        render_diagram(data, tmp_path / "out.png")
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out.svg")
 
-    assert mock_c4.Container.call_count == 2
+    assert "Alpha" in _NodeStub.created_labels
+    assert "Beta" in _NodeStub.created_labels
 
 
-def test_render_diagram_adds_connections(tmp_path: Path) -> None:
-    """render_diagram creates an Edge for each connection."""
-    mock_diagrams, mock_c4 = _make_diagrams_mock()
+# ###############
+# render_diagram — connections
+# ###############
 
+
+def test_render_diagram_creates_edge_for_child_connection(tmp_path: Path) -> None:
+    """An Edge is created for each connection between children."""
+    mock = _make_diagrams_mock()
     data = DiagramData(
         title="S",
         description=None,
@@ -245,34 +373,39 @@ def test_render_diagram_adds_connections(tmp_path: Path) -> None:
         connections=[ConnectionData(source="A", target="B", label="IFace")],
     )
 
-    with _diagrams_patch(mock_diagrams, mock_c4):
-        render_diagram(data, tmp_path / "out.png")
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out.svg")
 
-    mock_diagrams.Edge.assert_called_once_with(label="IFace")
+    mock.Edge.assert_called_with(label="IFace")
 
 
-def test_render_diagram_uses_output_path(tmp_path: Path) -> None:
-    """render_diagram passes the correct filename stem and format to Diagram."""
-    mock_diagrams, mock_c4 = _make_diagrams_mock()
-
-    out = tmp_path / "diagram.svg"
-    data = DiagramData(title="S", description=None)
-
-    with _diagrams_patch(mock_diagrams, mock_c4):
-        render_diagram(data, out)
-
-    mock_diagrams.Diagram.assert_called_once_with(
-        "S",
-        filename=str(tmp_path / "diagram"),
-        outformat="svg",
-        show=False,
+def test_render_diagram_creates_edges_for_terminals(tmp_path: Path) -> None:
+    """Edges are created to connect terminal nodes to the entity."""
+    mock = _make_diagrams_mock()
+    data = DiagramData(
+        title="S",
+        description=None,
+        terminals=[
+            InterfaceTerminal(name="In", direction="in"),
+            InterfaceTerminal(name="Out", direction="out"),
+        ],
     )
+
+    with _diagrams_patch(mock):
+        render_diagram(data, tmp_path / "out.svg")
+
+    # Edge() (no label) is called for each terminal connection
+    assert mock.Edge.called
+
+
+# ###############
+# render_diagram — ImportError
+# ###############
 
 
 def test_render_diagram_raises_import_error_without_diagrams(tmp_path: Path) -> None:
-    """render_diagram raises ImportError when diagrams is not installed."""
+    """render_diagram raises ImportError when the diagrams package is missing."""
     data = DiagramData(title="S", description=None)
-    # Setting diagrams to None in sys.modules makes `import diagrams` raise ImportError.
     with (
         patch.dict(sys.modules, {"diagrams": None}),  # type: ignore[dict-item]
         pytest.raises(ImportError),
