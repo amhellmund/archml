@@ -177,10 +177,10 @@ class TestIsolatedEntities:
         _assert_no_warning(arch)
 
     def test_qualified_name_used_in_warning_when_set(self) -> None:
-        comp = Component(name="Worker", qualified_name="MySystem.Worker")
+        comp = Component(name="Worker", qualified_name="MySystem::Worker")
         sys_ = System(name="MySystem", provides=[_iref("I")], components=[comp])
         arch = ArchFile(systems=[sys_])
-        _assert_warning(arch, "MySystem.Worker")
+        _assert_warning(arch, "MySystem::Worker")
 
     def test_multiple_isolated_entities_all_warned(self) -> None:
         arch = ArchFile(
@@ -564,12 +564,12 @@ class TestInterfacePropagation:
         comp = Component(name="C", requires=[_iref("Other")])
         sys_ = System(
             name="S",
-            qualified_name="Root.S",
+            qualified_name="Root::S",
             provides=[_iref("I")],
             components=[comp],
         )
         arch = ArchFile(systems=[sys_])
-        _assert_error(arch, "'Root.S'")
+        _assert_error(arch, "'Root::S'")
 
     # ---- Component propagation ----
 

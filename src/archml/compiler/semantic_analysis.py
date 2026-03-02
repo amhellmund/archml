@@ -36,6 +36,7 @@ def analyze(
     arch_file: ArchFile,
     *,
     resolved_imports: dict[str, ArchFile] | None = None,
+    file_key: str | None = None,
 ) -> list[SemanticError]:
     """Perform semantic analysis on a parsed ArchFile.
 
@@ -66,11 +67,11 @@ def analyze(
     Side effect:
         Fully-qualified names are assigned to all :class:`Component`,
         :class:`System`, and :class:`InterfaceDef` entities in the file
-        (setting their ``qualified_name`` attribute).  Top-level entities
-        receive their local name; nested entities receive a dotted path
-        prefixed with the names of all enclosing systems / components
-        (e.g. ``"SystemA.Worker"`` for ``component Worker`` inside
-        ``system SystemA``).
+        (setting their ``qualified_name`` attribute).  When *file_key* is
+        provided it is prepended (e.g. ``"myapp/services::SystemA"``).
+        Nested entities receive a ``::``-separated path built from all
+        enclosing scopes plus their own name
+        (e.g. ``"myapp/services::SystemA::Worker"``).
 
     Args:
         arch_file: The parsed ArchFile to analyze.
@@ -78,12 +79,16 @@ def analyze(
             parsed ArchFile contents. When provided, imported entity names
             are verified against the definitions in those files. An import
             source path missing from this mapping is reported as an error.
+        file_key: Optional canonical key for the file being analysed
+            (e.g. ``"myapp/services"`` or ``"@payments/lib/types"``).
+            When provided it is used as the prefix for all
+            ``qualified_name`` values in this file.
 
     Returns:
         A list of :class:`SemanticError` instances. An empty list means no
         semantic errors were found.
     """
-    _assign_qualified_names(arch_file)
+    _assign_qualified_names(arch_file, file_key=file_key)
     return _SemanticAnalyzer(arch_file, resolved_imports).analyze()
 
 
@@ -377,33 +382,37 @@ class _SemanticAnalyzer:
 # ------------------------------------------------------------------
 
 
-def _assign_qualified_names(arch_file: ArchFile) -> None:
+def _assign_qualified_names(arch_file: ArchFile, *, file_key: str | None = None) -> None:
     """Assign fully-qualified names to all components, systems, and interfaces.
 
-    Mutates each entity in-place.  Top-level entities receive their local name
-    as their qualified name.  Nested entities receive a dotted path built by
-    prepending the names of all enclosing scopes (systems and components).
-    Versioned interfaces include the version suffix (e.g. ``"Foo@v2"``).
+    Mutates each entity in-place.  When *file_key* is provided it is used as
+    the top-level prefix (e.g. ``"myapp/services"``), separated from entity
+    names by ``"::"``  (e.g. ``"myapp/services::Worker"``).  Nested entities
+    receive a ``::``-separated path that includes all enclosing scopes
+    (e.g. ``"myapp/services::SystemA::Worker"``).  Versioned interfaces
+    include the version suffix (e.g. ``"myapp/services::Foo@v2"``).
     """
+    file_prefix = file_key  # treated as the parent prefix for top-level entities
     for iface in arch_file.interfaces:
         ver_str = f"@{iface.version}" if iface.version else ""
-        iface.qualified_name = f"{iface.name}{ver_str}"
+        local = f"{iface.name}{ver_str}"
+        iface.qualified_name = f"{file_prefix}::{local}" if file_prefix else local
     for comp in arch_file.components:
-        _assign_component_qualified_names(comp, prefix=None)
+        _assign_component_qualified_names(comp, prefix=file_prefix)
     for system in arch_file.systems:
-        _assign_system_qualified_names(system, prefix=None)
+        _assign_system_qualified_names(system, prefix=file_prefix)
 
 
 def _assign_component_qualified_names(comp: Component, prefix: str | None) -> None:
     """Recursively set qualified names for a component and its sub-components."""
-    comp.qualified_name = f"{prefix}.{comp.name}" if prefix else comp.name
+    comp.qualified_name = f"{prefix}::{comp.name}" if prefix else comp.name
     for sub in comp.components:
         _assign_component_qualified_names(sub, prefix=comp.qualified_name)
 
 
 def _assign_system_qualified_names(system: System, prefix: str | None) -> None:
     """Recursively set qualified names for a system and all its children."""
-    system.qualified_name = f"{prefix}.{system.name}" if prefix else system.name
+    system.qualified_name = f"{prefix}::{system.name}" if prefix else system.name
     for comp in system.components:
         _assign_component_qualified_names(comp, prefix=system.qualified_name)
     for sub_sys in system.systems:

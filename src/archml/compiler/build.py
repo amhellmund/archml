@@ -340,7 +340,7 @@ def _compile_file(
             resolved_imports[imp.source_path] = dep
 
         # Semantic validation.
-        errors = analyze(arch_file, resolved_imports=resolved_imports)
+        errors = analyze(arch_file, resolved_imports=resolved_imports, file_key=key)
         if errors:
             error_lines = "\n".join(f"  {e.message}" for e in errors)
             raise CompilerError(f"Semantic errors in '{source_file}':\n{error_lines}")

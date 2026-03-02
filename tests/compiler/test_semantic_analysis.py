@@ -1118,7 +1118,7 @@ class TestQualifiedNames:
         analyze(arch_file)
         assert arch_file.interfaces[0].qualified_name == "OrderRequest@v2"
 
-    def test_component_in_system_gets_dotted_qualified_name(self) -> None:
+    def test_component_in_system_gets_coloncolon_qualified_name(self) -> None:
         arch_file = parse("""
 system SystemA {
     component Worker {}
@@ -1127,7 +1127,7 @@ system SystemA {
         analyze(arch_file)
         system = arch_file.systems[0]
         assert system.qualified_name == "SystemA"
-        assert system.components[0].qualified_name == "SystemA.Worker"
+        assert system.components[0].qualified_name == "SystemA::Worker"
 
     def test_same_named_components_in_different_systems_get_distinct_qualified_names(self) -> None:
         arch_file = parse("""
@@ -1141,10 +1141,10 @@ system SystemB {
 """)
         errors = analyze(arch_file)
         assert errors == [], f"Expected no errors but got: {[e.message for e in errors]}"
-        assert arch_file.systems[0].components[0].qualified_name == "SystemA.Worker"
-        assert arch_file.systems[1].components[0].qualified_name == "SystemB.Worker"
+        assert arch_file.systems[0].components[0].qualified_name == "SystemA::Worker"
+        assert arch_file.systems[1].components[0].qualified_name == "SystemB::Worker"
 
-    def test_nested_sub_system_gets_dotted_qualified_name(self) -> None:
+    def test_nested_sub_system_gets_coloncolon_qualified_name(self) -> None:
         arch_file = parse("""
 system Enterprise {
     system Division {}
@@ -1153,9 +1153,9 @@ system Enterprise {
         analyze(arch_file)
         enterprise = arch_file.systems[0]
         assert enterprise.qualified_name == "Enterprise"
-        assert enterprise.systems[0].qualified_name == "Enterprise.Division"
+        assert enterprise.systems[0].qualified_name == "Enterprise::Division"
 
-    def test_deeply_nested_component_gets_full_dotted_path(self) -> None:
+    def test_deeply_nested_component_gets_full_coloncolon_path(self) -> None:
         arch_file = parse("""
 system Enterprise {
     system Division {
@@ -1168,10 +1168,10 @@ system Enterprise {
         division = enterprise.systems[0]
         worker = division.components[0]
         assert enterprise.qualified_name == "Enterprise"
-        assert division.qualified_name == "Enterprise.Division"
-        assert worker.qualified_name == "Enterprise.Division.Worker"
+        assert division.qualified_name == "Enterprise::Division"
+        assert worker.qualified_name == "Enterprise::Division::Worker"
 
-    def test_nested_sub_component_gets_dotted_qualified_name(self) -> None:
+    def test_nested_sub_component_gets_coloncolon_qualified_name(self) -> None:
         arch_file = parse("""
 component Router {
     component InputHandler {}
@@ -1181,8 +1181,49 @@ component Router {
         analyze(arch_file)
         router = arch_file.components[0]
         assert router.qualified_name == "Router"
-        assert router.components[0].qualified_name == "Router.InputHandler"
-        assert router.components[1].qualified_name == "Router.OutputHandler"
+        assert router.components[0].qualified_name == "Router::InputHandler"
+        assert router.components[1].qualified_name == "Router::OutputHandler"
+
+    def test_file_key_prefixes_top_level_component(self) -> None:
+        arch_file = parse("component Worker {}")
+        analyze(arch_file, file_key="myapp/services")
+        assert arch_file.components[0].qualified_name == "myapp/services::Worker"
+
+    def test_file_key_prefixes_top_level_system(self) -> None:
+        arch_file = parse("system Enterprise {}")
+        analyze(arch_file, file_key="myapp/core")
+        assert arch_file.systems[0].qualified_name == "myapp/core::Enterprise"
+
+    def test_file_key_prefixes_top_level_interface(self) -> None:
+        arch_file = parse("interface OrderRequest { field id: String }")
+        analyze(arch_file, file_key="myapp/types")
+        assert arch_file.interfaces[0].qualified_name == "myapp/types::OrderRequest"
+
+    def test_file_key_prefixes_versioned_interface(self) -> None:
+        arch_file = parse("interface OrderRequest @v2 { field id: String }")
+        analyze(arch_file, file_key="myapp/types")
+        assert arch_file.interfaces[0].qualified_name == "myapp/types::OrderRequest@v2"
+
+    def test_file_key_propagates_through_nested_entities(self) -> None:
+        arch_file = parse("""
+system Enterprise {
+    system Division {
+        component Worker {}
+    }
+}
+""")
+        analyze(arch_file, file_key="myapp/services")
+        enterprise = arch_file.systems[0]
+        division = enterprise.systems[0]
+        worker = division.components[0]
+        assert enterprise.qualified_name == "myapp/services::Enterprise"
+        assert division.qualified_name == "myapp/services::Enterprise::Division"
+        assert worker.qualified_name == "myapp/services::Enterprise::Division::Worker"
+
+    def test_remote_file_key_prefix(self) -> None:
+        arch_file = parse("component Lib {}")
+        analyze(arch_file, file_key="@payments/lib/shared")
+        assert arch_file.components[0].qualified_name == "@payments/lib/shared::Lib"
 
     def test_same_named_components_in_different_scopes_no_errors(self) -> None:
         # 'component' appears in both SystemA and SystemB — this must not
