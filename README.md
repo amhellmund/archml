@@ -29,7 +29,13 @@ type OrderItem {
     field unit_price: Decimal
 }
 
-enum OrderStatus { Pending  Confirmed  Shipped  Delivered  Cancelled }
+enum OrderStatus {
+    Pending
+    Confirmed
+    Shipped
+    Delivered
+    Cancelled
+}
 
 interface OrderRequest {
     field order_id:   String
@@ -94,9 +100,14 @@ system ECommerce {
         provides InventoryStatus
     }
 
-    connect OrderService -> PaymentGateway  by PaymentRequest
-    connect OrderService -> InventoryManager by InventoryCheck  { protocol = "HTTP" }
-    connect PaymentGateway -> StripeAPI     by PaymentRequest   { protocol = "HTTP"  async = true }
+    connect OrderService -> PaymentGateway by PaymentRequest
+    connect OrderService -> InventoryManager by InventoryCheck {
+        protocol = "HTTP"
+    }
+    connect PaymentGateway -> StripeAPI by PaymentRequest {
+        protocol = "HTTP"
+        async = true
+    }
 }
 ```
 
@@ -122,6 +133,17 @@ Large architectures split naturally across files. A `from ... import` statement 
 Primitive types: `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
 Filesystem types: `File` (with `filetype`, `schema`), `Directory` (with `schema`)
+
+Multi-line descriptions use triple-quoted strings:
+
+```
+description = """
+Accepts and validates customer orders.
+Delegates payment to PaymentGateway.
+"""
+```
+
+Enum values and connection block attributes each occupy their own line — no commas needed.
 
 Full syntax reference: [docs/LANGUAGE_SYNTAX.md](docs/LANGUAGE_SYNTAX.md)
 

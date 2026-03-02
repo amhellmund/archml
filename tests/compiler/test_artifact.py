@@ -373,7 +373,10 @@ class TestFileIO:
     def test_roundtrip_parsed_file(self, tmp_path: Path) -> None:
         """Parsing a real .archml file and roundtripping through artifact."""
         source = """
-enum Status { Active Inactive }
+enum Status {
+    Active
+    Inactive
+}
 
 type Config {
     field timeout: Int

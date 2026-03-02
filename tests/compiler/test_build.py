@@ -92,7 +92,11 @@ component A { provides Signal }
         _write(
             src / "types.archml",
             """
-enum Color { Red Green Blue }
+enum Color {
+    Red
+    Green
+    Blue
+}
 type Point { field x: Int field y: Int }
 """,
         )
@@ -621,8 +625,12 @@ class TestErrorCases:
         _write(
             src / "bad.archml",
             """
-enum Dup { A }
-enum Dup { B }
+enum Dup {
+    A
+}
+enum Dup {
+    B
+}
 """,
         )
         with pytest.raises(CompilerError, match="Semantic errors"):
