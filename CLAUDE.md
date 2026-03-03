@@ -98,11 +98,12 @@ The DSL defines architecture through these core constructs:
 
 - **`system`** — groups components or sub-systems
 - **`component`** — module with `requires` and `provides` interface declarations; supports nesting
+- **`user`** — human actor (role or persona) that interacts with the system; a leaf node
 - **`interface`** — typed contract between elements; supports versioning (`@v1`, `@v2`)
 - **`type`** — reusable data structure used within interfaces
 - **`enum`** — constrained set of named values
 - **`connect`** — data-flow edge linking a required interface to a provided interface (`connect A -> B by Interface`)
-- **`external`** — marks a system or component as outside the development boundary
+- **`external`** — marks a system, component, or user as outside the development boundary
 - **`import` / `use`** — multi-file composition; `use` always includes the entity type (e.g., `use component X`)
 - **`tags`** — arbitrary labels for filtering and view generation
 - **`field`** — typed data element with optional `description` and `schema` annotations

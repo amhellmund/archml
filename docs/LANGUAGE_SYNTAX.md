@@ -206,15 +206,41 @@ system Enterprise {
 }
 ```
 
+### User
+
+A user represents a human actor — a role or persona that interacts with the system. Users declare the interfaces they **require** (consume from components, such as data they receive) and **provide** (expose to components, such as form inputs or commands).
+
+```
+user Customer {
+    title = "Customer"
+    description = "An end user who places orders through the e-commerce platform."
+
+    provides OrderRequest
+    requires OrderConfirmation
+}
+```
+
+Users are leaf nodes — they cannot contain components or sub-users. A user participates in connections like any other entity:
+
+```
+connect Customer -> OrderService by OrderRequest
+connect OrderService -> Customer by OrderConfirmation
+```
+
 ### External Actors
 
-The `external` keyword marks systems or components that are outside the development boundary:
+The `external` keyword marks systems, components, or users that are outside the development boundary:
 
 ```
 external system StripeAPI {
     title = "Stripe Payment API"
     requires PaymentRequest
     provides PaymentResult
+}
+
+external user Admin {
+    title = "System Administrator"
+    provides AdminCommand
 }
 ```
 
@@ -439,8 +465,16 @@ component OrderService {
 }
 
 // file: systems/ecommerce.archml
-from types import PaymentRequest, PaymentResult, InventoryCheck, InventoryStatus
+from types import OrderRequest, OrderConfirmation, PaymentRequest, PaymentResult, InventoryCheck, InventoryStatus
 from components/order_service import OrderService
+
+user Customer {
+    title = "Customer"
+    description = "An end user who places orders through the e-commerce platform."
+
+    provides OrderRequest
+    requires OrderConfirmation
+}
 
 external system StripeAPI {
     title = "Stripe Payment API"
@@ -468,6 +502,8 @@ system ECommerce {
         provides InventoryStatus
     }
 
+    connect Customer -> OrderService by OrderRequest
+    connect OrderService -> Customer by OrderConfirmation
     connect OrderService -> PaymentGateway by PaymentRequest
     connect OrderService -> InventoryManager by InventoryCheck {
         protocol = "HTTP"
@@ -486,6 +522,7 @@ system ECommerce {
 | ------------- | ----------------------------------------------------------------------------------------------------- |
 | `system`      | Group of components or sub-systems with a shared goal.                                                |
 | `component`   | Module with a clear responsibility; may nest sub-components.                                          |
+| `user`        | Human actor (role or persona) that interacts with the system; a leaf node.                            |
 | `interface`   | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc.                       |
 | `type`        | Reusable data structure (used within interfaces).                                                     |
 | `enum`        | Constrained set of named values.                                                                      |
@@ -499,7 +536,7 @@ system ECommerce {
 | `from`        | Introduces the source path in an import statement (`from path import Name`).                          |
 | `import`      | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`). |
 | `use`         | Places an imported entity into a system or component (e.g., `use component X`).                       |
-| `external`    | Marks a system or component as outside the development boundary.                                      |
+| `external`    | Marks a system, component, or user as outside the development boundary.                               |
 | `tags`        | Arbitrary labels for filtering and view generation.                                                   |
 | `title`       | Human-readable display name.                                                                          |
 | `description` | Longer explanation of an entity's purpose.                                                            |

@@ -65,6 +65,14 @@ interface InventoryCheck {
 // systems/ecommerce.archml
 from types import OrderRequest, OrderConfirmation, PaymentRequest, InventoryCheck
 
+user Customer {
+    title = "Customer"
+    description = "An end user who places orders through the e-commerce platform."
+
+    provides OrderRequest
+    requires OrderConfirmation
+}
+
 external system StripeAPI {
     title = "Stripe Payment API"
     requires PaymentRequest
@@ -100,6 +108,8 @@ system ECommerce {
         provides InventoryStatus
     }
 
+    connect Customer -> OrderService by OrderRequest
+    connect OrderService -> Customer by OrderConfirmation
     connect OrderService -> PaymentGateway by PaymentRequest
     connect OrderService -> InventoryManager by InventoryCheck {
         protocol = "HTTP"
@@ -119,13 +129,14 @@ Large architectures split naturally across files. A `from ... import` statement 
 | ----------------------- | --------------------------------------------------------------------- |
 | `system`                | Group of components or sub-systems with a shared goal                 |
 | `component`             | Module with a clear responsibility; may nest sub-components           |
+| `user`                  | Human actor (role or persona) that interacts with the system          |
 | `interface`             | Named contract of typed data fields; supports `@v1`, `@v2` versioning |
 | `type`                  | Reusable data structure (used within interfaces)                      |
 | `enum`                  | Constrained set of named values                                       |
 | `field`                 | Named, typed data element with optional `description` and `schema`    |
-| `requires` / `provides` | Declare consumed and exposed interfaces on a component                |
+| `requires` / `provides` | Declare consumed and exposed interfaces on a component or user        |
 | `connect A -> B by I`   | Data-flow edge linking a required interface to a provided one         |
-| `external`              | Marks a system or component as outside the development boundary       |
+| `external`              | Marks a system, component, or user as outside the development boundary |
 | `from … import`         | Bring specific definitions from another file into scope               |
 | `use component X`       | Place an imported entity inside a system                              |
 | `tags`                  | Arbitrary labels for filtering and view generation                    |
