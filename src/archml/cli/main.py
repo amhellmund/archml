@@ -289,8 +289,10 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
 def _cmd_visualize(args: argparse.Namespace) -> int:
     """Handle the visualize subcommand."""
-    from archml.views.diagram import build_diagram_data, render_diagram
+    from archml.views.backend.diagram import render_diagram
+    from archml.views.placement import compute_layout
     from archml.views.resolver import EntityNotFoundError, resolve_entity
+    from archml.views.topology import build_viz_diagram
     from archml.workspace.config import LocalPathImport
 
     directory = Path(args.directory).resolve()
@@ -339,16 +341,9 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
         return 1
 
     output_path = Path(args.output)
-    data = build_diagram_data(entity)
-
-    try:
-        render_diagram(data, output_path)
-    except ImportError:
-        print(
-            "Error: 'diagrams' is not installed. Run 'pip install diagrams' to enable visualization.",
-            file=sys.stderr,
-        )
-        return 1
+    viz_diagram = build_viz_diagram(entity)
+    layout_plan = compute_layout(viz_diagram)
+    render_diagram(viz_diagram, layout_plan, output_path)
 
     print(f"Diagram written to '{output_path}'.")
     return 0
