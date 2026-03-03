@@ -47,6 +47,7 @@ class TestEmptyInput:
         assert result.interfaces == []
         assert result.components == []
         assert result.systems == []
+        assert result.users == []
 
     def test_whitespace_only_returns_empty_arch_file(self) -> None:
         result = _parse("   \t\n\n  ")
@@ -1918,3 +1919,105 @@ interface AllPrimitives {
         field = result.interfaces[0].fields[0]
         assert field.description is None
         assert field.schema_ref is None
+
+
+# ###############
+# User Declarations
+# ###############
+
+
+class TestUserDeclarations:
+    def test_minimal_user(self) -> None:
+        result = _parse("user Customer {}")
+        assert len(result.users) == 1
+        u = result.users[0]
+        assert u.name == "Customer"
+        assert u.title is None
+        assert u.description is None
+        assert u.tags == []
+        assert u.requires == []
+        assert u.provides == []
+        assert u.is_external is False
+
+    def test_user_with_title_and_description(self) -> None:
+        source = 'user Customer { title = "Customer" description = "An end user." }'
+        result = _parse(source)
+        u = result.users[0]
+        assert u.title == "Customer"
+        assert u.description == "An end user."
+
+    def test_user_with_tags(self) -> None:
+        result = _parse('user Customer { tags = ["external", "persona"] }')
+        u = result.users[0]
+        assert u.tags == ["external", "persona"]
+
+    def test_user_with_requires(self) -> None:
+        result = _parse("user Customer { requires OrderConfirmation }")
+        u = result.users[0]
+        assert len(u.requires) == 1
+        assert u.requires[0].name == "OrderConfirmation"
+        assert u.requires[0].version is None
+
+    def test_user_with_provides(self) -> None:
+        result = _parse("user Customer { provides OrderRequest }")
+        u = result.users[0]
+        assert len(u.provides) == 1
+        assert u.provides[0].name == "OrderRequest"
+
+    def test_user_with_versioned_interface(self) -> None:
+        result = _parse("user Customer { requires OrderConfirmation @v2 }")
+        u = result.users[0]
+        assert u.requires[0].version == "v2"
+
+    def test_user_with_multiple_interfaces(self) -> None:
+        source = "user Customer { requires OrderConfirmation provides OrderRequest }"
+        result = _parse(source)
+        u = result.users[0]
+        assert len(u.requires) == 1
+        assert len(u.provides) == 1
+
+    def test_external_user(self) -> None:
+        result = _parse("external user LegacyClient {}")
+        assert len(result.users) == 1
+        u = result.users[0]
+        assert u.name == "LegacyClient"
+        assert u.is_external is True
+
+    def test_multiple_top_level_users(self) -> None:
+        source = "user A {} user B {}"
+        result = _parse(source)
+        assert len(result.users) == 2
+        assert result.users[0].name == "A"
+        assert result.users[1].name == "B"
+
+    def test_user_inline_in_system(self) -> None:
+        source = "system S { user Customer {} }"
+        result = _parse(source)
+        s = result.systems[0]
+        assert len(s.users) == 1
+        assert s.users[0].name == "Customer"
+        assert s.users[0].is_external is False
+
+    def test_external_user_inline_in_system(self) -> None:
+        source = "system S { external user LegacyClient {} }"
+        result = _parse(source)
+        assert result.systems[0].users[0].is_external is True
+
+    def test_use_user_in_system(self) -> None:
+        source = "system S { use user Customer }"
+        result = _parse(source)
+        s = result.systems[0]
+        assert len(s.users) == 1
+        assert s.users[0].name == "Customer"
+
+    def test_user_body_disallows_component_keyword(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("user Customer { component Sub {} }")
+
+    def test_user_body_disallows_connect_keyword(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("user Customer { connect A -> B by X }")
+
+    def test_external_invalid_keyword_after_raises(self) -> None:
+        with pytest.raises(ParseError, match="Expected 'component', 'system', or 'user'"):
+            _parse("external interface I {}")

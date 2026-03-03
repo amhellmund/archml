@@ -655,7 +655,7 @@ def test_visualize_succeeds_with_mocked_renderer(
     (tmp_path / "arch.archml").write_text("component Worker {}\n")
     out_file = tmp_path / "diagram.png"
     monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), str(tmp_path)])
-    with patch("archml.views.diagram.render_diagram") as mock_render, pytest.raises(SystemExit) as exc_info:
+    with patch("archml.views.backend.diagram.render_diagram") as mock_render, pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
     mock_render.assert_called_once()

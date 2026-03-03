@@ -71,6 +71,7 @@ class TestKeywords:
         [
             ("system", TokenType.SYSTEM),
             ("component", TokenType.COMPONENT),
+            ("user", TokenType.USER),
             ("interface", TokenType.INTERFACE),
             ("type", TokenType.TYPE),
             ("enum", TokenType.ENUM),

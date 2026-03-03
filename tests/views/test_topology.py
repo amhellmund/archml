@@ -3,7 +3,7 @@
 
 """Tests for the abstract visualization topology model and its builder."""
 
-from archml.model.entities import Component, Connection, ConnectionEndpoint, InterfaceRef, System
+from archml.model.entities import Component, Connection, ConnectionEndpoint, InterfaceRef, System, UserDef
 from archml.views.topology import (
     VizBoundary,
     VizNode,
@@ -678,3 +678,84 @@ def test_ecommerce_system_topology() -> None:
     for edge in diag.edges:
         assert edge.source_port_id in all_ports
         assert edge.target_port_id in all_ports
+
+
+# ###############
+# User nodes
+# ###############
+
+
+def test_user_as_child_node_of_system_has_kind_user() -> None:
+    """A UserDef inside a System becomes a child VizNode with kind 'user'."""
+    customer = UserDef(
+        name="Customer",
+        requires=[InterfaceRef(name="OrderConfirmation")],
+        provides=[InterfaceRef(name="OrderRequest")],
+    )
+    system = System(name="ECommerce", users=[customer])
+    diag = build_viz_diagram(system)
+    child_ids = _child_ids(diag.root)
+    assert "ECommerce__Customer" in child_ids
+    customer_node = next(c for c in diag.root.children if c.id == "ECommerce__Customer")
+    assert isinstance(customer_node, VizNode)
+    assert customer_node.kind == "user"
+
+
+def test_external_user_child_has_kind_external_user() -> None:
+    """An external UserDef child gets kind 'external_user'."""
+    ext_user = UserDef(name="Partner", is_external=True)
+    system = System(name="S", users=[ext_user])
+    diag = build_viz_diagram(system)
+    child_node = next(c for c in diag.root.children if c.label == "Partner")
+    assert isinstance(child_node, VizNode)
+    assert child_node.kind == "external_user"
+
+
+def test_user_child_ports_are_built() -> None:
+    """Ports are created for a user's requires and provides declarations."""
+    customer = UserDef(
+        name="Customer",
+        requires=[InterfaceRef(name="OrderConfirmation")],
+        provides=[InterfaceRef(name="OrderRequest")],
+    )
+    system = System(name="S", users=[customer])
+    diag = build_viz_diagram(system)
+    customer_node = next(c for c in diag.root.children if c.label == "Customer")
+    assert isinstance(customer_node, VizNode)
+    directions = {p.direction for p in customer_node.ports}
+    assert "requires" in directions
+    assert "provides" in directions
+
+
+def test_user_as_connection_endpoint() -> None:
+    """A user can be a source or target of a connection edge."""
+    iref = InterfaceRef(name="OrderRequest")
+    customer = UserDef(name="Customer", provides=[iref])
+    order_svc = Component(name="OrderService", requires=[iref])
+    conn = _conn("Customer", "OrderService", "OrderRequest")
+    system = System(
+        name="ECommerce",
+        users=[customer],
+        components=[order_svc],
+        connections=[conn],
+    )
+    diag = build_viz_diagram(system)
+    assert len(diag.edges) == 1
+    edge = diag.edges[0]
+    assert "Customer" in edge.source_port_id
+    assert "OrderService" in edge.target_port_id
+    all_ports = collect_all_ports(diag)
+    assert edge.source_port_id in all_ports
+    assert edge.target_port_id in all_ports
+
+
+def test_external_user_as_peripheral_node() -> None:
+    """A user supplied via external_entities appears as an external_user peripheral node."""
+    iref = InterfaceRef(name="Report")
+    ext_user = UserDef(name="Analyst", provides=[iref])
+    comp = Component(name="ReportService", requires=[iref])
+    conn = _conn("Analyst", "ReportService", "Report")
+    system = System(name="S", components=[comp], connections=[conn])
+    diag = build_viz_diagram(system, external_entities={"Analyst": ext_user})
+    kinds = {n.kind for n in diag.peripheral_nodes}
+    assert "external_user" in kinds

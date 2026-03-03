@@ -1263,3 +1263,106 @@ interface Foo @v2 { field x: String }
         analyze(arch_file)
         assert arch_file.interfaces[0].qualified_name == "Foo"
         assert arch_file.interfaces[1].qualified_name == "Foo@v2"
+
+
+# ###############
+# User Checks
+# ###############
+
+
+class TestUserSemantics:
+    def test_user_with_valid_interface_refs(self) -> None:
+        _assert_clean("""
+interface OrderRequest {}
+interface OrderConfirmation {}
+user Customer {
+    provides OrderRequest
+    requires OrderConfirmation
+}
+""")
+
+    def test_user_unknown_requires_interface(self) -> None:
+        _assert_error(
+            "user Customer { requires Unknown }",
+            "unknown interface 'Unknown'",
+        )
+
+    def test_user_unknown_provides_interface(self) -> None:
+        _assert_error(
+            "user Customer { provides Unknown }",
+            "unknown interface 'Unknown'",
+        )
+
+    def test_duplicate_top_level_user(self) -> None:
+        _assert_error(
+            "user A {} user A {}",
+            "Duplicate user name 'A'",
+        )
+
+    def test_duplicate_user_in_system(self) -> None:
+        _assert_error(
+            "system S { user A {} user A {} }",
+            "Duplicate user name 'A'",
+        )
+
+    def test_user_name_conflicts_with_component_in_system(self) -> None:
+        _assert_error(
+            "system S { component A {} user A {} }",
+            "name 'A' is used for both a user and a component or sub-system",
+        )
+
+    def test_user_name_conflicts_with_system_in_system(self) -> None:
+        _assert_error(
+            "system S { system Sub {} user Sub {} }",
+            "name 'Sub' is used for both a user and a component or sub-system",
+        )
+
+    def test_user_as_connection_endpoint_in_system(self) -> None:
+        _assert_clean("""
+interface OrderRequest {}
+user Customer { provides OrderRequest }
+component OrderService { requires OrderRequest }
+system S {
+    use user Customer
+    use component OrderService
+    connect Customer -> OrderService by OrderRequest
+}
+""")
+
+    def test_top_level_user_as_connection_endpoint(self) -> None:
+        _assert_clean("""
+interface I {}
+user A { provides I }
+component B { requires I }
+system S {
+    use component B
+    connect A -> B by I
+}
+""")
+
+    def test_user_qualified_name_top_level(self) -> None:
+        arch_file = parse("user Customer {}")
+        analyze(arch_file, file_key="myapp/actors")
+        assert arch_file.users[0].qualified_name == "myapp/actors::Customer"
+
+    def test_user_qualified_name_no_file_key(self) -> None:
+        arch_file = parse("user Customer {}")
+        analyze(arch_file)
+        assert arch_file.users[0].qualified_name == "Customer"
+
+    def test_user_qualified_name_in_system(self) -> None:
+        arch_file = parse("system S { user Customer {} }")
+        analyze(arch_file)
+        assert arch_file.systems[0].users[0].qualified_name == "S::Customer"
+
+    def test_external_user_valid(self) -> None:
+        _assert_clean("""
+interface I {}
+external user ExternalClient { provides I }
+""")
+
+    def test_user_versioned_interface_ref(self) -> None:
+        _assert_clean("""
+interface I @v2 {}
+user Customer { requires I @v2 }
+""")

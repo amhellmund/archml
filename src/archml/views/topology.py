@@ -34,13 +34,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from archml.model.entities import Component, InterfaceRef, System
+from archml.model.entities import Component, InterfaceRef, System, UserDef
 
 # ###############
 # Public Interface
 # ###############
 
-NodeKind = Literal["component", "system", "external_component", "external_system", "terminal"]
+NodeKind = Literal["component", "system", "user", "external_component", "external_system", "external_user", "terminal"]
 """Semantic classification of a :class:`VizNode`."""
 
 BoundaryKind = Literal["component", "system"]
@@ -224,7 +224,7 @@ class VizDiagram:
 def build_viz_diagram(
     entity: Component | System,
     *,
-    external_entities: dict[str, Component | System] | None = None,
+    external_entities: dict[str, Component | System | UserDef] | None = None,
 ) -> VizDiagram:
     """Build a :class:`VizDiagram` topology from a model entity.
 
@@ -268,6 +268,9 @@ def build_viz_diagram(
         for sys in entity.systems:
             child_path = f"{entity_path}::{sys.name}"
             child_node_map[sys.name] = _make_child_node(sys, child_path)
+        for user in entity.users:
+            child_path = f"{entity_path}::{user.name}"
+            child_node_map[user.name] = _make_child_node(user, child_path)
 
     # --- Root boundary ---
     root_ports = _make_ports(root_id, entity)
@@ -412,7 +415,7 @@ def _make_port(
     )
 
 
-def _make_ports(node_id: str, entity: Component | System) -> list[VizPort]:
+def _make_ports(node_id: str, entity: Component | System | UserDef) -> list[VizPort]:
     """Create :class:`VizPort` instances for all requires and provides of *entity*."""
     ports: list[VizPort] = []
     for ref in entity.requires:
@@ -422,13 +425,15 @@ def _make_ports(node_id: str, entity: Component | System) -> list[VizPort]:
     return ports
 
 
-def _make_child_node(entity: Component | System, entity_path: str) -> VizNode:
+def _make_child_node(entity: Component | System | UserDef, entity_path: str) -> VizNode:
     """Create a :class:`VizNode` for a direct child of the focus entity."""
     node_id = _make_id(entity_path)
     if isinstance(entity, Component):
         kind: NodeKind = "external_component" if entity.is_external else "component"
-    else:
+    elif isinstance(entity, System):
         kind = "external_system" if entity.is_external else "system"
+    else:
+        kind = "external_user" if entity.is_external else "user"
     return VizNode(
         id=node_id,
         label=entity.name,
@@ -441,7 +446,7 @@ def _make_child_node(entity: Component | System, entity_path: str) -> VizNode:
     )
 
 
-def _make_external_node(name: str, entity: Component | System | None) -> VizNode:
+def _make_external_node(name: str, entity: Component | System | UserDef | None) -> VizNode:
     """Create a :class:`VizNode` for an external connection endpoint.
 
     When *entity* is provided its full metadata is used; otherwise a minimal
@@ -450,7 +455,12 @@ def _make_external_node(name: str, entity: Component | System | None) -> VizNode
     if entity is not None:
         path = entity.qualified_name or name
         node_id = _make_id(path)
-        kind: NodeKind = "external_component" if isinstance(entity, Component) else "external_system"
+        if isinstance(entity, Component):
+            kind: NodeKind = "external_component"
+        elif isinstance(entity, System):
+            kind = "external_system"
+        else:
+            kind = "external_user"
         return VizNode(
             id=node_id,
             label=entity.name,
