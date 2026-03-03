@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from archml.model.entities import ArchFile, Component, Connection, EnumDef, InterfaceDef, InterfaceRef, System
+from archml.model.entities import ArchFile, Component, Connection, EnumDef, InterfaceDef, InterfaceRef, System, UserDef
 from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
 
 # ###############
@@ -107,9 +107,13 @@ class _SemanticAnalyzer:
     ) -> None:
         self._file = arch_file
         self._resolved = resolved_imports
-        # Top-level component and system names visible at file scope.
+        # Top-level component, system, and user names visible at file scope.
         # These are valid connection endpoints from within any nested system.
-        self._file_entity_names: set[str] = {c.name for c in arch_file.components} | {s.name for s in arch_file.systems}
+        self._file_entity_names: set[str] = (
+            {c.name for c in arch_file.components}
+            | {s.name for s in arch_file.systems}
+            | {u.name for u in arch_file.users}
+        )
 
     def analyze(self) -> list[SemanticError]:
         """Run all semantic checks and return collected errors."""
@@ -180,7 +184,18 @@ class _SemanticAnalyzer:
                 )
             )
 
-        # 7. Validate import entities against resolved source files.
+        # 7. Check top-level users.
+        for user in self._file.users:
+            errors.extend(
+                _check_user(
+                    user,
+                    all_interface_plain_names,
+                    local_interface_defs,
+                    imported_names,
+                )
+            )
+
+        # 8. Validate import entities against resolved source files.
         errors.extend(self._check_import_resolutions())
 
         return errors
@@ -281,12 +296,22 @@ class _SemanticAnalyzer:
                 "Duplicate sub-system name '{}' in " + ctx,
             )
         )
+        # Check for duplicate user names within this system.
+        errors.extend(
+            _check_duplicate_names(
+                [u.name for u in system.users],
+                "Duplicate user name '{}' in " + ctx,
+            )
+        )
 
-        # Check for name conflicts between components and sub-systems.
+        # Check for name conflicts between components, sub-systems, and users.
         comp_names = {c.name for c in system.components}
         sys_names = {s.name for s in system.systems}
+        user_names = {u.name for u in system.users}
         for name in sorted(comp_names & sys_names):
             errors.append(SemanticError(f"{ctx}: name '{name}' is used for both a component and a sub-system"))
+        for name in sorted((comp_names | sys_names) & user_names):
+            errors.append(SemanticError(f"{ctx}: name '{name}' is used for both a user and a component or sub-system"))
 
         # Check requires / provides interface references.
         for ref in system.requires:
@@ -313,12 +338,12 @@ class _SemanticAnalyzer:
             )
 
         # Connection endpoints in a system may reference:
-        #   1. Direct members of this system (components and sub-systems),
+        #   1. Direct members of this system (components, sub-systems, and users),
         #   2. Top-level entities in the file (e.g. external systems defined
         #      at the top level and referenced in an internal connection), or
         #   3. Imported names (brought in via `from ... import` and used via
-        #      `use component/system`).
-        member_names = comp_names | sys_names
+        #      `use component/system/user`).
+        member_names = comp_names | sys_names | user_names
         connection_scope = member_names | self._file_entity_names | imported_names
         for conn in system.connections:
             errors.extend(
@@ -348,6 +373,15 @@ class _SemanticAnalyzer:
                 self._check_system(
                     sub_sys,
                     all_type_names,
+                    all_interface_names,
+                    local_interface_defs,
+                    imported_names,
+                )
+            )
+        for user in system.users:
+            errors.extend(
+                _check_user(
+                    user,
                     all_interface_names,
                     local_interface_defs,
                     imported_names,
@@ -401,6 +435,8 @@ def _assign_qualified_names(arch_file: ArchFile, *, file_key: str | None = None)
         _assign_component_qualified_names(comp, prefix=file_prefix)
     for system in arch_file.systems:
         _assign_system_qualified_names(system, prefix=file_prefix)
+    for user in arch_file.users:
+        _assign_user_qualified_name(user, prefix=file_prefix)
 
 
 def _assign_component_qualified_names(comp: Component, prefix: str | None) -> None:
@@ -410,6 +446,11 @@ def _assign_component_qualified_names(comp: Component, prefix: str | None) -> No
         _assign_component_qualified_names(sub, prefix=comp.qualified_name)
 
 
+def _assign_user_qualified_name(user: UserDef, prefix: str | None) -> None:
+    """Set the qualified name for a user entity."""
+    user.qualified_name = f"{prefix}::{user.name}" if prefix else user.name
+
+
 def _assign_system_qualified_names(system: System, prefix: str | None) -> None:
     """Recursively set qualified names for a system and all its children."""
     system.qualified_name = f"{prefix}::{system.name}" if prefix else system.name
@@ -417,6 +458,8 @@ def _assign_system_qualified_names(system: System, prefix: str | None) -> None:
         _assign_component_qualified_names(comp, prefix=system.qualified_name)
     for sub_sys in system.systems:
         _assign_system_qualified_names(sub_sys, prefix=system.qualified_name)
+    for user in system.users:
+        _assign_user_qualified_name(user, prefix=system.qualified_name)
 
 
 def _check_duplicate_imports(arch_file: ArchFile) -> list[SemanticError]:
@@ -451,6 +494,7 @@ def _collect_all_top_level_names(arch_file: ArchFile) -> set[str]:
     names.update(i.name for i in arch_file.interfaces)
     names.update(c.name for c in arch_file.components)
     names.update(s.name for s in arch_file.systems)
+    names.update(u.name for u in arch_file.users)
     return names
 
 
@@ -515,6 +559,12 @@ def _check_top_level_duplicates(arch_file: ArchFile) -> list[SemanticError]:
         _check_duplicate_names(
             [s.name for s in arch_file.systems],
             "Duplicate system name '{}'",
+        )
+    )
+    errors.extend(
+        _check_duplicate_names(
+            [u.name for u in arch_file.users],
+            "Duplicate user name '{}'",
         )
     )
 
@@ -606,6 +656,26 @@ def _check_interface_ref(
             )
         )
 
+    return errors
+
+
+def _check_user(
+    user: UserDef,
+    all_interface_names: set[str],
+    local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
+    imported_names: set[str],
+) -> list[SemanticError]:
+    """Check requires/provides interface references on a user entity."""
+    errors: list[SemanticError] = []
+    ctx = f"user '{user.name}'"
+    for ref in user.requires:
+        errors.extend(
+            _check_interface_ref(ctx, ref, all_interface_names, local_interface_defs, imported_names, "requires")
+        )
+    for ref in user.provides:
+        errors.extend(
+            _check_interface_ref(ctx, ref, all_interface_names, local_interface_defs, imported_names, "provides")
+        )
     return errors
 
 

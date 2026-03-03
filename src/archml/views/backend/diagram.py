@@ -78,6 +78,8 @@ _FILL_COMPONENT = "#e8f4e8"
 _STROKE_COMPONENT = "#448844"
 _FILL_SYSTEM = "#ddeeff"
 _STROKE_SYSTEM = "#4466aa"
+_FILL_USER = "#fef3e2"
+_STROKE_USER = "#b36200"
 _FILL_EXTERNAL = "#f0e8f0"
 _STROKE_EXTERNAL = "#664488"
 _FILL_TERMINAL = "#fff8e1"
@@ -93,11 +95,11 @@ _CORNER_RADIUS = 6
 _STROKE_WIDTH = 1.5
 _BOUNDARY_STROKE_WIDTH = 2.0
 _BOUNDARY_LABEL_OFFSET = 14.0  # y distance from boundary top to title baseline
-_LABEL_PADDING = 6.0           # horizontal padding inside node for text clip region
+_LABEL_PADDING = 6.0  # horizontal padding inside node for text clip region
 
 # Arrowhead geometry (layout units, before scaling).
-_ARROW_LEN = 10.0       # length of the arrowhead along the edge direction
-_ARROW_HALF_W = 4.0     # half-width of the arrowhead base
+_ARROW_LEN = 10.0  # length of the arrowhead along the edge direction
+_ARROW_HALF_W = 4.0  # half-width of the arrowhead base
 
 
 def _node_colours(kind: NodeKind | None) -> tuple[str, str]:
@@ -106,7 +108,9 @@ def _node_colours(kind: NodeKind | None) -> tuple[str, str]:
         return _FILL_COMPONENT, _STROKE_COMPONENT
     if kind == "system":
         return _FILL_SYSTEM, _STROKE_SYSTEM
-    if kind in ("external_component", "external_system"):
+    if kind == "user":
+        return _FILL_USER, _STROKE_USER
+    if kind in ("external_component", "external_system", "external_user"):
         return _FILL_EXTERNAL, _STROKE_EXTERNAL
     return _FILL_TERMINAL, _STROKE_TERMINAL
 
@@ -306,9 +310,7 @@ def _render_edge(
     ly = base_y + _ARROW_HALF_W * ndx
     rx = base_x + _ARROW_HALF_W * ndy
     ry = base_y - _ARROW_HALF_W * ndx
-    arrow_pts = " ".join(
-        f"{x * scale:.2f},{y * scale:.2f}" for x, y in [(x2, y2), (lx, ly), (rx, ry)]
-    )
+    arrow_pts = " ".join(f"{x * scale:.2f},{y * scale:.2f}" for x, y in [(x2, y2), (lx, ly), (rx, ry)])
     ET.SubElement(svg, "polygon", {"points": arrow_pts, "fill": _EDGE_COLOUR})
 
     # Label at the midpoint of the edge.
