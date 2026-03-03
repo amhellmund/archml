@@ -249,6 +249,24 @@ def test_render_edge_label_present(tmp_path: Path) -> None:
     assert "PaymentRequest" in _text_content(root)
 
 
+def test_render_node_text_has_clip_path(tmp_path: Path) -> None:
+    """Each node text element references a clip-path to prevent label overflow."""
+    comp = Component(name="Sys", components=[Component(name="LongComponentNameThatMightOverflow")])
+    root = _render_and_parse(comp, tmp_path)
+    texts = [el for el in root.iter(f"{{{_SVG_NS}}}text") if "clip-path" in el.attrib]
+    assert len(texts) >= 1
+
+
+def test_render_clip_paths_defined_in_defs(tmp_path: Path) -> None:
+    """``<clipPath>`` elements for node labels are defined inside ``<defs>``."""
+    comp = Component(name="Sys", components=[Component(name="A"), Component(name="B")])
+    root = _render_and_parse(comp, tmp_path)
+    defs = root.find(f"{{{_SVG_NS}}}defs")
+    assert defs is not None
+    clip_paths = list(defs.iter(f"{{{_SVG_NS}}}clipPath"))
+    assert len(clip_paths) >= 2  # one per child node
+
+
 def test_render_edge_polyline_present(tmp_path: Path) -> None:
     """An edge between two children produces at least one ``<polyline>`` element."""
     a = Component(name="A", requires=[_iref("IFace")])
@@ -263,15 +281,21 @@ def test_render_edge_polyline_present(tmp_path: Path) -> None:
     assert len(polylines) >= 1
 
 
-def test_render_arrowhead_marker_defined(tmp_path: Path) -> None:
-    """The SVG ``<defs>`` section contains an arrowhead marker."""
-    comp = Component(name="Sys", components=[Component(name="A")])
-    root = _render_and_parse(comp, tmp_path)
-    defs = root.find(f"{{{_SVG_NS}}}defs")
-    assert defs is not None
-    marker = defs.find(f"{{{_SVG_NS}}}marker")
-    assert marker is not None
-    assert marker.attrib.get("id") == "arrowhead"
+def test_render_edge_has_explicit_arrowhead_polygon(tmp_path: Path) -> None:
+    """An edge produces an explicit filled ``<polygon>`` arrowhead in the SVG."""
+    a = Component(name="A", requires=[_iref("IFace")])
+    b = Component(name="B", provides=[_iref("IFace")])
+    sys = System(
+        name="Root",
+        components=[a, b],
+        connections=[_conn("A", "B", "IFace")],
+    )
+    root = _render_and_parse(sys, tmp_path)
+    polygons = list(root.iter(f"{{{_SVG_NS}}}polygon"))
+    assert len(polygons) >= 1
+    # The arrowhead polygon must have a fill attribute (not transparent).
+    fills = {p.attrib.get("fill") for p in polygons}
+    assert any(f and f != "none" for f in fills)
 
 
 # ###############

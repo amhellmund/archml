@@ -12,7 +12,10 @@ engine is involved.  Each :class:`~archml.views.placement.NodeLayout` maps to
 a styled ``<rect>``/``<text>`` pair, each
 :class:`~archml.views.placement.BoundaryLayout` to a labelled rectangle, and
 each :class:`~archml.views.placement.EdgeRoute` to a ``<polyline>`` with an
-arrowhead at the target end.
+explicit filled-polygon arrowhead at the target end.
+
+Text labels are clipped to their node bounding box via SVG ``<clipPath>``
+elements, so long labels never overflow the node rectangle.
 
 The visual vocabulary mirrors the colour scheme used by the original
 ``diagrams``-based renderer:
@@ -21,11 +24,12 @@ The visual vocabulary mirrors the colour scheme used by the original
 - Internal child nodes — green (component) or blue (system).
 - External actor nodes — purple.
 - Terminal nodes — amber.
-- Edges — dark-grey polylines with a filled arrowhead and a midpoint label.
+- Edges — dark-grey lines with a filled arrowhead and a midpoint label.
 """
 
 from __future__ import annotations
 
+import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -88,7 +92,12 @@ _FONT_SIZE = 11
 _CORNER_RADIUS = 6
 _STROKE_WIDTH = 1.5
 _BOUNDARY_STROKE_WIDTH = 2.0
-_BOUNDARY_LABEL_OFFSET = 14.0  # y offset of boundary title from top edge
+_BOUNDARY_LABEL_OFFSET = 14.0  # y distance from boundary top to title baseline
+_LABEL_PADDING = 6.0           # horizontal padding inside node for text clip region
+
+# Arrowhead geometry (layout units, before scaling).
+_ARROW_LEN = 10.0       # length of the arrowhead along the edge direction
+_ARROW_HALF_W = 4.0     # half-width of the arrowhead base
 
 
 def _node_colours(kind: NodeKind | None) -> tuple[str, str]:
@@ -107,6 +116,12 @@ def _f(value: float, scale: float) -> str:
     return f"{value * scale:.2f}"
 
 
+def _make_clip_id(node_id: str) -> str:
+    """Return a safe XML ID for the ``<clipPath>`` of *node_id*."""
+    safe = node_id.replace(".", "-").replace(":", "-").replace("/", "-").replace("@", "-")
+    return f"clip-{safe}"
+
+
 def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Element:
     """Construct the complete SVG element tree from *diagram* and *plan*."""
     tw = plan.total_width * scale
@@ -122,7 +137,7 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
         },
     )
 
-    _add_defs(svg)
+    defs = ET.SubElement(svg, "defs")
 
     # Root boundary
     if diagram.root.id in plan.boundaries:
@@ -136,12 +151,14 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
     for node in diagram.peripheral_nodes:
         node_meta[node.id] = (node.label, node.kind)
 
-    # Render all positioned nodes.
+    # Render all positioned nodes (clip paths added to <defs>).
     for node_id, nl in plan.nodes.items():
         label, kind = node_meta.get(node_id, (node_id, None))
-        _render_node(svg, label, nl, kind, scale)
+        clip_id = _make_clip_id(node_id)
+        _add_node_clip(defs, clip_id, nl, scale)
+        _render_node(svg, label, nl, kind, scale, clip_id)
 
-    # Render edges.
+    # Render edges with explicit arrowheads.
     for edge in diagram.edges:
         route = plan.edge_routes.get(edge.id)
         if route is not None:
@@ -150,22 +167,19 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
     return svg
 
 
-def _add_defs(svg: ET.Element) -> None:
-    """Add a ``<defs>`` block containing the arrowhead marker."""
-    defs = ET.SubElement(svg, "defs")
-    marker = ET.SubElement(
-        defs,
-        "marker",
+def _add_node_clip(defs: ET.Element, clip_id: str, nl: NodeLayout, scale: float) -> None:
+    """Add a ``<clipPath>`` for *nl* to *defs*, using the node bounds with padding."""
+    clip = ET.SubElement(defs, "clipPath", {"id": clip_id})
+    ET.SubElement(
+        clip,
+        "rect",
         {
-            "id": "arrowhead",
-            "markerWidth": "8",
-            "markerHeight": "6",
-            "refX": "7",
-            "refY": "3",
-            "orient": "auto",
+            "x": _f(nl.x + _LABEL_PADDING, scale),
+            "y": _f(nl.y, scale),
+            "width": _f(nl.width - 2 * _LABEL_PADDING, scale),
+            "height": _f(nl.height, scale),
         },
     )
-    ET.SubElement(marker, "polygon", {"points": "0 0, 8 3, 0 6", "fill": _EDGE_COLOUR})
 
 
 def _render_boundary(svg: ET.Element, label: str, bl: BoundaryLayout, scale: float) -> None:
@@ -209,8 +223,9 @@ def _render_node(
     nl: NodeLayout,
     kind: NodeKind | None,
     scale: float,
+    clip_id: str,
 ) -> None:
-    """Draw a node rectangle with a centred label."""
+    """Draw a node rectangle with a centred, clipped label."""
     fill, stroke = _node_colours(kind)
     r = str(_CORNER_RADIUS)
     ET.SubElement(
@@ -239,6 +254,7 @@ def _render_node(
             "font-family": _FONT_FAMILY,
             "font-size": str(int(_FONT_SIZE * scale)),
             "fill": _TEXT_COLOUR,
+            "clip-path": f"url(#{clip_id})",
         },
     )
     text.text = label
@@ -250,11 +266,28 @@ def _render_edge(
     label: str,
     scale: float,
 ) -> None:
-    """Draw a polyline edge with an arrowhead and a midpoint label."""
+    """Draw an edge as a polyline body plus an explicit arrowhead polygon at the target end."""
     if len(waypoints) < 2:
         return
 
-    points_str = " ".join(f"{x * scale:.2f},{y * scale:.2f}" for x, y in waypoints)
+    # Compute the arrowhead direction from the last segment of the edge.
+    x1, y1 = waypoints[-2]
+    x2, y2 = waypoints[-1]
+    dx, dy = x2 - x1, y2 - y1
+    length = math.hypot(dx, dy)
+    if length < 1e-9:
+        return
+
+    ndx, ndy = dx / length, dy / length
+
+    # The arrow tip is at the target port anchor; the base is set back by _ARROW_LEN.
+    arrow_len = min(_ARROW_LEN, length * 0.45)
+    base_x = x2 - arrow_len * ndx
+    base_y = y2 - arrow_len * ndy
+
+    # Edge body: polyline stopping at the arrowhead base so it doesn't overlap it.
+    body_wps = list(waypoints[:-1]) + [(base_x, base_y)]
+    points_str = " ".join(f"{x * scale:.2f},{y * scale:.2f}" for x, y in body_wps)
     ET.SubElement(
         svg,
         "polyline",
@@ -262,18 +295,26 @@ def _render_edge(
             "points": points_str,
             "fill": "none",
             "stroke": _EDGE_COLOUR,
-            "stroke-width": "1.2",
-            "marker-end": "url(#arrowhead)",
+            "stroke-width": "1.5",
+            "stroke-linejoin": "round",
+            "stroke-linecap": "round",
         },
     )
 
+    # Arrowhead: filled triangle (tip, left wing, right wing).
+    lx = base_x - _ARROW_HALF_W * ndy
+    ly = base_y + _ARROW_HALF_W * ndx
+    rx = base_x + _ARROW_HALF_W * ndy
+    ry = base_y - _ARROW_HALF_W * ndx
+    arrow_pts = " ".join(
+        f"{x * scale:.2f},{y * scale:.2f}" for x, y in [(x2, y2), (lx, ly), (rx, ry)]
+    )
+    ET.SubElement(svg, "polygon", {"points": arrow_pts, "fill": _EDGE_COLOUR})
+
     # Label at the midpoint of the edge.
     mid = len(waypoints) // 2
-    x1, y1 = waypoints[mid - 1]
-    x2, y2 = waypoints[mid]
-    mx = (x1 + x2) / 2 * scale
-    my = (y1 + y2) / 2 * scale - 4 * scale
-
+    mx = (waypoints[mid - 1][0] + waypoints[mid][0]) / 2 * scale
+    my = (waypoints[mid - 1][1] + waypoints[mid][1]) / 2 * scale - 4 * scale
     text = ET.SubElement(
         svg,
         "text",
