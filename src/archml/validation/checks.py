@@ -69,20 +69,15 @@ def validate(arch_file: ArchFile) -> ValidationResult:
 
     Checks performed:
 
-    1. **Isolated entities** (warning): Components and systems that declare
-       neither ``requires`` nor ``provides`` interfaces are flagged as
-       isolated. The architecture is still valid, but such entities are
-       incomplete from a business perspective.
-
-    2. **Connection cycles** (error): Cycles in the directed connection graph
+    1. **Connection cycles** (error): Cycles in the directed connection graph
        within any component or system scope are forbidden. A cycle such as
        ``A -> B -> A`` indicates a circular data-flow dependency.
 
-    3. **Type definition cycles** (error): Recursive type or interface
+    2. **Type definition cycles** (error): Recursive type or interface
        definitions where a type ultimately references itself through a chain
        of ``NamedTypeRef`` fields are forbidden.
 
-    4. **Interface propagation** (error): If a system or component declares
+    3. **Interface propagation** (error): If a system or component declares
        an interface in its ``requires`` or ``provides``, at least one direct
        member (sub-component or sub-system) must declare the same interface.
        This ensures that upstream declarations are grounded in the hierarchy.
@@ -99,7 +94,6 @@ def validate(arch_file: ArchFile) -> ValidationResult:
     warnings: list[ValidationWarning] = []
     errors: list[ValidationError] = []
 
-    warnings.extend(_check_isolated_entities(arch_file))
     errors.extend(_check_connection_cycles(arch_file))
     errors.extend(_check_type_cycles(arch_file))
     errors.extend(_check_interface_propagation(arch_file))
@@ -159,38 +153,6 @@ def _detect_cycle(graph: dict[str, list[str]]) -> list[str] | None:
             if result is not None:
                 return result
     return None
-
-
-def _check_isolated_entities(arch_file: ArchFile) -> list[ValidationWarning]:
-    """Return warnings for components and systems with no declared interfaces."""
-    warnings: list[ValidationWarning] = []
-
-    def _check_component(component: Component) -> None:
-        if not component.requires and not component.provides:
-            label = _entity_label(component.name, component.qualified_name)
-            warnings.append(
-                ValidationWarning(message=f"Component '{label}' has no requires or provides interfaces (isolated).")
-            )
-        for sub in component.components:
-            _check_component(sub)
-
-    def _check_system(system: System) -> None:
-        if not system.requires and not system.provides:
-            label = _entity_label(system.name, system.qualified_name)
-            warnings.append(
-                ValidationWarning(message=f"System '{label}' has no requires or provides interfaces (isolated).")
-            )
-        for sub in system.systems:
-            _check_system(sub)
-        for comp in system.components:
-            _check_component(comp)
-
-    for system in arch_file.systems:
-        _check_system(system)
-    for component in arch_file.components:
-        _check_component(component)
-
-    return warnings
 
 
 def _check_connection_cycles(arch_file: ArchFile) -> list[ValidationError]:

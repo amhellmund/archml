@@ -181,23 +181,6 @@ def test_check_reports_validation_errors(
     assert exc_info.value.code == 1
 
 
-def test_check_reports_validation_warnings(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """check exits with code 0 but prints warnings for isolated components."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    # An isolated component triggers a warning but not an error.
-    (tmp_path / "isolated.archml").write_text("component Isolated {}\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
-    with pytest.raises(SystemExit) as exc_info:
-        main()
-    assert exc_info.value.code == 0
-    captured = capsys.readouterr()
-    assert "Warning" in captured.out
-
-
 def test_check_uses_workspace_yaml_build_dir(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

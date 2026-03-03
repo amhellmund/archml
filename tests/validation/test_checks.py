@@ -114,94 +114,6 @@ def _assert_no_error(arch_file: ArchFile) -> None:
 
 
 # ###############
-# Isolated Entities
-# ###############
-
-
-class TestIsolatedEntities:
-    """Check 1: Components/systems with no requires or provides yield a warning."""
-
-    def test_empty_archfile_no_warnings(self) -> None:
-        _assert_clean(ArchFile())
-
-    def test_isolated_top_level_system_warns(self) -> None:
-        arch = ArchFile(systems=[System(name="Standalone")])
-        _assert_warning(arch, "System 'Standalone'")
-        _assert_warning(arch, "isolated")
-
-    def test_isolated_top_level_component_warns(self) -> None:
-        arch = ArchFile(components=[Component(name="Orphan")])
-        _assert_warning(arch, "Component 'Orphan'")
-        _assert_warning(arch, "isolated")
-
-    def test_system_with_provides_no_warning(self) -> None:
-        arch = ArchFile(systems=[System(name="S", provides=[_iref("I")])])
-        _assert_no_warning(arch)
-
-    def test_system_with_requires_no_warning(self) -> None:
-        arch = ArchFile(systems=[System(name="S", requires=[_iref("I")])])
-        _assert_no_warning(arch)
-
-    def test_component_with_provides_no_warning(self) -> None:
-        arch = ArchFile(components=[Component(name="C", provides=[_iref("I")])])
-        _assert_no_warning(arch)
-
-    def test_component_with_requires_no_warning(self) -> None:
-        arch = ArchFile(components=[Component(name="C", requires=[_iref("I")])])
-        _assert_no_warning(arch)
-
-    def test_nested_isolated_subsystem_warns(self) -> None:
-        inner = System(name="Inner")
-        outer = System(name="Outer", provides=[_iref("I")], systems=[inner])
-        arch = ArchFile(systems=[outer])
-        result = validate(arch)
-        msgs = _warnings(result)
-        assert any("Inner" in m for m in msgs), f"Expected warning for 'Inner' but got: {msgs}"
-        # Outer has a provides, so no warning for it
-        assert not any("Outer" in m for m in msgs), f"Unexpected warning for 'Outer': {msgs}"
-
-    def test_nested_isolated_component_inside_system_warns(self) -> None:
-        comp = Component(name="Worker")
-        sys_ = System(name="S", provides=[_iref("I")], components=[comp])
-        arch = ArchFile(systems=[sys_])
-        _assert_warning(arch, "Component 'Worker'")
-
-    def test_nested_component_inside_component_warns(self) -> None:
-        inner = Component(name="Inner")
-        outer = Component(name="Outer", provides=[_iref("I")], components=[inner])
-        arch = ArchFile(components=[outer])
-        _assert_warning(arch, "Component 'Inner'")
-
-    def test_system_with_requires_and_provides_no_warning(self) -> None:
-        arch = ArchFile(systems=[System(name="S", requires=[_iref("A")], provides=[_iref("B")])])
-        _assert_no_warning(arch)
-
-    def test_qualified_name_used_in_warning_when_set(self) -> None:
-        comp = Component(name="Worker", qualified_name="MySystem::Worker")
-        sys_ = System(name="MySystem", provides=[_iref("I")], components=[comp])
-        arch = ArchFile(systems=[sys_])
-        _assert_warning(arch, "MySystem::Worker")
-
-    def test_multiple_isolated_entities_all_warned(self) -> None:
-        arch = ArchFile(
-            systems=[System(name="S1"), System(name="S2")],
-            components=[Component(name="C1")],
-        )
-        result = validate(arch)
-        msgs = _warnings(result)
-        assert len(msgs) == 3
-        assert any("S1" in m for m in msgs)
-        assert any("S2" in m for m in msgs)
-        assert any("C1" in m for m in msgs)
-
-    def test_isolated_warning_does_not_fail_validation(self) -> None:
-        arch = ArchFile(systems=[System(name="Standalone")])
-        result = validate(arch)
-        assert result.warnings  # has warnings
-        assert not result.has_errors  # but no errors
-
-
-# ###############
 # Connection Cycles
 # ###############
 
@@ -517,8 +429,7 @@ class TestInterfacePropagation:
         comp = Component(name="C", provides=[_iref("I")])
         sys_ = System(name="S", components=[comp])
         arch = ArchFile(systems=[sys_])
-        # S has no requires/provides, so there is nothing to propagate.
-        # But S itself is isolated → warning only, no error.
+        # S has no requires/provides, so there is nothing to propagate — no error.
         _assert_no_error(arch)
 
     def test_only_one_member_needs_interface(self) -> None:
@@ -633,22 +544,18 @@ class TestValidationResult:
         result = validate(arch)
         assert result.has_errors
 
-    def test_warnings_present_but_no_errors(self) -> None:
-        arch = ArchFile(systems=[System(name="Lone")])
-        result = validate(arch)
-        assert result.warnings
-        assert not result.has_errors
-
     def test_multiple_check_failures_reported_together(self) -> None:
-        # An isolated system (warning) AND a connection cycle (error) in one archfile.
+        # A type cycle (error) AND a connection cycle (error) in one archfile.
         sys_ = System(
             name="Bad",
             connections=[_conn("X", "Y"), _conn("Y", "X")],
         )
-        arch = ArchFile(systems=[sys_])
+        arch = ArchFile(
+            systems=[sys_],
+            types=[TypeDef(name="A", fields=[_nfield("self", "A")])],
+        )
         result = validate(arch)
-        assert result.warnings  # isolated (no requires/provides)
-        assert result.has_errors  # connection cycle
+        assert len(result.errors) >= 2
 
     def test_empty_archfile_is_fully_valid(self) -> None:
         result = validate(ArchFile())
