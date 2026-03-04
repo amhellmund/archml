@@ -49,7 +49,6 @@ class TokenType(enum.Enum):
     LBRACKET = "["
     RBRACKET = "]"
     COMMA = ","
-    DOT = "."
     COLON = ":"
     EQUALS = "="
     AT = "@"
@@ -59,7 +58,6 @@ class TokenType(enum.Enum):
     # Literals
     STRING = "STRING"
     INTEGER = "INTEGER"
-    FLOAT = "FLOAT"
 
     # Identifiers
     IDENTIFIER = "IDENTIFIER"
@@ -155,7 +153,6 @@ _SINGLE_CHAR_TOKENS: dict[str, TokenType] = {
     "[": TokenType.LBRACKET,
     "]": TokenType.RBRACKET,
     ",": TokenType.COMMA,
-    ".": TokenType.DOT,
     ":": TokenType.COLON,
     "=": TokenType.EQUALS,
     "@": TokenType.AT,
@@ -380,23 +377,13 @@ class _Lexer:
         raise LexerError("Unterminated triple-quoted string literal", line, col)
 
     def _scan_number(self, line: int, col: int) -> None:
-        """Scan an integer or floating-point literal.
-
-        A float requires at least one digit on both sides of the decimal point.
-        """
+        """Scan an integer."""
         start = self._pos
         while self._pos < len(self._source) and self._current().isdigit():
             self._advance()
 
-        if self._pos < len(self._source) and self._current() == "." and self._peek().isdigit():
-            self._advance()  # consume the '.'
-            while self._pos < len(self._source) and self._current().isdigit():
-                self._advance()
-            value = self._source[start : self._pos]
-            self._tokens.append(Token(TokenType.FLOAT, value, line, col))
-        else:
-            value = self._source[start : self._pos]
-            self._tokens.append(Token(TokenType.INTEGER, value, line, col))
+        value = self._source[start : self._pos]
+        self._tokens.append(Token(TokenType.INTEGER, value, line, col))
 
     def _scan_identifier_or_keyword(self, line: int, col: int) -> None:
         """Scan an identifier and map it to a keyword token type if applicable."""

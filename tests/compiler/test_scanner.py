@@ -47,10 +47,12 @@ class TestEof:
 
     def test_eof_value_is_empty_string(self) -> None:
         tokens = _tokens("")
+        assert len(tokens) == 1
         assert tokens[0].value == ""
 
     def test_eof_at_line_1_column_1_for_empty_input(self) -> None:
         tokens = _tokens("")
+        assert len(tokens) == 1
         assert tokens[0].line == 1
         assert tokens[0].column == 1
 
@@ -99,10 +101,6 @@ class TestKeywords:
         assert tokens[0].type == expected_type
         assert tokens[0].value == source
 
-    def test_keyword_value_matches_source_text(self) -> None:
-        tokens = _tokens_no_eof("system")
-        assert tokens[0].value == "system"
-
     def test_keywords_case_sensitive_uppercase_is_identifier(self) -> None:
         assert _types("System") == [TokenType.IDENTIFIER]
         assert _types("SYSTEM") == [TokenType.IDENTIFIER]
@@ -127,49 +125,29 @@ class TestKeywords:
 
 
 class TestIdentifiers:
-    def test_simple_identifier(self) -> None:
-        tokens = _tokens_no_eof("order_service")
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "order_service",
+            "x",
+            "_private",
+            "service2",
+            "OrderService",
+            "PAYMENT",
+            "a_b_c_d",
+        ],
+    )
+    def test_identifier(self, source) -> None:
+        tokens = _tokens_no_eof(source)
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.IDENTIFIER
-        assert tokens[0].value == "order_service"
-
-    def test_single_letter_identifier(self) -> None:
-        tokens = _tokens_no_eof("x")
-        assert tokens[0].type == TokenType.IDENTIFIER
-
-    def test_underscore_prefix_identifier(self) -> None:
-        tokens = _tokens_no_eof("_private")
-        assert tokens[0].type == TokenType.IDENTIFIER
-        assert tokens[0].value == "_private"
-
-    def test_identifier_with_digits(self) -> None:
-        tokens = _tokens_no_eof("service2")
-        assert tokens[0].type == TokenType.IDENTIFIER
-        assert tokens[0].value == "service2"
-
-    def test_identifier_with_mixed_case(self) -> None:
-        tokens = _tokens_no_eof("OrderService")
-        assert tokens[0].type == TokenType.IDENTIFIER
-        assert tokens[0].value == "OrderService"
-
-    def test_identifier_all_uppercase(self) -> None:
-        tokens = _tokens_no_eof("PAYMENT")
-        assert tokens[0].type == TokenType.IDENTIFIER
-
-    def test_identifier_with_multiple_underscores(self) -> None:
-        tokens = _tokens_no_eof("a_b_c_d")
-        assert tokens[0].type == TokenType.IDENTIFIER
+        assert tokens[0].value == source
 
     def test_identifier_cannot_start_with_digit(self) -> None:
         # A digit starts a number token, so '2service' becomes INTEGER + IDENTIFIER
         types = _types("2service")
         assert types[0] == TokenType.INTEGER
         assert types[1] == TokenType.IDENTIFIER
-
-    def test_identifier_stops_at_non_alnum_underscore(self) -> None:
-        # 'foo.bar' -> IDENTIFIER DOT IDENTIFIER
-        types = _types("foo.bar")
-        assert types == [TokenType.IDENTIFIER, TokenType.DOT, TokenType.IDENTIFIER]
 
 
 # ###############
@@ -188,7 +166,6 @@ class TestSymbols:
             ("[", TokenType.LBRACKET),
             ("]", TokenType.RBRACKET),
             (",", TokenType.COMMA),
-            (".", TokenType.DOT),
             (":", TokenType.COLON),
             ("=", TokenType.EQUALS),
             ("@", TokenType.AT),
@@ -268,68 +245,53 @@ class TestSymbols:
 
 
 class TestStringLiterals:
-    def test_simple_string(self) -> None:
-        tokens = _tokens_no_eof('"hello"')
+    @pytest.mark.parametrize(
+        "source_string",
+        [
+            '"hello"',
+            '""',
+            '"hello world"',
+            '"gRPC/HTTP2"',
+            '"critical, pci-scope"',
+            '"USD,EUR,GBP"',
+            '"system"',
+        ],
+    )
+    def test_string_literals(self, source_string: str) -> None:
+        tokens = _tokens_no_eof(source_string)
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == "hello"
+        assert tokens[0].value == source_string.replace('"', "")
 
-    def test_empty_string(self) -> None:
-        tokens = _tokens_no_eof('""')
-        assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == ""
-
-    def test_string_with_spaces(self) -> None:
-        tokens = _tokens_no_eof('"hello world"')
-        assert tokens[0].value == "hello world"
-
-    def test_string_with_special_chars(self) -> None:
-        tokens = _tokens_no_eof('"gRPC/HTTP2"')
-        assert tokens[0].value == "gRPC/HTTP2"
-
-    def test_string_with_comma(self) -> None:
-        tokens = _tokens_no_eof('"critical, pci-scope"')
-        assert tokens[0].value == "critical, pci-scope"
-
-    def test_string_with_escape_newline(self) -> None:
-        tokens = _tokens_no_eof(r'"line1\nline2"')
-        assert tokens[0].value == "line1\nline2"
-
-    def test_string_with_escape_tab(self) -> None:
+    def test_string_literal_whitespace(self) -> None:
         tokens = _tokens_no_eof(r'"col1\tcol2"')
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.STRING
         assert tokens[0].value == "col1\tcol2"
 
-    def test_string_with_escape_backslash(self) -> None:
+    def test_string_literal_escaped_backslash(self) -> None:
         tokens = _tokens_no_eof(r'"back\\slash"')
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.STRING
         assert tokens[0].value == "back\\slash"
 
-    def test_string_with_escape_quote(self) -> None:
+    def test_string_literal_escaped_double_quotes(self) -> None:
         tokens = _tokens_no_eof(r'"say \"hi\""')
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.STRING
         assert tokens[0].value == 'say "hi"'
 
-    def test_string_with_numbers_and_symbols(self) -> None:
-        tokens = _tokens_no_eof('"USD,EUR,GBP"')
-        assert tokens[0].value == "USD,EUR,GBP"
-
-    def test_string_containing_keyword(self) -> None:
-        tokens = _tokens_no_eof('"system"')
-        assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == "system"
-
     def test_unterminated_string_raises(self) -> None:
-        with pytest.raises(LexerError) as exc_info:
+        with pytest.raises(LexerError, match="Unterminated string literal"):
             tokenize('"unterminated')
-        assert "Unterminated string literal" in str(exc_info.value)
 
     def test_string_with_newline_raises(self) -> None:
-        with pytest.raises(LexerError) as exc_info:
+        with pytest.raises(LexerError, match="Unterminated string literal"):
             tokenize('"line1\nline2"')
-        assert "Unterminated string literal" in str(exc_info.value)
 
     def test_invalid_escape_sequence_raises(self) -> None:
-        with pytest.raises(LexerError) as exc_info:
+        with pytest.raises(LexerError, match="Invalid escape sequence"):
             tokenize(r'"bad\xescape"')
-        assert "Invalid escape sequence" in str(exc_info.value)
 
     def test_string_at_end_of_file_without_close_raises(self) -> None:
         with pytest.raises(LexerError):
@@ -470,33 +432,6 @@ class TestNumberLiterals:
         tokens = _tokens_no_eof("1000000")
         assert tokens[0].type == TokenType.INTEGER
         assert tokens[0].value == "1000000"
-
-    def test_float_basic(self) -> None:
-        tokens = _tokens_no_eof("3.14")
-        assert tokens[0].type == TokenType.FLOAT
-        assert tokens[0].value == "3.14"
-
-    def test_float_zero_point_something(self) -> None:
-        tokens = _tokens_no_eof("0.5")
-        assert tokens[0].type == TokenType.FLOAT
-        assert tokens[0].value == "0.5"
-
-    def test_float_integer_part_only(self) -> None:
-        tokens = _tokens_no_eof("1.0")
-        assert tokens[0].type == TokenType.FLOAT
-        assert tokens[0].value == "1.0"
-
-    def test_float_multiple_decimal_digits(self) -> None:
-        tokens = _tokens_no_eof("99.999")
-        assert tokens[0].type == TokenType.FLOAT
-        assert tokens[0].value == "99.999"
-
-    def test_integer_dot_without_fraction_is_not_float(self) -> None:
-        # '42.' should be INTEGER followed by DOT (no digit after the dot)
-        tokens = _tokens_no_eof("42.")
-        assert tokens[0].type == TokenType.INTEGER
-        assert tokens[0].value == "42"
-        assert tokens[1].type == TokenType.DOT
 
     def test_multiple_integers(self) -> None:
         tokens = _tokens_no_eof("1 2 3")
@@ -906,11 +841,12 @@ class TestStructuralPatterns:
         assert types == [TokenType.SCHEMA, TokenType.EQUALS, TokenType.STRING]
 
     def test_connect_with_block_annotation(self) -> None:
-        source = """\
-connect A -> B by X {
-    protocol = "HTTP"
-    async = true
-}"""
+        source = """
+            connect A -> B by X {
+                protocol = "HTTP"
+                async = true
+            }
+        """
         types = _types(source)
         assert types == [
             TokenType.CONNECT,
@@ -945,11 +881,12 @@ connect A -> B by X {
         ]
 
     def test_enum_declaration(self) -> None:
-        source = """\
-enum OrderStatus {
-    Pending
-    Confirmed
-}"""
+        source = """
+            enum OrderStatus {
+                Pending
+                Confirmed
+            }
+        """
         types = _types(source)
         assert types == [
             TokenType.ENUM,
@@ -961,11 +898,12 @@ enum OrderStatus {
         ]
 
     def test_type_declaration(self) -> None:
-        source = """\
-type OrderItem {
-    field product_id: String
-    field quantity: Int
-}"""
+        source = """
+            type OrderItem {
+                field product_id: String
+                field quantity: Int
+            }
+        """
         types = _types(source)
         assert types == [
             TokenType.TYPE,
@@ -992,19 +930,20 @@ class TestFullExample:
     """Validate a real-world multi-construct ArchML snippet end-to-end."""
 
     def test_interface_block(self) -> None:
-        source = """\
-// Interface definition
-interface OrderRequest {
-    title = "Order Creation Request"
-    description = "Payload for submitting a new customer order."
+        source = """
+            // Interface definition
+            interface OrderRequest {
+                title = "Order Creation Request"
+                description = "Payload for submitting a new customer order."
 
-    field order_id: String
-    field items: List<OrderItem>
-    field total_amount: Decimal {
-        description = "Grand total including tax and shipping."
-        schema = "Positive decimal value."
-    }
-}"""
+                field order_id: String
+                field items: List<OrderItem>
+                field total_amount: Decimal {
+                    description = "Grand total including tax and shipping."
+                    schema = "Positive decimal value."
+                }
+            }
+        """
         tokens = _tokens_no_eof(source)
         # First real token should be INTERFACE (comment skipped)
         assert tokens[0].type == TokenType.INTERFACE
@@ -1016,18 +955,19 @@ interface OrderRequest {
         assert "Payload for submitting a new customer order." in string_values
 
     def test_system_with_connections(self) -> None:
-        source = """\
-system ECommerce {
-    title = "E-Commerce Platform"
+        source = """
+            system ECommerce {
+                title = "E-Commerce Platform"
 
-    component PaymentGateway {
-        tags = ["critical", "pci-scope"]
-        requires PaymentRequest
-        provides PaymentResult
-    }
+                component PaymentGateway {
+                    tags = ["critical", "pci-scope"]
+                    requires PaymentRequest
+                    provides PaymentResult
+                }
 
-    connect OrderService -> PaymentGateway by PaymentRequest
-}"""
+                connect OrderService -> PaymentGateway by PaymentRequest
+            }
+        """
         tokens = _tokens_no_eof(source)
         assert tokens[0].type == TokenType.SYSTEM
         # Find the ARROW and BY tokens
@@ -1037,11 +977,12 @@ system ECommerce {
         assert len(by_tokens) == 1
 
     def test_file_field_annotation(self) -> None:
-        source = """\
-field app_config: File {
-    filetype = "YAML"
-    schema = "Top-level keys: server, database, logging."
-}"""
+        source = """
+            field app_config: File {
+                filetype = "YAML"
+                schema = "Top-level keys: server, database, logging."
+            }
+        """
         types = _types(source)
         assert types[0] == TokenType.FIELD
         assert TokenType.FILETYPE in types
