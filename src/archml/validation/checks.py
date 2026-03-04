@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from archml.model.entities import ArchFile, Component, Connection, InterfaceRef, System
+from archml.model.entities import ArchFile, Component, Connection, InterfaceRef, System, UserDef
 from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
 
 # ###############
@@ -69,23 +69,25 @@ def validate(arch_file: ArchFile) -> ValidationResult:
 
     Checks performed:
 
-    1. **Isolated entities** (warning): Components and systems that declare
-       neither ``requires`` nor ``provides`` interfaces are flagged as
-       isolated. The architecture is still valid, but such entities are
-       incomplete from a business perspective.
-
-    2. **Connection cycles** (error): Cycles in the directed connection graph
+    1. **Connection cycles** (error): Cycles in the directed connection graph
        within any component or system scope are forbidden. A cycle such as
        ``A -> B -> A`` indicates a circular data-flow dependency.
 
-    3. **Type definition cycles** (error): Recursive type or interface
+    2. **Type definition cycles** (error): Recursive type or interface
        definitions where a type ultimately references itself through a chain
        of ``NamedTypeRef`` fields are forbidden.
 
-    4. **Interface propagation** (error): If a system or component declares
+    3. **Interface propagation** (error): If a system or component declares
        an interface in its ``requires`` or ``provides``, at least one direct
        member (sub-component or sub-system) must declare the same interface.
        This ensures that upstream declarations are grounded in the hierarchy.
+
+    4. **Unconnected interfaces** (warning): For every member entity inside a
+       system or component, each ``requires`` interface must appear as the
+       target of a ``connect`` statement and each ``provides`` interface must
+       appear as the source of a ``connect`` statement within that same scope.
+       An interface that is declared but never connected indicates an
+       incomplete architecture.
 
     Args:
         arch_file: The resolved ArchFile to validate. Qualified names should
@@ -99,10 +101,10 @@ def validate(arch_file: ArchFile) -> ValidationResult:
     warnings: list[ValidationWarning] = []
     errors: list[ValidationError] = []
 
-    warnings.extend(_check_isolated_entities(arch_file))
     errors.extend(_check_connection_cycles(arch_file))
     errors.extend(_check_type_cycles(arch_file))
     errors.extend(_check_interface_propagation(arch_file))
+    warnings.extend(_check_unconnected_interfaces(arch_file))
 
     return ValidationResult(warnings=warnings, errors=errors)
 
@@ -159,38 +161,6 @@ def _detect_cycle(graph: dict[str, list[str]]) -> list[str] | None:
             if result is not None:
                 return result
     return None
-
-
-def _check_isolated_entities(arch_file: ArchFile) -> list[ValidationWarning]:
-    """Return warnings for components and systems with no declared interfaces."""
-    warnings: list[ValidationWarning] = []
-
-    def _check_component(component: Component) -> None:
-        if not component.requires and not component.provides:
-            label = _entity_label(component.name, component.qualified_name)
-            warnings.append(
-                ValidationWarning(message=f"Component '{label}' has no requires or provides interfaces (isolated).")
-            )
-        for sub in component.components:
-            _check_component(sub)
-
-    def _check_system(system: System) -> None:
-        if not system.requires and not system.provides:
-            label = _entity_label(system.name, system.qualified_name)
-            warnings.append(
-                ValidationWarning(message=f"System '{label}' has no requires or provides interfaces (isolated).")
-            )
-        for sub in system.systems:
-            _check_system(sub)
-        for comp in system.components:
-            _check_component(comp)
-
-    for system in arch_file.systems:
-        _check_system(system)
-    for component in arch_file.components:
-        _check_component(component)
-
-    return warnings
 
 
 def _check_connection_cycles(arch_file: ArchFile) -> list[ValidationError]:
@@ -347,3 +317,80 @@ def _check_interface_propagation(arch_file: ArchFile) -> list[ValidationError]:
         _check_component(component)
 
     return errors
+
+
+def _iface_display(ref: InterfaceRef) -> str:
+    """Return a human-readable name for an interface reference, including version if set."""
+    return f"{ref.name}@{ref.version}" if ref.version else ref.name
+
+
+def _check_unconnected_interfaces(arch_file: ArchFile) -> list[ValidationWarning]:
+    """Return warnings for requires/provides not covered by any connect statement.
+
+    For every member of a component or system scope, each declared
+    ``requires`` interface must appear as a connection source and each
+    ``provides`` interface must appear as a connection target within that
+    scope.  Leaf containers (those with no members) are not checked.
+    """
+    warnings: list[ValidationWarning] = []
+
+    def _check_scope(
+        members: list[Component | System | UserDef],
+        connections: list[Connection],
+        container_label: str,
+    ) -> None:
+        connected_as_source: set[tuple[str, tuple[str, str | None]]] = {
+            (conn.source.entity, _iface_key(conn.interface)) for conn in connections
+        }
+        connected_as_target: set[tuple[str, tuple[str, str | None]]] = {
+            (conn.target.entity, _iface_key(conn.interface)) for conn in connections
+        }
+        for member in members:
+            member_label = _entity_label(member.name, member.qualified_name)
+            for ref in member.requires:
+                if (member.name, _iface_key(ref)) not in connected_as_target:
+                    warnings.append(
+                        ValidationWarning(
+                            message=(
+                                f"'{member_label}' requires interface '{_iface_display(ref)}' "
+                                f"but has no connect as target in '{container_label}'."
+                            )
+                        )
+                    )
+            for ref in member.provides:
+                if (member.name, _iface_key(ref)) not in connected_as_source:
+                    warnings.append(
+                        ValidationWarning(
+                            message=(
+                                f"'{member_label}' provides interface '{_iface_display(ref)}' "
+                                f"but has no connect as source in '{container_label}'."
+                            )
+                        )
+                    )
+
+    def _process_component(comp: Component) -> None:
+        if comp.components:
+            label = _entity_label(comp.name, comp.qualified_name)
+            sub_members: list[Component | System | UserDef] = list(comp.components)
+            _check_scope(sub_members, comp.connections, label)
+            for sub in comp.components:
+                _process_component(sub)
+
+    def _process_system(system: System) -> None:
+        all_members: list[Component | System | UserDef] = (
+            list(system.components) + list(system.systems) + list(system.users)
+        )
+        if all_members:
+            label = _entity_label(system.name, system.qualified_name)
+            _check_scope(all_members, system.connections, label)
+        for sub in system.systems:
+            _process_system(sub)
+        for comp in system.components:
+            _process_component(comp)
+
+    for system in arch_file.systems:
+        _process_system(system)
+    for comp in arch_file.components:
+        _process_component(comp)
+
+    return warnings

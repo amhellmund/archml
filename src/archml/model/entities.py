@@ -71,6 +71,23 @@ class Connection(BaseModel):
     description: str | None = None
 
 
+class UserDef(BaseModel):
+    """A human actor (role or persona) that interacts with the system.
+
+    Users are leaf nodes: they declare required and provided interfaces but
+    cannot contain sub-entities or connections.
+    """
+
+    name: str
+    title: str | None = None
+    description: str | None = None
+    tags: list[str] = _Field(default_factory=list)
+    requires: list[InterfaceRef] = _Field(default_factory=list)
+    provides: list[InterfaceRef] = _Field(default_factory=list)
+    is_external: bool = False
+    qualified_name: str = ""
+
+
 class Component(BaseModel):
     """A module with declared interface ports and optional nested sub-components."""
 
@@ -97,6 +114,7 @@ class System(BaseModel):
     provides: list[InterfaceRef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)
+    users: list[UserDef] = _Field(default_factory=list)
     connections: list[Connection] = _Field(default_factory=list)
     is_external: bool = False
     qualified_name: str = ""
@@ -118,8 +136,10 @@ class ArchFile(BaseModel):
     interfaces: list[InterfaceDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)
+    users: list[UserDef] = _Field(default_factory=list)
 
 
 # Resolve forward references in self-referential models.
 Component.model_rebuild()
 System.model_rebuild()
+ArchFile.model_rebuild()

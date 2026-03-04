@@ -20,6 +20,7 @@ class TokenType(enum.Enum):
     # Keywords
     SYSTEM = "system"
     COMPONENT = "component"
+    USER = "user"
     INTERFACE = "interface"
     TYPE = "type"
     ENUM = "enum"
@@ -124,6 +125,7 @@ def tokenize(source: str) -> list[Token]:
 _KEYWORDS: dict[str, TokenType] = {
     "system": TokenType.SYSTEM,
     "component": TokenType.COMPONENT,
+    "user": TokenType.USER,
     "interface": TokenType.INTERFACE,
     "type": TokenType.TYPE,
     "enum": TokenType.ENUM,

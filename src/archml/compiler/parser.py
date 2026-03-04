@@ -18,6 +18,7 @@ from archml.model.entities import (
     InterfaceRef,
     System,
     TypeDef,
+    UserDef,
 )
 from archml.model.types import (
     DirectoryTypeRef,
@@ -76,6 +77,7 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
     {
         TokenType.SYSTEM,
         TokenType.COMPONENT,
+        TokenType.USER,
         TokenType.INTERFACE,
         TokenType.TYPE,
         TokenType.ENUM,
@@ -202,6 +204,8 @@ class _Parser:
             result.components.append(self._parse_component(is_external=False))
         elif tok.type == TokenType.SYSTEM:
             result.systems.append(self._parse_system(is_external=False))
+        elif tok.type == TokenType.USER:
+            result.users.append(self._parse_user(is_external=False))
         elif tok.type == TokenType.EXTERNAL:
             self._advance()  # consume 'external'
             inner = self._current()
@@ -209,9 +213,11 @@ class _Parser:
                 result.components.append(self._parse_component(is_external=True))
             elif inner.type == TokenType.SYSTEM:
                 result.systems.append(self._parse_system(is_external=True))
+            elif inner.type == TokenType.USER:
+                result.users.append(self._parse_user(is_external=True))
             else:
                 raise ParseError(
-                    f"Expected 'component' or 'system' after 'external', got {inner.value!r}",
+                    f"Expected 'component', 'system', or 'user' after 'external', got {inner.value!r}",
                     inner.line,
                     inner.column,
                 )
@@ -440,6 +446,8 @@ class _Parser:
                 system.components.append(self._parse_component(is_external=False))
             elif self._check(TokenType.SYSTEM):
                 system.systems.append(self._parse_system(is_external=False))
+            elif self._check(TokenType.USER):
+                system.users.append(self._parse_user(is_external=False))
             elif self._check(TokenType.EXTERNAL):
                 self._advance()  # consume 'external'
                 inner = self._current()
@@ -447,9 +455,12 @@ class _Parser:
                     system.components.append(self._parse_component(is_external=True))
                 elif inner.type == TokenType.SYSTEM:
                     system.systems.append(self._parse_system(is_external=True))
+                elif inner.type == TokenType.USER:
+                    system.users.append(self._parse_user(is_external=True))
                 else:
                     raise ParseError(
-                        f"Expected 'component' or 'system' after 'external' inside system body, got {inner.value!r}",
+                        f"Expected 'component', 'system', or 'user' after 'external'"
+                        f" inside system body, got {inner.value!r}",
                         inner.line,
                         inner.column,
                     )
@@ -468,7 +479,7 @@ class _Parser:
         return system
 
     def _parse_use_statement(self, system: System) -> None:
-        """Parse: use component <Name> | use system <Name>.
+        """Parse: use component <Name> | use system <Name> | use user <Name>.
 
         Creates a stub entity in the system. The validation layer resolves
         stubs to their imported definitions.
@@ -483,12 +494,51 @@ class _Parser:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
             system.systems.append(System(name=name_tok.value))
+        elif kind.type == TokenType.USER:
+            self._advance()
+            name_tok = self._expect(TokenType.IDENTIFIER)
+            system.users.append(UserDef(name=name_tok.value))
         else:
             raise ParseError(
-                f"Expected 'component' or 'system' after 'use', got {kind.value!r}",
+                f"Expected 'component', 'system', or 'user' after 'use', got {kind.value!r}",
                 kind.line,
                 kind.column,
             )
+
+    # ------------------------------------------------------------------
+    # User declarations
+    # ------------------------------------------------------------------
+
+    def _parse_user(self, is_external: bool) -> UserDef:
+        """Parse: [external] user <Name> { [attrs] (requires|provides)* }
+
+        Users are leaf nodes: they support title, description, tags, requires,
+        and provides, but no sub-entities or connections.
+        """
+        self._expect(TokenType.USER)
+        name_tok = self._expect(TokenType.IDENTIFIER)
+        self._expect(TokenType.LBRACE)
+        user = UserDef(name=name_tok.value, is_external=is_external)
+        while not self._check(TokenType.RBRACE, TokenType.EOF):
+            if self._check(TokenType.TITLE):
+                user.title = self._parse_string_attr(TokenType.TITLE)
+            elif self._check(TokenType.DESCRIPTION):
+                user.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            elif self._check(TokenType.TAGS):
+                user.tags = self._parse_tags()
+            elif self._check(TokenType.REQUIRES):
+                user.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
+            elif self._check(TokenType.PROVIDES):
+                user.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
+            else:
+                tok = self._current()
+                raise ParseError(
+                    f"Unexpected token {tok.value!r} in user body",
+                    tok.line,
+                    tok.column,
+                )
+        self._expect(TokenType.RBRACE)
+        return user
 
     # ------------------------------------------------------------------
     # Connection declarations
