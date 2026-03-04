@@ -12,6 +12,7 @@ from archml.model.entities import (
     InterfaceRef,
     System,
     TypeDef,
+    UserDef,
 )
 from archml.model.types import (
     FieldDef,
@@ -43,6 +44,15 @@ def _conn(source: str, target: str, interface: str = "I") -> Connection:
         source=ConnectionEndpoint(entity=source),
         target=ConnectionEndpoint(entity=target),
         interface=InterfaceRef(name=interface),
+    )
+
+
+def _conn_v(source: str, target: str, interface: str, version: str) -> Connection:
+    """Create a Connection with a versioned interface."""
+    return Connection(
+        source=ConnectionEndpoint(entity=source),
+        target=ConnectionEndpoint(entity=target),
+        interface=InterfaceRef(name=interface, version=version),
     )
 
 
@@ -561,3 +571,189 @@ class TestValidationResult:
         result = validate(ArchFile())
         assert result == ValidationResult()
         assert not result.has_errors
+
+
+# ###############
+# Unconnected Interfaces
+# ###############
+
+
+class TestUnconnectedInterfaces:
+    """Check 5: Every requires/provides on a member must have a matching connect."""
+
+    # ---- Leaf / empty cases — no warning ----
+
+    def test_empty_archfile_no_warning(self) -> None:
+        _assert_no_warning(ArchFile())
+
+    def test_leaf_component_no_warning(self) -> None:
+        # A top-level component with no sub-components is a leaf — not checked.
+        arch = ArchFile(components=[Component(name="C", requires=[_iref("I")], provides=[_iref("J")])])
+        _assert_no_warning(arch)
+
+    def test_leaf_system_no_warning(self) -> None:
+        # A system with no members (components/systems/users) is a leaf — not checked.
+        arch = ArchFile(systems=[System(name="S", requires=[_iref("I")])])
+        _assert_no_warning(arch)
+
+    def test_member_with_no_interfaces_no_warning(self) -> None:
+        # A member that declares no requires/provides needs no connect.
+        comp = Component(name="C")
+        sys_ = System(name="S", components=[comp])
+        arch = ArchFile(systems=[sys_])
+        _assert_no_warning(arch)
+
+    # ---- Connected cases — no warning ----
+
+    def test_requires_connected_as_target_no_warning(self) -> None:
+        # C requires I: C must appear as the target of a connect (provider -> C).
+        comp = Component(name="C", requires=[_iref("I")])
+        sys_ = System(name="S", components=[comp], connections=[_conn("Provider", "C", "I")])
+        arch = ArchFile(systems=[sys_])
+        _assert_no_warning(arch)
+
+    def test_provides_connected_as_source_no_warning(self) -> None:
+        # C provides I: C must appear as the source of a connect (C -> consumer).
+        comp = Component(name="C", provides=[_iref("I")])
+        sys_ = System(name="S", components=[comp], connections=[_conn("C", "Consumer", "I")])
+        arch = ArchFile(systems=[sys_])
+        _assert_no_warning(arch)
+
+    def test_both_requires_and_provides_connected_no_warning(self) -> None:
+        # Provider (source) sends I to Consumer (target).
+        consumer = Component(name="Consumer", requires=[_iref("I")])
+        provider = Component(name="Provider", provides=[_iref("I")])
+        sys_ = System(
+            name="S",
+            components=[consumer, provider],
+            connections=[_conn("Provider", "Consumer", "I")],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_no_warning(arch)
+
+    def test_versioned_interface_matched_no_warning(self) -> None:
+        # C requires I@v2: C must be target of a connect using I@v2.
+        comp = Component(name="C", requires=[_iref("I", "v2")])
+        sys_ = System(
+            name="S",
+            components=[comp],
+            connections=[_conn_v("Provider", "C", "I", "v2")],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_no_warning(arch)
+
+    def test_subcomponent_connected_no_warning(self) -> None:
+        # Connections inside a Component scope also checked.
+        # Sub provides I: Sub must be the source (Sub -> Consumer).
+        sub = Component(name="Sub", provides=[_iref("I")])
+        outer = Component(
+            name="Outer",
+            components=[sub],
+            connections=[_conn("Sub", "Consumer", "I")],
+        )
+        arch = ArchFile(components=[outer])
+        _assert_no_warning(arch)
+
+    def test_user_connected_as_target_no_warning(self) -> None:
+        # Alice requires Portal: Alice must appear as the target of a connect.
+        user = UserDef(name="Alice", requires=[_iref("Portal")])
+        sys_ = System(name="S", users=[user], connections=[_conn("WebApp", "Alice", "Portal")])
+        arch = ArchFile(systems=[sys_])
+        _assert_no_warning(arch)
+
+    # ---- Missing connect cases — warning ----
+
+    def test_requires_without_connect_warns(self) -> None:
+        comp = Component(name="C", requires=[_iref("I")])
+        sys_ = System(name="S", components=[comp])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'C'" in m and "requires" in m and "'I'" in m for m in msgs)
+
+    def test_provides_without_connect_warns(self) -> None:
+        comp = Component(name="C", provides=[_iref("I")])
+        sys_ = System(name="S", components=[comp])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'C'" in m and "provides" in m and "'I'" in m for m in msgs)
+
+    def test_warning_message_mentions_container(self) -> None:
+        comp = Component(name="C", requires=[_iref("I")])
+        sys_ = System(name="MySystem", components=[comp])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'MySystem'" in m for m in msgs)
+
+    def test_versioned_interface_mismatch_warns(self) -> None:
+        # C requires I@v2 but connect uses unversioned I — mismatch, no match.
+        comp = Component(name="C", requires=[_iref("I", "v2")])
+        sys_ = System(name="S", components=[comp], connections=[_conn("C", "P", "I")])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("I@v2" in m for m in msgs)
+
+    def test_unversioned_vs_versioned_connect_warns(self) -> None:
+        # C provides I (unversioned) but connect targets I@v1 — no match.
+        comp = Component(name="C", provides=[_iref("I")])
+        sys_ = System(name="S", components=[comp], connections=[_conn_v("Src", "C", "I", "v1")])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'C'" in m and "provides" in m and "'I'" in m for m in msgs)
+
+    def test_user_requires_without_connect_warns(self) -> None:
+        user = UserDef(name="Alice", requires=[_iref("Portal")])
+        sys_ = System(name="S", users=[user])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'Alice'" in m and "requires" in m and "'Portal'" in m for m in msgs)
+
+    def test_user_provides_without_connect_warns(self) -> None:
+        user = UserDef(name="Operator", provides=[_iref("Report")])
+        sys_ = System(name="S", users=[user])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'Operator'" in m and "provides" in m and "'Report'" in m for m in msgs)
+
+    def test_multiple_missing_interfaces_warn_each(self) -> None:
+        c1 = Component(name="C1", requires=[_iref("X")])
+        c2 = Component(name="C2", provides=[_iref("Y")])
+        sys_ = System(name="S", components=[c1, c2])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'C1'" in m and "'X'" in m for m in msgs)
+        assert any("'C2'" in m and "'Y'" in m for m in msgs)
+
+    def test_subcomponent_requires_without_connect_warns(self) -> None:
+        sub = Component(name="Sub", requires=[_iref("I")])
+        outer = Component(name="Outer", components=[sub])
+        arch = ArchFile(components=[outer])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'Sub'" in m and "requires" in m and "'I'" in m for m in msgs)
+
+    def test_nested_system_members_checked_recursively(self) -> None:
+        # The inner system has a member with an unconnected interface.
+        inner_comp = Component(name="IC", provides=[_iref("Inner")])
+        inner = System(name="Inner", components=[inner_comp])
+        outer = System(name="Outer", systems=[inner])
+        arch = ArchFile(systems=[outer])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'IC'" in m and "'Inner'" in m for m in msgs)
+
+    def test_qualified_name_used_in_warning_when_set(self) -> None:
+        comp = Component(name="C", qualified_name="Root::S::C", requires=[_iref("I")])
+        sys_ = System(name="S", qualified_name="Root::S", components=[comp])
+        arch = ArchFile(systems=[sys_])
+        result = validate(arch)
+        msgs = _warnings(result)
+        assert any("'Root::S::C'" in m for m in msgs)
+        assert any("'Root::S'" in m for m in msgs)
