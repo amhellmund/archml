@@ -87,10 +87,26 @@ system ECommerce {
         title = "Order Service"
         description = "Accepts, validates, and processes customer orders."
 
-        requires OrderRequest
-        requires PaymentRequest
-        requires InventoryCheck
-        provides OrderConfirmation
+        // Internal pipeline: Validator feeds into Processor
+        component Validator {
+            requires OrderRequest as input
+            provides ValidationResult as output
+        }
+
+        component Processor {
+            requires ValidationResult as input
+            requires PaymentRequest
+            requires InventoryCheck
+            provides OrderConfirmation
+        }
+
+        connect Validator.output -> Processor.input
+
+        // Promote inner ports to the OrderService boundary
+        expose Validator.input             // requires OrderRequest
+        expose Processor.PaymentRequest    // requires PaymentRequest
+        expose Processor.InventoryCheck    // requires InventoryCheck
+        expose Processor.OrderConfirmation // provides OrderConfirmation
     }
 
     component PaymentGateway {
@@ -104,14 +120,15 @@ system ECommerce {
     component InventoryManager {
         title = "Inventory Manager"
 
-        requires InventoryCheck
+        requires InventoryCheck as requests [1..*]  // accepts requests from multiple sources
         provides InventoryStatus
     }
 
-    connect Customer -> OrderService by OrderRequest
-    connect OrderService -> Customer by OrderConfirmation
-    connect OrderService -> PaymentGateway by PaymentRequest
-    connect OrderService -> InventoryManager by InventoryCheck {
+    // Short form: interface is unambiguous on both sides
+    connect Customer      -> OrderService     by OrderRequest
+    connect OrderService  -> Customer         by OrderConfirmation
+    connect OrderService  -> PaymentGateway   by PaymentRequest
+    connect OrderService  -> InventoryManager by InventoryCheck {
         protocol = "HTTP"
     }
     connect PaymentGateway -> StripeAPI by PaymentRequest {
@@ -125,21 +142,25 @@ Large architectures split naturally across files. A `from ... import` statement 
 
 ## Language at a Glance
 
-| Keyword                 | Purpose                                                               |
-| ----------------------- | --------------------------------------------------------------------- |
-| `system`                | Group of components or sub-systems with a shared goal                 |
-| `component`             | Module with a clear responsibility; may nest sub-components           |
-| `user`                  | Human actor (role or persona) that interacts with the system          |
-| `interface`             | Named contract of typed data fields; supports `@v1`, `@v2` versioning |
-| `type`                  | Reusable data structure (used within interfaces)                      |
-| `enum`                  | Constrained set of named values                                       |
-| `field`                 | Named, typed data element with optional `description` and `schema`    |
-| `requires` / `provides` | Declare consumed and exposed interfaces on a component or user        |
-| `connect A -> B by I`   | Data-flow edge linking a required interface to a provided one         |
-| `external`              | Marks a system, component, or user as outside the development boundary |
-| `from … import`         | Bring specific definitions from another file into scope               |
-| `use component X`       | Place an imported entity inside a system                              |
-| `tags`                  | Arbitrary labels for filtering and view generation                    |
+| Keyword                      | Purpose                                                                           |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `system`                     | Group of components or sub-systems with a shared goal                             |
+| `component`                  | Module with a clear responsibility; may nest sub-components                       |
+| `user`                       | Human actor (role or persona) that interacts with the system                      |
+| `interface`                  | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
+| `type`                       | Reusable data structure (used within interfaces)                                  |
+| `enum`                       | Constrained set of named values                                                   |
+| `field`                      | Named, typed data element with optional `description` and `schema`                |
+| `requires` / `provides`      | Declare consumed and exposed interface ports on a component or user               |
+| `requires X as name`         | Named port — required when the same interface appears more than once              |
+| `requires X as name [1..*]`  | Multi-port with cardinality — for fan-in patterns; `[N]`, `[*]`, `[M..N]` also valid |
+| `expose Sub.port`            | Promote a nested component's port to the enclosing component's boundary           |
+| `connect A -> B by I`        | Short form: wire interface I between A and B (when I is unambiguous on both sides) |
+| `connect A.p -> B.p`         | Long form: wire named ports directly (no `by` needed)                             |
+| `external`                   | Marks a system, component, or user as outside the development boundary            |
+| `from … import`              | Bring specific definitions from another file into scope                           |
+| `use component X`            | Place an imported entity inside a system                                          |
+| `tags`                       | Arbitrary labels for filtering and view generation                                |
 
 Primitive types: `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
