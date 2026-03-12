@@ -158,20 +158,25 @@ component OrderService {
     component Validator {
         title = "Order Validator"
 
-        requires OrderRequest
-        provides ValidationResult
+        requires OrderRequest as input
+        provides ValidationResult as output
     }
 
     component Processor {
         title = "Order Processor"
 
-        requires ValidationResult
+        requires ValidationResult as input
         requires PaymentRequest
         requires InventoryCheck
         provides OrderConfirmation
     }
 
-    connect Validator -> Processor by ValidationResult
+    connect Validator.output -> Processor.input
+
+    expose Validator.input             // OrderService requires OrderRequest
+    expose Processor.PaymentRequest    // OrderService requires PaymentRequest
+    expose Processor.InventoryCheck    // OrderService requires InventoryCheck
+    expose Processor.OrderConfirmation // OrderService provides OrderConfirmation
 }
 ```
 
@@ -246,21 +251,133 @@ external user Admin {
 
 External entities appear in diagrams with distinct styling. They cannot be further decomposed (they are opaque).
 
+## Ports
+
+Every `requires` and `provides` declaration on a component or user defines a **port** — a named connection point for a specific interface use. Ports are the targets that `connect` statements wire together.
+
+### Port names
+
+By default a port's name is the interface name:
+
+```
+component OrderService {
+    requires PaymentRequest    // port named "PaymentRequest"
+    provides OrderConfirmation // port named "OrderConfirmation"
+}
+```
+
+An explicit name is assigned with the `as` keyword:
+
+```
+component OrderService {
+    requires InventoryCheck as primary_inventory
+    requires InventoryCheck as backup_inventory
+    provides OrderConfirmation
+}
+```
+
+A port name is **required** when a component declares two or more ports for the same interface in the same direction. When the interface appears only once in a given direction, naming is optional but encouraged whenever the port has a meaningful semantic role:
+
+```
+component Filter {
+    requires DataStream as input
+    provides DataStream as output
+}
+```
+
+### Port multiplicity
+
+A port can accept more than one connection with a multiplicity annotation. Multiplicity always requires an explicit port name:
+
+| Annotation | Meaning                     |
+| ---------- | --------------------------- |
+| *(none)*   | exactly one connection      |
+| `[N]`      | exactly N connections       |
+| `[*]`      | zero or more connections    |
+| `[1..*]`   | one or more connections     |
+| `[M..N]`   | between M and N connections |
+
+```
+component Aggregator {
+    requires Result as workers [1..*]  // accepts results from one or more workers
+    provides Summary
+}
+```
+
+Multiple `connect` statements targeting the same multi-port are valid. The validator checks the actual connection count against the declared cardinality.
+
+### Boundary propagation with `expose`
+
+A nested component's port can be promoted to the enclosing component's boundary with the `expose` keyword. This makes the inner port reachable from outside without requiring callers to know about internal structure:
+
+```
+component OrderService {
+    component Validator {
+        requires OrderRequest as input
+        provides ValidationResult as output
+    }
+
+    component Processor {
+        requires ValidationResult as input
+        provides OrderConfirmation
+    }
+
+    connect Validator.output -> Processor.input
+
+    expose Validator.input             // OrderService now requires OrderRequest
+    expose Processor.OrderConfirmation // OrderService now provides OrderConfirmation
+}
+```
+
+The exposed port retains its original name on the enclosing boundary. An alias can be assigned with `as`:
+
+```
+expose Validator.input as request
+```
+
+`expose` propagates one level at a time. To surface a port through multiple nesting levels, each intermediate component must declare its own `expose`.
+
+Direct `connect` from an outer scope into a nested component is not allowed. Use `expose` to make internal ports reachable at the enclosing boundary first.
+
 ## Connections
 
-Connections are the data-flow edges of the architecture graph. A connection always links a **required** interface byone side to a **provided** interface on the other. The arrow `->` indicates the direction of the request (who initiates); data may flow in both directions as part of request/response.
+Connections are the data-flow edges of the architecture graph. A connection always links a **required** port on one side to a **provided** port on the other. The arrow `->` indicates the direction of the request (who initiates); data may flow in both directions as part of request/response.
 
-All connections are unidirectional. For bidirectional communication, use two separate connections:
+All connections are unidirectional. For bidirectional communication, use two separate connections.
+
+### Short form
+
+When each side has exactly one port for the given interface, the component names and the interface name are sufficient:
 
 ```
 connect <source> -> <target> by <interface>
-
-// Bidirectional: two explicit connections.
-connect ServiceA -> ServiceB by RequestToB
-connect ServiceB -> ServiceA by ResponseToA
 ```
 
-Connections may carry annotations. Each attribute must appear on its own line:
+```
+connect Customer    -> OrderService by OrderRequest
+connect ServiceA    -> ServiceB     by RequestToB
+connect ServiceB    -> ServiceA     by ResponseToA
+```
+
+### Long form
+
+When ports are named — because an interface appears more than once on a component, or for explicitness — reference port names directly. The interface is implied from the port and the `by` clause is omitted:
+
+```
+connect <source>.<port> -> <target>.<port>
+```
+
+```
+connect OrderService.primary_inventory -> PrimaryInventory.InventoryCheck
+connect OrderService.backup_inventory  -> BackupInventory.InventoryCheck
+connect Validator.output               -> Processor.input
+```
+
+Both forms are equivalent when the short form is unambiguous. The arrow direction (`->`) identifies which side is the providing port (left) and which is the requiring port (right), so a component that has both `requires X` and `provides X` for the same interface is still unambiguous.
+
+### Annotations
+
+Either form can carry a block of attributes. Each attribute must appear on its own line:
 
 ```
 connect OrderService -> PaymentGateway by PaymentRequest {
@@ -269,6 +386,10 @@ connect OrderService -> PaymentGateway by PaymentRequest {
     description = "Initiates payment processing for confirmed orders."
 }
 ```
+
+### Encapsulation
+
+`connect` statements may only reference ports that are directly visible in the current scope — that is, ports belonging to direct children of the enclosing component or system. Connecting into a grandchild or deeper is not permitted; use `expose` to propagate the inner port to the enclosing boundary first.
 
 ## Tags
 
@@ -444,6 +565,11 @@ interface InventoryStatus {
     field available: Bool
 }
 
+interface ValidationResult {
+    field order_id: String
+    field valid: Bool
+}
+
 interface ReportOutput {
     field report: File {
         filetype = "PDF"
@@ -452,16 +578,34 @@ interface ReportOutput {
 }
 
 // file: components/order_service.archml
-from types import OrderItem, OrderRequest, PaymentRequest, InventoryCheck, OrderConfirmation
+from types import OrderItem, OrderRequest, ValidationResult, PaymentRequest, InventoryCheck, OrderConfirmation
 
 component OrderService {
     title = "Order Service"
     description = "Accepts, validates, and processes customer orders."
 
-    requires OrderRequest
-    requires PaymentRequest
-    requires InventoryCheck
-    provides OrderConfirmation
+    component Validator {
+        title = "Order Validator"
+
+        requires OrderRequest as input
+        provides ValidationResult as output
+    }
+
+    component Processor {
+        title = "Order Processor"
+
+        requires ValidationResult as input
+        requires PaymentRequest
+        requires InventoryCheck
+        provides OrderConfirmation
+    }
+
+    connect Validator.output -> Processor.input
+
+    expose Validator.input             // requires OrderRequest
+    expose Processor.PaymentRequest    // requires PaymentRequest
+    expose Processor.InventoryCheck    // requires InventoryCheck
+    expose Processor.OrderConfirmation // provides OrderConfirmation
 }
 
 // file: systems/ecommerce.archml
@@ -518,28 +662,30 @@ system ECommerce {
 
 ## Summary of Keywords
 
-| Keyword       | Purpose                                                                                               |
-| ------------- | ----------------------------------------------------------------------------------------------------- |
-| `system`      | Group of components or sub-systems with a shared goal.                                                |
-| `component`   | Module with a clear responsibility; may nest sub-components.                                          |
-| `user`        | Human actor (role or persona) that interacts with the system; a leaf node.                            |
-| `interface`   | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc.                       |
-| `type`        | Reusable data structure (used within interfaces).                                                     |
-| `enum`        | Constrained set of named values.                                                                      |
-| `field`       | Named, typed data element. Supports `description` and `schema` annotations.                           |
-| `filetype`    | Annotation bya `File` field specifying its format.                                                    |
-| `schema`      | Free-text annotation describing expected content or format.                                           |
-| `requires`    | Declares an interface that an element consumes (listed before `provides`).                            |
-| `provides`    | Declares an interface that an element exposes.                                                        |
-| `connect`     | Links a required interface to a provided interface.                                                   |
-| `by`          | Specifies the interface in a `connect` statement (`connect A -> B by Interface`).                     |
-| `from`        | Introduces the source path in an import statement (`from path import Name`).                          |
-| `import`      | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`). |
-| `use`         | Places an imported entity into a system or component (e.g., `use component X`).                       |
-| `external`    | Marks a system, component, or user as outside the development boundary.                               |
-| `tags`        | Arbitrary labels for filtering and view generation.                                                   |
-| `title`       | Human-readable display name.                                                                          |
-| `description` | Longer explanation of an entity's purpose.                                                            |
+| Keyword         | Purpose                                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `system`        | Group of components or sub-systems with a shared goal.                                                             |
+| `component`     | Module with a clear responsibility; may nest sub-components.                                                       |
+| `user`          | Human actor (role or persona) that interacts with the system; a leaf node.                                         |
+| `interface`     | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc.                                    |
+| `type`          | Reusable data structure (used within interfaces).                                                                  |
+| `enum`          | Constrained set of named values.                                                                                   |
+| `field`         | Named, typed data element. Supports `description` and `schema` annotations.                                        |
+| `filetype`      | Annotation on a `File` field specifying its format.                                                                |
+| `schema`        | Free-text annotation describing expected content or format.                                                        |
+| `requires`      | Declares an interface port that an element consumes (listed before `provides`).                                    |
+| `provides`      | Declares an interface port that an element exposes.                                                                |
+| `as`            | Assigns a name to a port (`requires X as name`) or provides an alias in `expose` (`expose Sub.port as name`).     |
+| `expose`        | Promotes a nested component's port to the enclosing component's boundary (`expose Sub.port`).                      |
+| `connect`       | Wires a providing port to a requiring port. Short form: `connect A -> B by X`. Long form: `connect A.p -> B.p`.   |
+| `by`            | Specifies the interface in the short form of `connect` (`connect A -> B by Interface`).                            |
+| `from`          | Introduces the source path in an import statement (`from path import Name`).                                       |
+| `import`        | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`).              |
+| `use`           | Places an imported entity into a system or component (e.g., `use component X`).                                    |
+| `external`      | Marks a system, component, or user as outside the development boundary.                                            |
+| `tags`          | Arbitrary labels for filtering and view generation.                                                                |
+| `title`         | Human-readable display name.                                                                                       |
+| `description`   | Longer explanation of an entity's purpose.                                                                         |
 
 ## Scope Boundaries
 
