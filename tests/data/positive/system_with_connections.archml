@@ -46,13 +46,28 @@ system ECommerce {
     title = "E-Commerce Platform"
     description = "Customer-facing online store back-end."
 
+    channel payment: PaymentRequest {
+        protocol = "gRPC"
+        async = false
+        description = "Submit payment for confirmed order."
+    }
+    channel inventory: InventoryCheck {
+        protocol = "HTTP"
+        async = true
+    }
+    channel stripe_payment: PaymentRequest {
+        protocol = "HTTP"
+        async = true
+        description = "Delegate payment processing to Stripe."
+    }
+
     component OrderService {
         title = "Order Service"
         tags = ["core"]
 
         requires OrderRequest
-        requires PaymentRequest
-        requires InventoryCheck
+        requires PaymentRequest via payment
+        requires InventoryCheck via inventory
         provides OrderConfirmation
     }
 
@@ -60,29 +75,15 @@ system ECommerce {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        requires PaymentRequest
+        provides PaymentRequest via payment
+        requires PaymentRequest via stripe_payment
         provides PaymentResult
     }
 
     component InventoryManager {
         title = "Inventory Manager"
 
-        requires InventoryCheck
+        provides InventoryCheck via inventory
         provides InventoryStatus
-    }
-
-    connect OrderService -> PaymentGateway by PaymentRequest {
-        protocol = "gRPC"
-        async = false
-        description = "Submit payment for confirmed order."
-    }
-    connect OrderService -> InventoryManager by InventoryCheck {
-        protocol = "HTTP"
-        async = true
-    }
-    connect PaymentGateway -> StripeAPI by PaymentRequest {
-        protocol = "HTTP"
-        async = true
-        description = "Delegate payment processing to Stripe."
     }
 }

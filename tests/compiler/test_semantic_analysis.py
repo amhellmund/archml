@@ -7,9 +7,8 @@ from archml.compiler.parser import parse
 from archml.compiler.semantic_analysis import SemanticError, analyze
 from archml.model.entities import (
     ArchFile,
+    ChannelDef,
     Component,
-    Connection,
-    ConnectionEndpoint,
     EnumDef,
     InterfaceDef,
     InterfaceRef,
@@ -114,41 +113,41 @@ interface Delivery {
 }
 """)
 
-    def test_system_with_components_and_connection(self) -> None:
+    def test_system_with_components_and_channel(self) -> None:
         _assert_clean("""
 interface DataFeed {
     field payload: String
 }
 
 system Pipeline {
+    channel feed: DataFeed
+
     component Producer {
-        provides DataFeed
+        provides DataFeed via feed
     }
 
     component Consumer {
-        requires DataFeed
+        requires DataFeed via feed
     }
-
-    connect Producer -> Consumer by DataFeed
 }
 """)
 
-    def test_nested_components_with_connection(self) -> None:
+    def test_nested_components_with_channel(self) -> None:
         _assert_clean("""
 interface Signal {
     field value: Bool
 }
 
 component Router {
+    channel sig: Signal
+
     component Input {
-        provides Signal
+        provides Signal via sig
     }
 
     component Output {
-        requires Signal
+        requires Signal via sig
     }
-
-    connect Input -> Output by Signal
 }
 """)
 
@@ -675,118 +674,120 @@ system Foo {
 
 
 # ###############
-# Connection Endpoint Validation
+# Channel Validation
 # ###############
 
 
-class TestConnectionEndpoints:
-    def test_unknown_source_in_component_connection(self) -> None:
-        _assert_error(
-            """
-interface Signal { field v: Bool }
-component Router {
-    component Output { requires Signal }
-    connect UnknownInput -> Output by Signal
-}
-""",
-            "connection source 'UnknownInput' is not a known member entity",
-        )
-
-    def test_unknown_target_in_component_connection(self) -> None:
-        _assert_error(
-            """
-interface Signal { field v: Bool }
-component Router {
-    component Input { provides Signal }
-    connect Input -> UnknownOutput by Signal
-}
-""",
-            "connection target 'UnknownOutput' is not a known member entity",
-        )
-
-    def test_unknown_source_in_system_connection(self) -> None:
-        _assert_error(
-            """
-interface DataFeed { field payload: String }
-system Pipeline {
-    component Consumer { requires DataFeed }
-    connect MissingProducer -> Consumer by DataFeed
-}
-""",
-            "connection source 'MissingProducer' is not a known member entity",
-        )
-
-    def test_unknown_target_in_system_connection(self) -> None:
-        _assert_error(
-            """
-interface DataFeed { field payload: String }
-system Pipeline {
-    component Producer { provides DataFeed }
-    connect Producer -> MissingConsumer by DataFeed
-}
-""",
-            "connection target 'MissingConsumer' is not a known member entity",
-        )
-
-    def test_valid_system_connection(self) -> None:
+class TestChannelValidation:
+    def test_valid_system_channel(self) -> None:
         _assert_clean("""
 interface DataFeed { field payload: String }
 system Pipeline {
-    component Producer { provides DataFeed }
-    component Consumer { requires DataFeed }
-    connect Producer -> Consumer by DataFeed
+    channel feed: DataFeed
+    component Producer { provides DataFeed via feed }
+    component Consumer { requires DataFeed via feed }
 }
 """)
 
-    def test_valid_component_connection(self) -> None:
+    def test_valid_component_channel(self) -> None:
         _assert_clean("""
 interface Signal { field value: Int }
 component Processor {
-    component Source { provides Signal }
-    component Sink { requires Signal }
-    connect Source -> Sink by Signal
+    channel sig: Signal
+    component Source { provides Signal via sig }
+    component Sink { requires Signal via sig }
 }
 """)
 
-    def test_connection_with_undefined_interface(self) -> None:
+    def test_channel_with_undefined_interface(self) -> None:
         _assert_error(
             """
 system Pipeline {
-    component A {}
-    component B {}
-    connect A -> B by UndefinedInterface
+    channel feed: UndefinedInterface
 }
 """,
             "refers to unknown interface 'UndefinedInterface'",
         )
 
-    def test_connection_with_versioned_interface_ok(self) -> None:
+    def test_via_binding_to_unknown_channel(self) -> None:
+        _assert_error(
+            """
+interface DataFeed { field payload: String }
+system Pipeline {
+    component Producer { provides DataFeed via nonexistent }
+}
+""",
+            "channel 'nonexistent' is not defined in this scope",
+        )
+
+    def test_via_binding_in_component_to_unknown_channel(self) -> None:
+        _assert_error(
+            """
+interface Signal { field v: Bool }
+component Router {
+    component Output { requires Signal via unknown_channel }
+}
+""",
+            "channel 'unknown_channel' is not defined in this scope",
+        )
+
+    def test_valid_via_binding_to_parent_system_channel(self) -> None:
+        _assert_clean("""
+interface DataFeed { field payload: String }
+system Pipeline {
+    channel feed: DataFeed
+    component Producer { provides DataFeed via feed }
+    component Consumer { requires DataFeed via feed }
+}
+""")
+
+    def test_channel_with_versioned_interface_ok(self) -> None:
         _assert_clean("""
 interface Feed @v1 { field data: String }
 system Pipeline {
-    component A { provides Feed @v1 }
-    component B { requires Feed @v1 }
-    connect A -> B by Feed @v1
+    channel feed: Feed @v1
+    component A { provides Feed @v1 via feed }
+    component B { requires Feed @v1 via feed }
 }
 """)
 
-    def test_connection_endpoint_can_be_sub_system(self) -> None:
-        _assert_clean("""
-interface API { field endpoint: String }
-system Enterprise {
-    system Frontend { provides API }
-    system Backend { requires API }
-    connect Frontend -> Backend by API
+    def test_duplicate_channel_names_in_system(self) -> None:
+        _assert_error(
+            """
+interface X {}
+system S {
+    channel ch: X
+    channel ch: X
 }
+""",
+            "Duplicate channel name 'ch'",
+        )
+
+    def test_duplicate_channel_names_in_component(self) -> None:
+        _assert_error(
+            """
+interface X {}
+component C {
+    channel ch: X
+    channel ch: X
+}
+""",
+            "Duplicate channel name 'ch'",
+        )
+
+    def test_requires_without_via_is_valid(self) -> None:
+        _assert_clean("""
+interface DataFeed { field payload: String }
+component Producer { provides DataFeed }
 """)
 
-    def test_external_component_valid_connection_endpoint(self) -> None:
+    def test_channel_in_component_scope(self) -> None:
         _assert_clean("""
-interface PayReq { field amount: Decimal }
-system ECommerce {
-    component OrderService { provides PayReq }
-    external component StripeAPI { requires PayReq }
-    connect OrderService -> StripeAPI by PayReq
+interface Signal { field value: Bool }
+component Router {
+    channel sig: Signal
+    component Input { provides Signal via sig }
+    component Output { requires Signal via sig }
 }
 """)
 
@@ -952,22 +953,16 @@ class TestDirectModelConstruction:
         errors = analyze(arch_file)
         assert any("Duplicate enum name 'Status'" in e.message for e in errors)
 
-    def test_connection_with_known_interface_model(self) -> None:
+    def test_channel_with_known_interface_model(self) -> None:
         arch_file = ArchFile(
             interfaces=[InterfaceDef(name="Signal", version=None)],
             systems=[
                 System(
                     name="Sys",
+                    channels=[ChannelDef(name="sig", interface=InterfaceRef(name="Signal"))],
                     components=[
-                        Component(name="A"),
-                        Component(name="B"),
-                    ],
-                    connections=[
-                        Connection(
-                            source=ConnectionEndpoint(entity="A"),
-                            target=ConnectionEndpoint(entity="B"),
-                            interface=InterfaceRef(name="Signal"),
-                        )
+                        Component(name="A", provides=[InterfaceRef(name="Signal", via="sig")]),
+                        Component(name="B", requires=[InterfaceRef(name="Signal", via="sig")]),
                     ],
                 )
             ],
@@ -1317,27 +1312,21 @@ user Customer {
             "name 'Sub' is used for both a user and a component or sub-system",
         )
 
-    def test_user_as_connection_endpoint_in_system(self) -> None:
+    def test_user_provides_with_via_in_system(self) -> None:
         _assert_clean("""
 interface OrderRequest {}
-user Customer { provides OrderRequest }
-component OrderService { requires OrderRequest }
 system S {
-    use user Customer
-    use component OrderService
-    connect Customer -> OrderService by OrderRequest
+    channel orders: OrderRequest
+    user Customer { provides OrderRequest via orders }
+    component OrderService { requires OrderRequest via orders }
 }
 """)
 
-    def test_top_level_user_as_connection_endpoint(self) -> None:
+    def test_user_without_via_is_valid(self) -> None:
         _assert_clean("""
 interface I {}
 user A { provides I }
 component B { requires I }
-system S {
-    use component B
-    connect A -> B by I
-}
 """)
 
     def test_user_qualified_name_top_level(self) -> None:

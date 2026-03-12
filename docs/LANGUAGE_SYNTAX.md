@@ -132,11 +132,11 @@ interface OrderRequest @v2 {
 
 When a component requires or provides a versioned interface, it references the version explicitly (e.g., `requires OrderRequest @v2`). Unversioned references default to the latest version.
 
-`interface` defines a contract used in connections. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear on ports; types compose into fields.
+`interface` defines a contract used in channels. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear on channels; types compose into fields.
 
 ### Component
 
-A component is a module with a clear responsibility. Components declare the interfaces they **require** (consume from others) and **provide** (expose to others). `requires` declarations always come before `provides`.
+A component is a module with a clear responsibility. Components declare the interfaces they **require** (consume) and **provide** (expose). `requires` declarations always come before `provides`.
 
 ```
 component OrderService {
@@ -149,52 +149,65 @@ component OrderService {
 }
 ```
 
-Components can nest sub-components to express internal structure:
+Components can nest sub-components to express internal structure. Internal channels wire sub-components together without coupling them directly:
 
 ```
 component OrderService {
     title = "Order Service"
 
+    channel validation: ValidationResult
+
     component Validator {
         title = "Order Validator"
 
-        requires OrderRequest as input
-        provides ValidationResult as output
+        requires OrderRequest
+        provides ValidationResult via validation
     }
 
     component Processor {
         title = "Order Processor"
 
-        requires ValidationResult as input
+        requires ValidationResult via validation
         requires PaymentRequest
         requires InventoryCheck
         provides OrderConfirmation
     }
-
-    connect Validator.output -> Processor.input
-
-    expose Validator.input             // OrderService requires OrderRequest
-    expose Processor.PaymentRequest    // OrderService requires PaymentRequest
-    expose Processor.InventoryCheck    // OrderService requires InventoryCheck
-    expose Processor.OrderConfirmation // OrderService provides OrderConfirmation
 }
 ```
 
+The `via` clause binds a `requires` or `provides` declaration to a named channel. Components that don't bind to a channel have unbound interface declarations, which are visible at the enclosing scope boundary.
+
 ### System
 
-A system groups components (or sub-systems) that work toward a shared goal. Systems may contain components and other systems, but components may not contain systems.
+A system groups components (or sub-systems) that work toward a shared goal. Systems declare **channels** that wire their members together without naming specific pairs. Systems may contain components and other systems, but components may not contain systems.
 
 ```
 system ECommerce {
     title = "E-Commerce Platform"
     description = "Customer-facing online store."
 
-    component OrderService { ... }
-    component PaymentGateway { ... }
-    component InventoryManager { ... }
+    channel payment: PaymentRequest {
+        protocol = "gRPC"
+        async = true
+    }
+    channel inventory: InventoryCheck {
+        protocol = "HTTP"
+    }
 
-    connect OrderService -> PaymentGateway by PaymentRequest
-    connect OrderService -> InventoryManager by InventoryCheck
+    component OrderService {
+        requires PaymentRequest via payment
+        requires InventoryCheck via inventory
+        provides OrderConfirmation
+    }
+
+    component PaymentGateway {
+        provides PaymentRequest via payment
+    }
+
+    component InventoryManager {
+        requires InventoryCheck via inventory
+        provides InventoryStatus
+    }
 }
 ```
 
@@ -204,10 +217,15 @@ Systems can nest other systems for large-scale decomposition:
 system Enterprise {
     title = "Enterprise Landscape"
 
-    system ECommerce { ... }
-    system Warehouse { ... }
+    channel inventory: InventorySync
 
-    connect ECommerce -> Warehouse by InventorySync
+    system ECommerce {
+        provides InventorySync via inventory
+    }
+
+    system Warehouse {
+        requires InventorySync via inventory
+    }
 }
 ```
 
@@ -225,11 +243,23 @@ user Customer {
 }
 ```
 
-Users are leaf nodes — they cannot contain components or sub-users. A user participates in connections like any other entity:
+Users are leaf nodes — they cannot contain components or sub-users. A user participates in channels like any other entity:
 
 ```
-connect Customer -> OrderService by OrderRequest
-connect OrderService -> Customer by OrderConfirmation
+system ECommerce {
+    channel order_in: OrderRequest
+    channel order_out: OrderConfirmation
+
+    user Customer {
+        provides OrderRequest via order_in
+        requires OrderConfirmation via order_out
+    }
+
+    component OrderService {
+        requires OrderRequest via order_in
+        provides OrderConfirmation via order_out
+    }
+}
 ```
 
 ### External Actors
@@ -251,145 +281,62 @@ external user Admin {
 
 External entities appear in diagrams with distinct styling. They cannot be further decomposed (they are opaque).
 
-## Ports
+## Channels
 
-Every `requires` and `provides` declaration on a component or user defines a **port** — a named connection point for a specific interface use. Ports are the targets that `connect` statements wire together.
+A **channel** is a named conduit that carries a specific interface within a system or component scope. Channels decouple providers from requirers: each component binds to a channel by name without knowing who else is bound to it.
 
-### Port names
+### Channel declaration
 
-By default a port's name is the interface name:
-
-```
-component OrderService {
-    requires PaymentRequest    // port named "PaymentRequest"
-    provides OrderConfirmation // port named "OrderConfirmation"
-}
-```
-
-An explicit name is assigned with the `as` keyword:
+Channels are declared inside a system or component body:
 
 ```
-component OrderService {
-    requires InventoryCheck as primary_inventory
-    requires InventoryCheck as backup_inventory
-    provides OrderConfirmation
-}
-```
-
-A port name is **required** when a component declares two or more ports for the same interface in the same direction. When the interface appears only once in a given direction, naming is optional but encouraged whenever the port has a meaningful semantic role:
-
-```
-component Filter {
-    requires DataStream as input
-    provides DataStream as output
-}
-```
-
-### Port multiplicity
-
-A port can accept more than one connection with a multiplicity annotation. Multiplicity always requires an explicit port name:
-
-| Annotation | Meaning                     |
-| ---------- | --------------------------- |
-| *(none)*   | exactly one connection      |
-| `[N]`      | exactly N connections       |
-| `[*]`      | zero or more connections    |
-| `[1..*]`   | one or more connections     |
-| `[M..N]`   | between M and N connections |
-
-```
-component Aggregator {
-    requires Result as workers [1..*]  // accepts results from one or more workers
-    provides Summary
-}
-```
-
-Multiple `connect` statements targeting the same multi-port are valid. The validator checks the actual connection count against the declared cardinality.
-
-### Boundary propagation with `expose`
-
-A nested component's port can be promoted to the enclosing component's boundary with the `expose` keyword. This makes the inner port reachable from outside without requiring callers to know about internal structure:
-
-```
-component OrderService {
-    component Validator {
-        requires OrderRequest as input
-        provides ValidationResult as output
-    }
-
-    component Processor {
-        requires ValidationResult as input
-        provides OrderConfirmation
-    }
-
-    connect Validator.output -> Processor.input
-
-    expose Validator.input             // OrderService now requires OrderRequest
-    expose Processor.OrderConfirmation // OrderService now provides OrderConfirmation
-}
-```
-
-The exposed port retains its original name on the enclosing boundary. An alias can be assigned with `as`:
-
-```
-expose Validator.input as request
-```
-
-`expose` propagates one level at a time. To surface a port through multiple nesting levels, each intermediate component must declare its own `expose`.
-
-Direct `connect` from an outer scope into a nested component is not allowed. Use `expose` to make internal ports reachable at the enclosing boundary first.
-
-## Connections
-
-Connections are the data-flow edges of the architecture graph. A connection always links a **required** port on one side to a **provided** port on the other. The arrow `->` indicates the direction of the request (who initiates); data may flow in both directions as part of request/response.
-
-All connections are unidirectional. For bidirectional communication, use two separate connections.
-
-### Short form
-
-When each side has exactly one port for the given interface, the component names and the interface name are sufficient:
-
-```
-connect <source> -> <target> by <interface>
+channel <name>: <Interface> [@version] [{ attributes }]
 ```
 
 ```
-connect Customer    -> OrderService by OrderRequest
-connect ServiceA    -> ServiceB     by RequestToB
-connect ServiceB    -> ServiceA     by ResponseToA
-```
-
-### Long form
-
-When ports are named — because an interface appears more than once on a component, or for explicitness — reference port names directly. The interface is implied from the port and the `by` clause is omitted:
-
-```
-connect <source>.<port> -> <target>.<port>
-```
-
-```
-connect OrderService.primary_inventory -> PrimaryInventory.InventoryCheck
-connect OrderService.backup_inventory  -> BackupInventory.InventoryCheck
-connect Validator.output               -> Processor.input
-```
-
-Both forms are equivalent when the short form is unambiguous. The arrow direction (`->`) identifies which side is the providing port (left) and which is the requiring port (right), so a component that has both `requires X` and `provides X` for the same interface is still unambiguous.
-
-### Annotations
-
-Either form can carry a block of attributes. Each attribute must appear on its own line:
-
-```
-connect OrderService -> PaymentGateway by PaymentRequest {
+channel payment: PaymentRequest
+channel feed: DataFeed @v2 {
     protocol = "gRPC"
     async = true
-    description = "Initiates payment processing for confirmed orders."
+    description = "Asynchronous data feed channel."
 }
 ```
+
+Channel attributes (each on its own line):
+
+| Attribute     | Type    | Purpose                                    |
+| ------------- | ------- | ------------------------------------------ |
+| `protocol`    | string  | Transport protocol (e.g. `"gRPC"`, `"HTTP"`) |
+| `async`       | boolean | Whether the channel is asynchronous        |
+| `description` | string  | Human-readable explanation of the channel  |
+
+### Binding to a channel
+
+A `requires` or `provides` declaration binds to a channel with the `via` keyword:
+
+```
+requires <Interface> [@version] via <channel>
+provides <Interface> [@version] via <channel>
+```
+
+```
+component OrderService {
+    requires PaymentRequest via payment       // binds to the "payment" channel
+    requires InventoryCheck via inventory     // binds to the "inventory" channel
+    provides OrderConfirmation                // unbound — visible at the enclosing scope
+}
+```
+
+The `via` clause is optional. An unbound interface declaration is still valid — it represents an interface the entity exposes at its boundary for the enclosing scope to wire.
+
+The tooling validates that:
+- The channel name in `via` is declared in the same scope (system or component body).
+- The interface type of the binding matches the channel's declared interface type.
+- Channel names are unique within their scope.
 
 ### Encapsulation
 
-`connect` statements may only reference ports that are directly visible in the current scope — that is, ports belonging to direct children of the enclosing component or system. Connecting into a grandchild or deeper is not permitted; use `expose` to propagate the inner port to the enclosing boundary first.
+A channel declared inside a component is local to that component — it is not visible from outside. Components without `via` bindings expose their unbound `requires`/`provides` declarations at the enclosing boundary.
 
 ## Tags
 
@@ -433,11 +380,14 @@ component OrderService {
 }
 
 // file: systems/ecommerce.archml
-from interfaces/order import OrderRequest, OrderConfirmation
+from interfaces/order import OrderRequest, OrderConfirmation, PaymentRequest, InventoryCheck
 from components/order_service import OrderService
 
 system ECommerce {
     title = "E-Commerce Platform"
+
+    channel order_in: OrderRequest
+    channel order_out: OrderConfirmation
 
     use component OrderService
 }
@@ -584,28 +534,23 @@ component OrderService {
     title = "Order Service"
     description = "Accepts, validates, and processes customer orders."
 
+    channel validation: ValidationResult
+
     component Validator {
         title = "Order Validator"
 
-        requires OrderRequest as input
-        provides ValidationResult as output
+        requires OrderRequest
+        provides ValidationResult via validation
     }
 
     component Processor {
         title = "Order Processor"
 
-        requires ValidationResult as input
+        requires ValidationResult via validation
         requires PaymentRequest
         requires InventoryCheck
         provides OrderConfirmation
     }
-
-    connect Validator.output -> Processor.input
-
-    expose Validator.input             // requires OrderRequest
-    expose Processor.PaymentRequest    // requires PaymentRequest
-    expose Processor.InventoryCheck    // requires InventoryCheck
-    expose Processor.OrderConfirmation // provides OrderConfirmation
 }
 
 // file: systems/ecommerce.archml
@@ -629,33 +574,37 @@ external system StripeAPI {
 system ECommerce {
     title = "E-Commerce Platform"
 
+    channel order_in: OrderRequest
+    channel order_out: OrderConfirmation
+    channel payment: PaymentRequest {
+        protocol = "gRPC"
+        async = true
+        description = "Delegate payment processing."
+    }
+    channel inventory: InventoryCheck {
+        protocol = "HTTP"
+    }
+
+    user Customer {
+        provides OrderRequest via order_in
+        requires OrderConfirmation via order_out
+    }
+
     use component OrderService
 
     component PaymentGateway {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        requires PaymentRequest
+        requires PaymentRequest via payment
         provides PaymentResult
     }
 
     component InventoryManager {
         title = "Inventory Manager"
 
-        requires InventoryCheck
+        requires InventoryCheck via inventory
         provides InventoryStatus
-    }
-
-    connect Customer -> OrderService by OrderRequest
-    connect OrderService -> Customer by OrderConfirmation
-    connect OrderService -> PaymentGateway by PaymentRequest
-    connect OrderService -> InventoryManager by InventoryCheck {
-        protocol = "HTTP"
-    }
-    connect PaymentGateway -> StripeAPI by PaymentRequest {
-        protocol = "HTTP"
-        async = true
-        description = "Delegate payment processing to Stripe."
     }
 }
 ```
@@ -668,17 +617,15 @@ system ECommerce {
 | `component`     | Module with a clear responsibility; may nest sub-components.                                                       |
 | `user`          | Human actor (role or persona) that interacts with the system; a leaf node.                                         |
 | `interface`     | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc.                                    |
+| `channel`       | Named conduit that carries a specific interface within a system or component scope.                                 |
 | `type`          | Reusable data structure (used within interfaces).                                                                  |
 | `enum`          | Constrained set of named values.                                                                                   |
 | `field`         | Named, typed data element. Supports `description` and `schema` annotations.                                        |
 | `filetype`      | Annotation on a `File` field specifying its format.                                                                |
 | `schema`        | Free-text annotation describing expected content or format.                                                        |
-| `requires`      | Declares an interface port that an element consumes (listed before `provides`).                                    |
-| `provides`      | Declares an interface port that an element exposes.                                                                |
-| `as`            | Assigns a name to a port (`requires X as name`) or provides an alias in `expose` (`expose Sub.port as name`).     |
-| `expose`        | Promotes a nested component's port to the enclosing component's boundary (`expose Sub.port`).                      |
-| `connect`       | Wires a providing port to a requiring port. Short form: `connect A -> B by X`. Long form: `connect A.p -> B.p`.   |
-| `by`            | Specifies the interface in the short form of `connect` (`connect A -> B by Interface`).                            |
+| `requires`      | Declares an interface an element consumes (listed before `provides`).                                              |
+| `provides`      | Declares an interface an element exposes.                                                                          |
+| `via`           | Binds a `requires` or `provides` declaration to a named channel (`requires X via channel`).                        |
 | `from`          | Introduces the source path in an import statement (`from path import Name`).                                       |
 | `import`        | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`).              |
 | `use`           | Places an imported entity into a system or component (e.g., `use component X`).                                    |

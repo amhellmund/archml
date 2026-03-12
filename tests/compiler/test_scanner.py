@@ -82,8 +82,8 @@ class TestKeywords:
             ("schema", TokenType.SCHEMA),
             ("requires", TokenType.REQUIRES),
             ("provides", TokenType.PROVIDES),
-            ("connect", TokenType.CONNECT),
-            ("by", TokenType.BY),
+            ("channel", TokenType.CHANNEL),
+            ("via", TokenType.VIA),
             ("from", TokenType.FROM),
             ("import", TokenType.IMPORT),
             ("use", TokenType.USE),
@@ -178,23 +178,9 @@ class TestSymbols:
         assert tokens[0].type == expected_type
         assert tokens[0].value == source
 
-    def test_arrow_operator(self) -> None:
-        tokens = _tokens_no_eof("->")
-        assert len(tokens) == 1
-        assert tokens[0].type == TokenType.ARROW
-        assert tokens[0].value == "->"
-
-    def test_arrow_within_connect_statement(self) -> None:
-        types = _types("A -> B")
-        assert types == [TokenType.IDENTIFIER, TokenType.ARROW, TokenType.IDENTIFIER]
-
-    def test_dash_without_arrow_raises(self) -> None:
+    def test_dash_raises(self) -> None:
         with pytest.raises(LexerError):
             tokenize("-")
-
-    def test_dash_followed_by_non_arrow_raises(self) -> None:
-        with pytest.raises(LexerError):
-            tokenize("- ")
 
     def test_generic_type_angle_brackets(self) -> None:
         types = _types("List<T>")
@@ -578,12 +564,12 @@ class TestSourceLocations:
         assert tokens[0].line == 3
         assert tokens[0].column == 4
 
-    def test_arrow_start_position(self) -> None:
-        tokens = _tokens_no_eof("A -> B")
-        arrow = tokens[1]
-        assert arrow.type == TokenType.ARROW
-        assert arrow.line == 1
-        assert arrow.column == 3
+    def test_via_keyword_position(self) -> None:
+        tokens = _tokens_no_eof("requires X via ch")
+        via_tok = tokens[2]
+        assert via_tok.type == TokenType.VIA
+        assert via_tok.line == 1
+        assert via_tok.column == 12
 
     def test_string_start_position_is_at_opening_quote(self) -> None:
         tokens = _tokens_no_eof('x = "hello"')
@@ -739,15 +725,23 @@ class TestStructuralPatterns:
             TokenType.RANGLE,
         ]
 
-    def test_connect_statement(self) -> None:
-        source = "connect OrderService -> PaymentGateway by PaymentRequest"
+    def test_channel_declaration(self) -> None:
+        source = "channel payment: PaymentRequest"
         types = _types(source)
         assert types == [
-            TokenType.CONNECT,
+            TokenType.CHANNEL,
             TokenType.IDENTIFIER,
-            TokenType.ARROW,
+            TokenType.COLON,
             TokenType.IDENTIFIER,
-            TokenType.BY,
+        ]
+
+    def test_requires_via_declaration(self) -> None:
+        source = "requires PaymentRequest via payment"
+        types = _types(source)
+        assert types == [
+            TokenType.REQUIRES,
+            TokenType.IDENTIFIER,
+            TokenType.VIA,
             TokenType.IDENTIFIER,
         ]
 
@@ -840,20 +834,18 @@ class TestStructuralPatterns:
         types = _types(source)
         assert types == [TokenType.SCHEMA, TokenType.EQUALS, TokenType.STRING]
 
-    def test_connect_with_block_annotation(self) -> None:
+    def test_channel_with_block_annotation(self) -> None:
         source = """
-            connect A -> B by X {
+            channel payment: PaymentRequest {
                 protocol = "HTTP"
                 async = true
             }
         """
         types = _types(source)
         assert types == [
-            TokenType.CONNECT,
+            TokenType.CHANNEL,
             TokenType.IDENTIFIER,
-            TokenType.ARROW,
-            TokenType.IDENTIFIER,
-            TokenType.BY,
+            TokenType.COLON,
             TokenType.IDENTIFIER,
             TokenType.LBRACE,
             TokenType.IDENTIFIER,
@@ -954,27 +946,26 @@ class TestFullExample:
         assert "Order Creation Request" in string_values
         assert "Payload for submitting a new customer order." in string_values
 
-    def test_system_with_connections(self) -> None:
+    def test_system_with_channels(self) -> None:
         source = """
             system ECommerce {
                 title = "E-Commerce Platform"
 
+                channel payment: PaymentRequest
+
                 component PaymentGateway {
                     tags = ["critical", "pci-scope"]
-                    requires PaymentRequest
+                    requires PaymentRequest via payment
                     provides PaymentResult
                 }
-
-                connect OrderService -> PaymentGateway by PaymentRequest
             }
         """
         tokens = _tokens_no_eof(source)
         assert tokens[0].type == TokenType.SYSTEM
-        # Find the ARROW and BY tokens
-        arrow_tokens = [t for t in tokens if t.type == TokenType.ARROW]
-        by_tokens = [t for t in tokens if t.type == TokenType.BY]
-        assert len(arrow_tokens) == 1
-        assert len(by_tokens) == 1
+        channel_tokens = [t for t in tokens if t.type == TokenType.CHANNEL]
+        via_tokens = [t for t in tokens if t.type == TokenType.VIA]
+        assert len(channel_tokens) == 1
+        assert len(via_tokens) == 1
 
     def test_file_field_annotation(self) -> None:
         source = """

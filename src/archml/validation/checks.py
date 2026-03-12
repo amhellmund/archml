@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from archml.model.entities import ArchFile, Component, Connection, InterfaceRef, System, UserDef
+from archml.model.entities import ArchFile, Component, InterfaceRef, System, UserDef
 from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
 
 # ###############
@@ -69,25 +69,19 @@ def validate(arch_file: ArchFile) -> ValidationResult:
 
     Checks performed:
 
-    1. **Connection cycles** (error): Cycles in the directed connection graph
-       within any component or system scope are forbidden. A cycle such as
-       ``A -> B -> A`` indicates a circular data-flow dependency.
-
-    2. **Type definition cycles** (error): Recursive type or interface
+    1. **Type definition cycles** (error): Recursive type or interface
        definitions where a type ultimately references itself through a chain
        of ``NamedTypeRef`` fields are forbidden.
 
-    3. **Interface propagation** (error): If a system or component declares
+    2. **Interface propagation** (error): If a system or component declares
        an interface in its ``requires`` or ``provides``, at least one direct
        member (sub-component or sub-system) must declare the same interface.
        This ensures that upstream declarations are grounded in the hierarchy.
 
-    4. **Unconnected interfaces** (warning): For every member entity inside a
-       system or component, each ``requires`` interface must appear as the
-       target of a ``connect`` statement and each ``provides`` interface must
-       appear as the source of a ``connect`` statement within that same scope.
-       An interface that is declared but never connected indicates an
-       incomplete architecture.
+    3. **Unused channels** (warning): For every channel declared inside a
+       component or system scope, at least one direct member must bind to it
+       via a ``via`` reference.  A channel that nothing binds to indicates an
+       incomplete or dead architectural connection.
 
     Args:
         arch_file: The resolved ArchFile to validate. Qualified names should
@@ -101,10 +95,9 @@ def validate(arch_file: ArchFile) -> ValidationResult:
     warnings: list[ValidationWarning] = []
     errors: list[ValidationError] = []
 
-    errors.extend(_check_connection_cycles(arch_file))
     errors.extend(_check_type_cycles(arch_file))
     errors.extend(_check_interface_propagation(arch_file))
-    warnings.extend(_check_unconnected_interfaces(arch_file))
+    warnings.extend(_check_unused_channels(arch_file))
 
     return ValidationResult(warnings=warnings, errors=errors)
 
@@ -117,6 +110,27 @@ def validate(arch_file: ArchFile) -> ValidationResult:
 def _entity_label(name: str, qualified_name: str) -> str:
     """Return qualified_name if set, otherwise fall back to name."""
     return qualified_name if qualified_name else name
+
+
+def _collect_named_refs_from_type(type_ref: TypeRef) -> list[str]:
+    """Recursively collect all NamedTypeRef names reachable from a type reference."""
+    if isinstance(type_ref, NamedTypeRef):
+        return [type_ref.name]
+    if isinstance(type_ref, ListTypeRef):
+        return _collect_named_refs_from_type(type_ref.element_type)
+    if isinstance(type_ref, MapTypeRef):
+        return _collect_named_refs_from_type(type_ref.key_type) + _collect_named_refs_from_type(type_ref.value_type)
+    if isinstance(type_ref, OptionalTypeRef):
+        return _collect_named_refs_from_type(type_ref.inner_type)
+    return []
+
+
+def _collect_named_refs_from_fields(fields: list[FieldDef]) -> list[str]:
+    """Collect all NamedTypeRef names from a list of field definitions."""
+    result: list[str] = []
+    for f in fields:
+        result.extend(_collect_named_refs_from_type(f.type))
+    return result
 
 
 def _detect_cycle(graph: dict[str, list[str]]) -> list[str] | None:
@@ -161,64 +175,6 @@ def _detect_cycle(graph: dict[str, list[str]]) -> list[str] | None:
             if result is not None:
                 return result
     return None
-
-
-def _check_connection_cycles(arch_file: ArchFile) -> list[ValidationError]:
-    """Return errors for cycles in the directed connection graph of any scope."""
-    errors: list[ValidationError] = []
-
-    def _check_scope(connections: list[Connection], scope_label: str) -> None:
-        if not connections:
-            return
-        graph: dict[str, list[str]] = {}
-        for conn in connections:
-            graph.setdefault(conn.source.entity, []).append(conn.target.entity)
-        cycle = _detect_cycle(graph)
-        if cycle is not None:
-            cycle_str = " -> ".join(cycle)
-            errors.append(ValidationError(message=f"Connection cycle detected in '{scope_label}': {cycle_str}."))
-
-    def _process_component(component: Component) -> None:
-        label = _entity_label(component.name, component.qualified_name)
-        _check_scope(component.connections, label)
-        for sub in component.components:
-            _process_component(sub)
-
-    def _process_system(system: System) -> None:
-        label = _entity_label(system.name, system.qualified_name)
-        _check_scope(system.connections, label)
-        for sub in system.systems:
-            _process_system(sub)
-        for comp in system.components:
-            _process_component(comp)
-
-    for system in arch_file.systems:
-        _process_system(system)
-    for component in arch_file.components:
-        _process_component(component)
-
-    return errors
-
-
-def _collect_named_refs_from_type(type_ref: TypeRef) -> list[str]:
-    """Recursively collect all NamedTypeRef names reachable from a type reference."""
-    if isinstance(type_ref, NamedTypeRef):
-        return [type_ref.name]
-    if isinstance(type_ref, ListTypeRef):
-        return _collect_named_refs_from_type(type_ref.element_type)
-    if isinstance(type_ref, MapTypeRef):
-        return _collect_named_refs_from_type(type_ref.key_type) + _collect_named_refs_from_type(type_ref.value_type)
-    if isinstance(type_ref, OptionalTypeRef):
-        return _collect_named_refs_from_type(type_ref.inner_type)
-    return []
-
-
-def _collect_named_refs_from_fields(fields: list[FieldDef]) -> list[str]:
-    """Collect all NamedTypeRef names from a list of field definitions."""
-    result: list[str] = []
-    for f in fields:
-        result.extend(_collect_named_refs_from_type(f.type))
-    return result
 
 
 def _check_type_cycles(arch_file: ArchFile) -> list[ValidationError]:
@@ -319,78 +275,65 @@ def _check_interface_propagation(arch_file: ArchFile) -> list[ValidationError]:
     return errors
 
 
-def _iface_display(ref: InterfaceRef) -> str:
-    """Return a human-readable name for an interface reference, including version if set."""
-    return f"{ref.name}@{ref.version}" if ref.version else ref.name
+def _collect_via_names(members: list[Component | System | UserDef]) -> set[str]:
+    """Collect all ``via`` channel names referenced in any member's requires/provides."""
+    result: set[str] = set()
+    for m in members:
+        for ref in m.requires:
+            if ref.via is not None:
+                result.add(ref.via)
+        for ref in m.provides:
+            if ref.via is not None:
+                result.add(ref.via)
+    return result
 
 
-def _check_unconnected_interfaces(arch_file: ArchFile) -> list[ValidationWarning]:
-    """Return warnings for requires/provides not covered by any connect statement.
+def _check_unused_channels(arch_file: ArchFile) -> list[ValidationWarning]:
+    """Return warnings for channels in a scope that no sub-entity binds to.
 
-    For every member of a component or system scope, each declared
-    ``requires`` interface must appear as a connection source and each
-    ``provides`` interface must appear as a connection target within that
-    scope.  Leaf containers (those with no members) are not checked.
+    For every channel declared inside a component or system scope, at least
+    one direct member must reference the channel via a ``via`` clause on a
+    ``requires`` or ``provides`` declaration.  A channel that nothing binds
+    to indicates an incomplete architectural connection.
+
+    Scopes with no members (leaf entities) are not checked.
     """
     warnings: list[ValidationWarning] = []
 
-    def _check_scope(
-        members: list[Component | System | UserDef],
-        connections: list[Connection],
-        container_label: str,
-    ) -> None:
-        connected_as_source: set[tuple[str, tuple[str, str | None]]] = {
-            (conn.source.entity, _iface_key(conn.interface)) for conn in connections
-        }
-        connected_as_target: set[tuple[str, tuple[str, str | None]]] = {
-            (conn.target.entity, _iface_key(conn.interface)) for conn in connections
-        }
-        for member in members:
-            member_label = _entity_label(member.name, member.qualified_name)
-            for ref in member.requires:
-                if (member.name, _iface_key(ref)) not in connected_as_target:
-                    warnings.append(
-                        ValidationWarning(
-                            message=(
-                                f"'{member_label}' requires interface '{_iface_display(ref)}' "
-                                f"but has no connect as target in '{container_label}'."
-                            )
-                        )
-                    )
-            for ref in member.provides:
-                if (member.name, _iface_key(ref)) not in connected_as_source:
-                    warnings.append(
-                        ValidationWarning(
-                            message=(
-                                f"'{member_label}' provides interface '{_iface_display(ref)}' "
-                                f"but has no connect as source in '{container_label}'."
-                            )
-                        )
-                    )
-
-    def _process_component(comp: Component) -> None:
-        if comp.components:
+    def _check_component_channels(comp: Component) -> None:
+        if comp.channels and comp.components:
+            via_names = _collect_via_names(list(comp.components))
             label = _entity_label(comp.name, comp.qualified_name)
-            sub_members: list[Component | System | UserDef] = list(comp.components)
-            _check_scope(sub_members, comp.connections, label)
-            for sub in comp.components:
-                _process_component(sub)
+            for ch in comp.channels:
+                if ch.name not in via_names:
+                    warnings.append(
+                        ValidationWarning(
+                            message=f"Channel '{ch.name}' in '{label}' is not bound by any sub-component."
+                        )
+                    )
+        for sub in comp.components:
+            _check_component_channels(sub)
 
-    def _process_system(system: System) -> None:
+    def _check_system_channels(system: System) -> None:
         all_members: list[Component | System | UserDef] = (
             list(system.components) + list(system.systems) + list(system.users)
         )
-        if all_members:
+        if system.channels and all_members:
+            via_names = _collect_via_names(all_members)
             label = _entity_label(system.name, system.qualified_name)
-            _check_scope(all_members, system.connections, label)
+            for ch in system.channels:
+                if ch.name not in via_names:
+                    warnings.append(
+                        ValidationWarning(message=f"Channel '{ch.name}' in '{label}' is not bound by any member.")
+                    )
         for sub in system.systems:
-            _process_system(sub)
+            _check_system_channels(sub)
         for comp in system.components:
-            _process_component(comp)
+            _check_component_channels(comp)
 
     for system in arch_file.systems:
-        _process_system(system)
+        _check_system_channels(system)
     for comp in arch_file.components:
-        _process_component(comp)
+        _check_component_channels(comp)
 
     return warnings

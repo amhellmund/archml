@@ -22,17 +22,18 @@ system ECommerce {
 
     use component OrderService
 
+    channel payment: PaymentRequest
+    channel stripe: PaymentRequest {
+        protocol = "HTTP"
+        async = true
+    }
+
     component PaymentGateway {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        requires PaymentRequest
+        requires PaymentRequest via payment
         provides PaymentResult
-    }
-
-    connect OrderService -> PaymentGateway by PaymentRequest
-    connect PaymentGateway -> StripeAPI by PaymentRequest {
-        protocol = "HTTP"
-        async = true
+        requires PaymentRequest via stripe
     }
 }

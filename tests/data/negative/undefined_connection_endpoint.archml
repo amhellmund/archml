@@ -1,7 +1,7 @@
-// Negative: connection endpoints reference non-existent members
+// Negative: via references point to non-existent channels
 // Expected errors:
-//   system 'Pipeline': connection source 'GhostProducer' is not a known member entity
-//   component 'Router': connection target 'GhostOutput' is not a known member entity
+//   component 'Processor': via binding 'ghost_ch' refers to unknown channel
+//   component 'Worker': via binding 'missing_ch' refers to unknown channel
 
 interface DataFeed {
     field payload: String
@@ -12,19 +12,17 @@ interface Signal {
 }
 
 system Pipeline {
-    component Consumer {
-        requires DataFeed
-    }
+    channel data_in: DataFeed
 
-    // GhostProducer is not defined as a member
-    connect GhostProducer -> Consumer by DataFeed
+    component Consumer {
+        requires DataFeed via ghost_ch
+    }
 }
 
 component Router {
-    component Input {
-        provides Signal
-    }
+    channel signal_ch: Signal
 
-    // GhostOutput is not defined as a sub-component
-    connect Input -> GhostOutput by Signal
+    component Input {
+        provides Signal via missing_ch
+    }
 }

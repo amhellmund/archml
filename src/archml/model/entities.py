@@ -16,10 +16,11 @@ from archml.model.types import FieldDef
 
 
 class InterfaceRef(BaseModel):
-    """A reference to an interface by name, optionally pinned to a version."""
+    """A reference to an interface by name, optionally pinned to a version and bound to a channel."""
 
     name: str
     version: str | None = None
+    via: str | None = None
 
 
 class EnumDef(BaseModel):
@@ -54,17 +55,14 @@ class InterfaceDef(BaseModel):
     qualified_name: str = ""
 
 
-class ConnectionEndpoint(BaseModel):
-    """One end of a connection: a named entity."""
+class ChannelDef(BaseModel):
+    """A named conduit that carries a specific interface within a system or component scope.
 
-    entity: str
+    Channels decouple providers from requirers: components bind to a channel
+    by name rather than referencing each other directly.
+    """
 
-
-class Connection(BaseModel):
-    """A directed data-flow edge linking a required interface to a provided one."""
-
-    source: ConnectionEndpoint
-    target: ConnectionEndpoint
+    name: str
     interface: InterfaceRef
     protocol: str | None = None
     is_async: bool = False
@@ -75,7 +73,7 @@ class UserDef(BaseModel):
     """A human actor (role or persona) that interacts with the system.
 
     Users are leaf nodes: they declare required and provided interfaces but
-    cannot contain sub-entities or connections.
+    cannot contain sub-entities or channels.
     """
 
     name: str
@@ -89,7 +87,7 @@ class UserDef(BaseModel):
 
 
 class Component(BaseModel):
-    """A module with declared interface ports and optional nested sub-components."""
+    """A module with declared interface bindings and optional nested sub-components."""
 
     name: str
     title: str | None = None
@@ -97,8 +95,8 @@ class Component(BaseModel):
     tags: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
+    channels: list[ChannelDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
-    connections: list[Connection] = _Field(default_factory=list)
     is_external: bool = False
     qualified_name: str = ""
 
@@ -112,10 +110,10 @@ class System(BaseModel):
     tags: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
+    channels: list[ChannelDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)
     users: list[UserDef] = _Field(default_factory=list)
-    connections: list[Connection] = _Field(default_factory=list)
     is_external: bool = False
     qualified_name: str = ""
 

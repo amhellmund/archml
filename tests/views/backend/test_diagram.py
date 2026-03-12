@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from archml.model.entities import Component, Connection, ConnectionEndpoint, InterfaceRef, System
+from archml.model.entities import ChannelDef, Component, InterfaceRef, System
 from archml.views.backend.diagram import render_diagram
 from archml.views.placement import compute_layout
 from archml.views.topology import build_viz_diagram
@@ -20,16 +20,8 @@ from archml.views.topology import build_viz_diagram
 _SVG_NS = "http://www.w3.org/2000/svg"
 
 
-def _iref(name: str, version: str | None = None) -> InterfaceRef:
-    return InterfaceRef(name=name, version=version)
-
-
-def _conn(source: str, target: str, interface: str) -> Connection:
-    return Connection(
-        source=ConnectionEndpoint(entity=source),
-        target=ConnectionEndpoint(entity=target),
-        interface=InterfaceRef(name=interface),
-    )
+def _iref(name: str, version: str | None = None, via: str | None = None) -> InterfaceRef:
+    return InterfaceRef(name=name, version=version, via=via)
 
 
 def _render_and_parse(entity: Component | System, tmp_path: Path, **kwargs: object) -> ET.Element:
@@ -237,13 +229,13 @@ def test_render_versioned_terminal_label(tmp_path: Path) -> None:
 
 
 def test_render_edge_label_present(tmp_path: Path) -> None:
-    """Connection interface name appears as a text label in the SVG."""
-    a = Component(name="A", requires=[_iref("PaymentRequest")])
-    b = Component(name="B", provides=[_iref("PaymentRequest")])
+    """Channel interface name appears as a text label in the SVG."""
+    a = Component(name="A", requires=[_iref("PaymentRequest", via="payment")])
+    b = Component(name="B", provides=[_iref("PaymentRequest", via="payment")])
     sys = System(
         name="Root",
+        channels=[ChannelDef(name="payment", interface=InterfaceRef(name="PaymentRequest"))],
         components=[a, b],
-        connections=[_conn("A", "B", "PaymentRequest")],
     )
     root = _render_and_parse(sys, tmp_path)
     assert "PaymentRequest" in _text_content(root)
@@ -269,12 +261,12 @@ def test_render_clip_paths_defined_in_defs(tmp_path: Path) -> None:
 
 def test_render_edge_polyline_present(tmp_path: Path) -> None:
     """An edge between two children produces at least one ``<polyline>`` element."""
-    a = Component(name="A", requires=[_iref("IFace")])
-    b = Component(name="B", provides=[_iref("IFace")])
+    a = Component(name="A", requires=[_iref("IFace", via="ch")])
+    b = Component(name="B", provides=[_iref("IFace", via="ch")])
     sys = System(
         name="Root",
+        channels=[ChannelDef(name="ch", interface=InterfaceRef(name="IFace"))],
         components=[a, b],
-        connections=[_conn("A", "B", "IFace")],
     )
     root = _render_and_parse(sys, tmp_path)
     polylines = list(root.iter(f"{{{_SVG_NS}}}polyline"))
@@ -283,12 +275,12 @@ def test_render_edge_polyline_present(tmp_path: Path) -> None:
 
 def test_render_edge_has_explicit_arrowhead_polygon(tmp_path: Path) -> None:
     """An edge produces an explicit filled ``<polygon>`` arrowhead in the SVG."""
-    a = Component(name="A", requires=[_iref("IFace")])
-    b = Component(name="B", provides=[_iref("IFace")])
+    a = Component(name="A", requires=[_iref("IFace", via="ch")])
+    b = Component(name="B", provides=[_iref("IFace", via="ch")])
     sys = System(
         name="Root",
+        channels=[ChannelDef(name="ch", interface=InterfaceRef(name="IFace"))],
         components=[a, b],
-        connections=[_conn("A", "B", "IFace")],
     )
     root = _render_and_parse(sys, tmp_path)
     polygons = list(root.iter(f"{{{_SVG_NS}}}polygon"))
@@ -304,16 +296,14 @@ def test_render_edge_has_explicit_arrowhead_polygon(tmp_path: Path) -> None:
 
 
 def test_render_ecommerce_system(tmp_path: Path) -> None:
-    """Full integration: multi-component system with connections renders without error."""
+    """Full integration: multi-component system with channel renders without error."""
     sys = System(
         name="ECommerce",
+        channels=[ChannelDef(name="payment", interface=InterfaceRef(name="PaymentRequest"))],
         components=[
-            Component(name="OrderService", requires=[_iref("PaymentRequest")]),
-            Component(name="PaymentService", provides=[_iref("PaymentRequest")]),
+            Component(name="OrderService", requires=[_iref("PaymentRequest", via="payment")]),
+            Component(name="PaymentService", provides=[_iref("PaymentRequest", via="payment")]),
             Component(name="NotificationService", requires=[_iref("OrderRequest")]),
-        ],
-        connections=[
-            _conn("OrderService", "PaymentService", "PaymentRequest"),
         ],
     )
     root = _render_and_parse(sys, tmp_path)

@@ -9,9 +9,8 @@ Converts a token stream produced by the scanner into an ArchFile semantic model.
 from archml.compiler.scanner import Token, TokenType, tokenize
 from archml.model.entities import (
     ArchFile,
+    ChannelDef,
     Component,
-    Connection,
-    ConnectionEndpoint,
     EnumDef,
     ImportDeclaration,
     InterfaceDef,
@@ -79,6 +78,7 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.COMPONENT,
         TokenType.USER,
         TokenType.INTERFACE,
+        TokenType.CHANNEL,
         TokenType.TYPE,
         TokenType.ENUM,
         TokenType.FIELD,
@@ -86,8 +86,7 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.SCHEMA,
         TokenType.REQUIRES,
         TokenType.PROVIDES,
-        TokenType.CONNECT,
-        TokenType.BY,
+        TokenType.VIA,
         TokenType.FROM,
         TokenType.IMPORT,
         TokenType.USE,
@@ -174,7 +173,7 @@ class _Parser:
         """Consume the current token as a name.
 
         Accepts identifiers and keywords used in name positions (e.g. a field
-        named 'by').  Raises ParseError for structural tokens and EOF.
+        named 'via').  Raises ParseError for structural tokens and EOF.
         """
         tok = self._current()
         if tok.type != TokenType.IDENTIFIER and tok.type not in _KEYWORD_TYPES:
@@ -396,6 +395,8 @@ class _Parser:
                 comp.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 comp.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
+            elif self._check(TokenType.CHANNEL):
+                comp.channels.append(self._parse_channel())
             elif self._check(TokenType.COMPONENT):
                 comp.components.append(self._parse_component(is_external=False))
             elif self._check(TokenType.EXTERNAL):
@@ -409,8 +410,6 @@ class _Parser:
                         inner.line,
                         inner.column,
                     )
-            elif self._check(TokenType.CONNECT):
-                comp.connections.append(self._parse_connection())
             else:
                 tok = self._current()
                 raise ParseError(
@@ -442,6 +441,8 @@ class _Parser:
                 system.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 system.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
+            elif self._check(TokenType.CHANNEL):
+                system.channels.append(self._parse_channel())
             elif self._check(TokenType.COMPONENT):
                 system.components.append(self._parse_component(is_external=False))
             elif self._check(TokenType.SYSTEM):
@@ -466,8 +467,6 @@ class _Parser:
                     )
             elif self._check(TokenType.USE):
                 self._parse_use_statement(system)
-            elif self._check(TokenType.CONNECT):
-                system.connections.append(self._parse_connection())
             else:
                 tok = self._current()
                 raise ParseError(
@@ -513,7 +512,7 @@ class _Parser:
         """Parse: [external] user <Name> { [attrs] (requires|provides)* }
 
         Users are leaf nodes: they support title, description, tags, requires,
-        and provides, but no sub-entities or connections.
+        and provides, but no sub-entities or channels.
         """
         self._expect(TokenType.USER)
         name_tok = self._expect(TokenType.IDENTIFIER)
@@ -541,30 +540,28 @@ class _Parser:
         return user
 
     # ------------------------------------------------------------------
-    # Connection declarations
+    # Channel declarations
     # ------------------------------------------------------------------
 
-    def _parse_connection(self) -> Connection:
-        """Parse: connect <source> -> <target> by <interface> [@version] [{ ... }]
+    def _parse_channel(self) -> ChannelDef:
+        """Parse: channel <name>: <Interface> [@version] [{ attrs }]
 
-        Each attribute inside the annotation block must appear on its own line
-        (line number strictly greater than the opening brace or the previous
-        attribute's last token).
+        Attributes (each on its own line):
+            protocol = "..."
+            async = true|false
+            description = "..."
         """
-        self._expect(TokenType.CONNECT)
-        source_tok = self._expect(TokenType.IDENTIFIER)
-        self._expect(TokenType.ARROW)
-        target_tok = self._expect(TokenType.IDENTIFIER)
-        self._expect(TokenType.BY)
+        self._expect(TokenType.CHANNEL)
+        name_tok = self._expect(TokenType.IDENTIFIER)
+        self._expect(TokenType.COLON)
         iface_name_tok = self._expect(TokenType.IDENTIFIER)
         version: str | None = None
         if self._check(TokenType.AT):
             self._advance()
             ver_tok = self._expect(TokenType.IDENTIFIER)
             version = ver_tok.value
-        conn = Connection(
-            source=ConnectionEndpoint(entity=source_tok.value),
-            target=ConnectionEndpoint(entity=target_tok.value),
+        channel = ChannelDef(
+            name=name_tok.value,
             interface=InterfaceRef(name=iface_name_tok.value, version=version),
         )
         if self._check(TokenType.LBRACE):
@@ -574,38 +571,38 @@ class _Parser:
                 attr_tok = self._current()
                 if attr_tok.line <= last_attr_line:
                     raise ParseError(
-                        "Connection attributes must each be on a new line",
+                        "Channel attributes must each be on a new line",
                         attr_tok.line,
                         attr_tok.column,
                     )
-                self._parse_connection_attr(conn)
+                self._parse_channel_attr(channel)
                 last_attr_line = self._tokens[self._pos - 1].line
             self._expect(TokenType.RBRACE)
-        return conn
+        return channel
 
-    def _parse_connection_attr(self, conn: Connection) -> None:
-        """Parse a single attribute inside a connection annotation block."""
+    def _parse_channel_attr(self, channel: ChannelDef) -> None:
+        """Parse a single attribute inside a channel annotation block."""
         tok = self._current()
         if tok.type == TokenType.DESCRIPTION:
-            conn.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            channel.description = self._parse_string_attr(TokenType.DESCRIPTION)
         elif tok.type == TokenType.IDENTIFIER:
             attr_name = self._advance().value
             self._expect(TokenType.EQUALS)
             if attr_name == "protocol":
                 str_tok = self._expect(TokenType.STRING)
-                conn.protocol = str_tok.value
+                channel.protocol = str_tok.value
             elif attr_name == "async":
                 bool_tok = self._expect(TokenType.TRUE, TokenType.FALSE)
-                conn.is_async = bool_tok.type == TokenType.TRUE
+                channel.is_async = bool_tok.type == TokenType.TRUE
             else:
                 raise ParseError(
-                    f"Unknown connection attribute {attr_name!r}",
+                    f"Unknown channel attribute {attr_name!r}",
                     tok.line,
                     tok.column,
                 )
         else:
             raise ParseError(
-                f"Unexpected token {tok.value!r} in connection annotation block",
+                f"Unexpected token {tok.value!r} in channel annotation block",
                 tok.line,
                 tok.column,
             )
@@ -682,7 +679,7 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_interface_ref(self, keyword: TokenType) -> InterfaceRef:
-        """Parse: requires/provides <Name> [@version]"""
+        """Parse: requires/provides <Name> [@version] [via <channel>]"""
         self._expect(keyword)
         name_tok = self._expect(TokenType.IDENTIFIER)
         version: str | None = None
@@ -690,7 +687,12 @@ class _Parser:
             self._advance()
             ver_tok = self._expect(TokenType.IDENTIFIER)
             version = ver_tok.value
-        return InterfaceRef(name=name_tok.value, version=version)
+        via: str | None = None
+        if self._check(TokenType.VIA):
+            self._advance()  # consume 'via'
+            via_tok = self._expect(TokenType.IDENTIFIER)
+            via = via_tok.value
+        return InterfaceRef(name=name_tok.value, version=version, via=via)
 
     # ------------------------------------------------------------------
     # Common attribute parsers

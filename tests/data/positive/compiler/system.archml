@@ -6,10 +6,10 @@ from compiler/worker import TaskWorker, PriorityRouter
 system TaskProcessingSystem {
     use component TaskWorker
     use component PriorityRouter
+    channel task_req: TaskRequest
+
     component Dispatcher {
         requires TaskRequest
-        provides TaskRequest
+        provides TaskRequest via task_req
     }
-    connect Dispatcher -> PriorityRouter by TaskRequest
-    connect PriorityRouter -> TaskWorker by TaskRequest
 }

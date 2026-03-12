@@ -83,57 +83,57 @@ system ECommerce {
     title = "E-Commerce Platform"
     description = "Customer-facing online store."
 
+    // Channels decouple providers from requirers — no explicit wiring between pairs
+    channel order_in:   OrderRequest
+    channel order_out:  OrderConfirmation
+    channel payment:    PaymentRequest {
+        protocol = "gRPC"
+        async = true
+    }
+    channel inventory:  InventoryCheck {
+        protocol = "HTTP"
+    }
+
+    user Customer {
+        provides OrderRequest   via order_in
+        requires OrderConfirmation via order_out
+    }
+
     component OrderService {
         title = "Order Service"
         description = "Accepts, validates, and processes customer orders."
 
-        // Internal pipeline: Validator feeds into Processor
+        // Internal channel wires Validator to Processor without naming either
+        channel validation: ValidationResult
+
         component Validator {
-            requires OrderRequest as input
-            provides ValidationResult as output
+            requires OrderRequest
+            provides ValidationResult via validation
         }
 
         component Processor {
-            requires ValidationResult as input
+            requires ValidationResult via validation
             requires PaymentRequest
             requires InventoryCheck
             provides OrderConfirmation
         }
 
-        connect Validator.output -> Processor.input
-
-        // Promote inner ports to the OrderService boundary
-        expose Validator.input             // requires OrderRequest
-        expose Processor.PaymentRequest    // requires PaymentRequest
-        expose Processor.InventoryCheck    // requires InventoryCheck
-        expose Processor.OrderConfirmation // provides OrderConfirmation
+        // Unbound ports (OrderRequest, PaymentRequest, etc.) are visible at the boundary
     }
 
     component PaymentGateway {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        requires PaymentRequest
+        requires PaymentRequest via payment
         provides PaymentResult
     }
 
     component InventoryManager {
         title = "Inventory Manager"
 
-        requires InventoryCheck as requests [1..*]  // accepts requests from multiple sources
+        requires InventoryCheck via inventory
         provides InventoryStatus
-    }
-
-    // Short form: interface is unambiguous on both sides
-    connect Customer      -> OrderService     by OrderRequest
-    connect OrderService  -> Customer         by OrderConfirmation
-    connect OrderService  -> PaymentGateway   by PaymentRequest
-    connect OrderService  -> InventoryManager by InventoryCheck {
-        protocol = "HTTP"
-    }
-    connect PaymentGateway -> StripeAPI by PaymentRequest {
-        protocol = "HTTP"
-        async = true
     }
 }
 ```
@@ -142,25 +142,23 @@ Large architectures split naturally across files. A `from ... import` statement 
 
 ## Language at a Glance
 
-| Keyword                      | Purpose                                                                           |
-| ---------------------------- | --------------------------------------------------------------------------------- |
-| `system`                     | Group of components or sub-systems with a shared goal                             |
-| `component`                  | Module with a clear responsibility; may nest sub-components                       |
-| `user`                       | Human actor (role or persona) that interacts with the system                      |
-| `interface`                  | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
-| `type`                       | Reusable data structure (used within interfaces)                                  |
-| `enum`                       | Constrained set of named values                                                   |
-| `field`                      | Named, typed data element with optional `description` and `schema`                |
-| `requires` / `provides`      | Declare consumed and exposed interface ports on a component or user               |
-| `requires X as name`         | Named port — required when the same interface appears more than once              |
-| `requires X as name [1..*]`  | Multi-port with cardinality — for fan-in patterns; `[N]`, `[*]`, `[M..N]` also valid |
-| `expose Sub.port`            | Promote a nested component's port to the enclosing component's boundary           |
-| `connect A -> B by I`        | Short form: wire interface I between A and B (when I is unambiguous on both sides) |
-| `connect A.p -> B.p`         | Long form: wire named ports directly (no `by` needed)                             |
-| `external`                   | Marks a system, component, or user as outside the development boundary            |
-| `from … import`              | Bring specific definitions from another file into scope                           |
-| `use component X`            | Place an imported entity inside a system                                          |
-| `tags`                       | Arbitrary labels for filtering and view generation                                |
+| Keyword                   | Purpose                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `system`                  | Group of components or sub-systems with a shared goal                             |
+| `component`               | Module with a clear responsibility; may nest sub-components                       |
+| `user`                    | Human actor (role or persona) that interacts with the system                      |
+| `interface`               | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
+| `channel name: Interface` | Named conduit within a system or component scope; decouples providers from requirers |
+| `type`                    | Reusable data structure (used within interfaces)                                  |
+| `enum`                    | Constrained set of named values                                                   |
+| `field`                   | Named, typed data element with optional `description` and `schema`                |
+| `requires` / `provides`   | Declare consumed and exposed interfaces on a component, system, or user           |
+| `requires X via channel`  | Bind a `requires` declaration to a named channel                                  |
+| `provides X via channel`  | Bind a `provides` declaration to a named channel                                  |
+| `external`                | Marks a system, component, or user as outside the development boundary            |
+| `from … import`           | Bring specific definitions from another file into scope                           |
+| `use component X`         | Place an imported entity inside a system                                          |
+| `tags`                    | Arbitrary labels for filtering and view generation                                |
 
 Primitive types: `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
@@ -175,7 +173,7 @@ Delegates payment to PaymentGateway.
 """
 ```
 
-Enum values and connection block attributes each occupy their own line — no commas needed.
+Enum values and channel block attributes each occupy their own line — no commas needed.
 
 Full syntax reference: [docs/LANGUAGE_SYNTAX.md](docs/LANGUAGE_SYNTAX.md)
 
@@ -266,7 +264,7 @@ archml sync-remote
 
 ## Project Status
 
-ArchML is in early development. The functional architecture domain (systems, components, interfaces, connections) is implemented. Behavioral and deployment domains are planned.
+ArchML is in early development. The functional architecture domain (systems, components, interfaces, channels) is implemented. Behavioral and deployment domains are planned.
 
 See [docs/PROJECT_SCOPE.md](docs/PROJECT_SCOPE.md) for the full vision and roadmap.
 

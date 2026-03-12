@@ -11,9 +11,8 @@ from archml.compiler.artifact import deserialize, read_artifact, serialize, writ
 from archml.compiler.parser import parse
 from archml.model.entities import (
     ArchFile,
+    ChannelDef,
     Component,
-    Connection,
-    ConnectionEndpoint,
     EnumDef,
     ImportDeclaration,
     InterfaceDef,
@@ -267,16 +266,24 @@ class TestComponents:
         result = _roundtrip(af)
         assert result.components[0].components[0].name == "Child"
 
-    def test_connection_roundtrip(self) -> None:
+    def test_channel_roundtrip(self) -> None:
         af = ArchFile(
             components=[
                 Component(
                     name="Parent",
-                    components=[Component(name="A"), Component(name="B")],
-                    connections=[
-                        Connection(
-                            source=ConnectionEndpoint(entity="A"),
-                            target=ConnectionEndpoint(entity="B"),
+                    components=[
+                        Component(
+                            name="A",
+                            provides=[InterfaceRef(name="Signal", via="sig_ch")],
+                        ),
+                        Component(
+                            name="B",
+                            requires=[InterfaceRef(name="Signal", via="sig_ch")],
+                        ),
+                    ],
+                    channels=[
+                        ChannelDef(
+                            name="sig_ch",
                             interface=InterfaceRef(name="Signal"),
                             protocol="gRPC",
                             is_async=True,
@@ -287,13 +294,12 @@ class TestComponents:
             ]
         )
         result = _roundtrip(af)
-        conn = result.components[0].connections[0]
-        assert conn.source.entity == "A"
-        assert conn.target.entity == "B"
-        assert conn.interface.name == "Signal"
-        assert conn.protocol == "gRPC"
-        assert conn.is_async
-        assert conn.description == "Data flow."
+        ch = result.components[0].channels[0]
+        assert ch.name == "sig_ch"
+        assert ch.interface.name == "Signal"
+        assert ch.protocol == "gRPC"
+        assert ch.is_async
+        assert ch.description == "Data flow."
 
 
 class TestSystems:
