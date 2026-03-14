@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from archml.model.entities import ArchFile, Component, InterfaceRef, System, UserDef
+from archml.model.entities import ArchFile, Component, InterfaceRef, System
 from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
 
 # ###############
@@ -78,11 +78,6 @@ def validate(arch_file: ArchFile) -> ValidationResult:
        member (sub-component or sub-system) must declare the same interface.
        This ensures that upstream declarations are grounded in the hierarchy.
 
-    3. **Unused channels** (warning): For every channel declared inside a
-       component or system scope, at least one direct member must bind to it
-       via a ``via`` reference.  A channel that nothing binds to indicates an
-       incomplete or dead architectural connection.
-
     Args:
         arch_file: The resolved ArchFile to validate. Qualified names should
             be assigned prior to calling this function (e.g., via semantic
@@ -97,8 +92,6 @@ def validate(arch_file: ArchFile) -> ValidationResult:
 
     errors.extend(_check_type_cycles(arch_file))
     errors.extend(_check_interface_propagation(arch_file))
-    warnings.extend(_check_unused_channels(arch_file))
-
     return ValidationResult(warnings=warnings, errors=errors)
 
 
@@ -273,67 +266,3 @@ def _check_interface_propagation(arch_file: ArchFile) -> list[ValidationError]:
         _check_component(component)
 
     return errors
-
-
-def _collect_via_names(members: list[Component | System | UserDef]) -> set[str]:
-    """Collect all ``via`` channel names referenced in any member's requires/provides."""
-    result: set[str] = set()
-    for m in members:
-        for ref in m.requires:
-            if ref.via is not None:
-                result.add(ref.via)
-        for ref in m.provides:
-            if ref.via is not None:
-                result.add(ref.via)
-    return result
-
-
-def _check_unused_channels(arch_file: ArchFile) -> list[ValidationWarning]:
-    """Return warnings for channels in a scope that no sub-entity binds to.
-
-    For every channel declared inside a component or system scope, at least
-    one direct member must reference the channel via a ``via`` clause on a
-    ``requires`` or ``provides`` declaration.  A channel that nothing binds
-    to indicates an incomplete architectural connection.
-
-    Scopes with no members (leaf entities) are not checked.
-    """
-    warnings: list[ValidationWarning] = []
-
-    def _check_component_channels(comp: Component) -> None:
-        if comp.channels and comp.components:
-            via_names = _collect_via_names(list(comp.components))
-            label = _entity_label(comp.name, comp.qualified_name)
-            for ch in comp.channels:
-                if ch.name not in via_names:
-                    warnings.append(
-                        ValidationWarning(
-                            message=f"Channel '{ch.name}' in '{label}' is not bound by any sub-component."
-                        )
-                    )
-        for sub in comp.components:
-            _check_component_channels(sub)
-
-    def _check_system_channels(system: System) -> None:
-        all_members: list[Component | System | UserDef] = (
-            list(system.components) + list(system.systems) + list(system.users)
-        )
-        if system.channels and all_members:
-            via_names = _collect_via_names(all_members)
-            label = _entity_label(system.name, system.qualified_name)
-            for ch in system.channels:
-                if ch.name not in via_names:
-                    warnings.append(
-                        ValidationWarning(message=f"Channel '{ch.name}' in '{label}' is not bound by any member.")
-                    )
-        for sub in system.systems:
-            _check_system_channels(sub)
-        for comp in system.components:
-            _check_component_channels(comp)
-
-    for system in arch_file.systems:
-        _check_system_channels(system)
-    for comp in arch_file.components:
-        _check_component_channels(comp)
-
-    return warnings

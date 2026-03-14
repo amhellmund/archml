@@ -1,4 +1,4 @@
-// Full system with nested components, external entity, and connections
+// Full system with nested components, external entity, and connect statements
 // Expected result: no semantic errors
 
 interface PaymentRequest {
@@ -46,28 +46,13 @@ system ECommerce {
     title = "E-Commerce Platform"
     description = "Customer-facing online store back-end."
 
-    channel payment: PaymentRequest {
-        protocol = "gRPC"
-        async = false
-        description = "Submit payment for confirmed order."
-    }
-    channel inventory: InventoryCheck {
-        protocol = "HTTP"
-        async = true
-    }
-    channel stripe_payment: PaymentRequest {
-        protocol = "HTTP"
-        async = true
-        description = "Delegate payment processing to Stripe."
-    }
-
     component OrderService {
         title = "Order Service"
         tags = ["core"]
 
         requires OrderRequest
-        requires PaymentRequest via payment
-        requires InventoryCheck via inventory
+        requires PaymentRequest
+        requires InventoryCheck
         provides OrderConfirmation
     }
 
@@ -75,15 +60,27 @@ system ECommerce {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        provides PaymentRequest via payment
-        requires PaymentRequest via stripe_payment
-        provides PaymentResult
+        provides PaymentRequest
+        requires PaymentResult
     }
 
     component InventoryManager {
         title = "Inventory Manager"
 
-        provides InventoryCheck via inventory
+        provides InventoryCheck
         provides InventoryStatus
     }
+
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
+        protocol = "gRPC"
+        async = false
+        description = "Submit payment for confirmed order."
+    }
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
+        protocol = "HTTP"
+        async = true
+    }
+
+    expose OrderService.OrderRequest
+    expose OrderService.OrderConfirmation
 }

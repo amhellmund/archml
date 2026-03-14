@@ -16,11 +16,16 @@ from archml.model.types import FieldDef
 
 
 class InterfaceRef(BaseModel):
-    """A reference to an interface by name, optionally pinned to a version and bound to a channel."""
+    """A reference to an interface by name, optionally pinned to a version.
+
+    The optional ``port_name`` holds the explicit port alias assigned with the
+    ``as`` keyword (e.g. ``requires PaymentRequest as pay_in``).  When absent
+    the effective port name defaults to the interface name.
+    """
 
     name: str
     version: str | None = None
-    via: str | None = None
+    port_name: str | None = None
 
 
 class EnumDef(BaseModel):
@@ -55,18 +60,47 @@ class InterfaceDef(BaseModel):
     qualified_name: str = ""
 
 
-class ChannelDef(BaseModel):
-    """A named conduit that carries a specific interface within a system or component scope.
+class ConnectDef(BaseModel):
+    """A ``connect`` statement wiring ports, optionally via a named channel.
 
-    Channels decouple providers from requirers: components bind to a channel
-    by name rather than referencing each other directly.
+    Each of the four syntactic forms is encoded as follows:
+
+    - Full chain ``connect A.p -> $ch -> B.q``:
+      ``src_entity="A"``, ``src_port="p"``, ``channel="ch"``,
+      ``dst_entity="B"``, ``dst_port="q"``
+    - One-sided src ``connect A.p -> $ch``:
+      ``src_entity="A"``, ``src_port="p"``, ``channel="ch"``,
+      ``dst_entity=None``, ``dst_port=None``
+    - One-sided dst ``connect $ch -> B.q``:
+      ``src_entity=None``, ``src_port=None``, ``channel="ch"``,
+      ``dst_entity="B"``, ``dst_port="q"``
+    - Direct ``connect A.p -> B.q``:
+      ``src_entity="A"``, ``src_port="p"``, ``channel=None``,
+      ``dst_entity="B"``, ``dst_port="q"``
+
+    For a port on the current scope's own boundary (no entity qualifier),
+    ``src_entity`` / ``dst_entity`` is ``None``.
     """
 
-    name: str
-    interface: InterfaceRef
+    src_entity: str | None = None
+    src_port: str | None = None
+    channel: str | None = None
+    dst_entity: str | None = None
+    dst_port: str | None = None
     protocol: str | None = None
     is_async: bool = False
     description: str | None = None
+
+
+class ExposeDef(BaseModel):
+    """An ``expose`` statement promoting a sub-entity's port to the enclosing boundary.
+
+    ``expose Entity.port_name [as new_name]``
+    """
+
+    entity: str
+    port: str
+    as_name: str | None = None
 
 
 class UserDef(BaseModel):
@@ -95,8 +129,9 @@ class Component(BaseModel):
     tags: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
-    channels: list[ChannelDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
+    connects: list[ConnectDef] = _Field(default_factory=list)
+    exposes: list[ExposeDef] = _Field(default_factory=list)
     is_external: bool = False
     qualified_name: str = ""
 
@@ -110,10 +145,11 @@ class System(BaseModel):
     tags: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
-    channels: list[ChannelDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)
     users: list[UserDef] = _Field(default_factory=list)
+    connects: list[ConnectDef] = _Field(default_factory=list)
+    exposes: list[ExposeDef] = _Field(default_factory=list)
     is_external: bool = False
     qualified_name: str = ""
 

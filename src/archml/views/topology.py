@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from archml.model.entities import Component, InterfaceRef, System, UserDef
+from archml.model.entities import Component, ConnectDef, InterfaceRef, System, UserDef
 
 # ###############
 # Public Interface
@@ -233,10 +233,9 @@ def build_viz_diagram(
     :class:`VizNode` instances in ``peripheral_nodes`` — one node per
     interface, positioned at the diagram boundary.
 
-    For each channel declared on the entity, components that bind to it via a
-    ``requires X via channel`` or ``provides X via channel`` declaration become
-    the endpoints of a :class:`VizEdge`.  All providers and requirers of the
-    same channel are cross-connected pairwise.
+    Each ``connect`` statement on the entity produces a :class:`VizEdge`
+    between the two wired ports.  One-sided connects (only a source or only
+    a destination) are skipped — they do not produce edges in the diagram.
 
     Args:
         entity: The focus component or system to visualize.
@@ -282,7 +281,7 @@ def build_viz_diagram(
     for ref in entity.provides:
         peripheral_nodes.append(_make_terminal_node(ref, "provides"))
 
-    # --- Sub-entity map for channel binding lookup ---
+    # --- Sub-entity map for connect statement port lookup ---
     all_sub_entity_map: dict[str, Component | System | UserDef] = {}
     for comp in entity.components:
         all_sub_entity_map[comp.name] = comp
@@ -292,53 +291,12 @@ def build_viz_diagram(
         for user in entity.users:
             all_sub_entity_map[user.name] = user
 
-    # --- Edges (derived from channel bindings) ---
+    # --- Edges (derived from connect statements) ---
     edges: list[VizEdge] = []
-    for channel in entity.channels:
-        providers: list[tuple[str, InterfaceRef]] = []
-        requirers: list[tuple[str, InterfaceRef]] = []
-        for sub_name, sub_entity in all_sub_entity_map.items():
-            for ref in sub_entity.provides:
-                if ref.via == channel.name:
-                    providers.append((sub_name, ref))
-            for ref in sub_entity.requires:
-                if ref.via == channel.name:
-                    requirers.append((sub_name, ref))
-
-        for req_name, req_ref in requirers:
-            for prov_name, prov_ref in providers:
-                req_node = child_node_map.get(req_name)
-                prov_node = child_node_map.get(prov_name)
-                if req_node is None or prov_node is None:
-                    continue
-
-                src_port_id = _find_port_id(req_node, "requires", req_ref)
-                tgt_port_id = _find_port_id(prov_node, "provides", prov_ref)
-
-                if src_port_id is None:
-                    p = _make_port(req_node.id, "requires", req_ref)
-                    req_node.ports.append(p)
-                    src_port_id = p.id
-
-                if tgt_port_id is None:
-                    p = _make_port(prov_node.id, "provides", prov_ref)
-                    prov_node.ports.append(p)
-                    tgt_port_id = p.id
-
-                label = _iref_label(channel.interface)
-                edges.append(
-                    VizEdge(
-                        id=f"edge.{src_port_id}--{tgt_port_id}",
-                        source_port_id=src_port_id,
-                        target_port_id=tgt_port_id,
-                        label=label,
-                        interface_name=channel.interface.name,
-                        interface_version=channel.interface.version,
-                        protocol=channel.protocol,
-                        is_async=channel.is_async,
-                        description=channel.description,
-                    )
-                )
+    for conn in entity.connects:
+        edge = _build_edge_from_connect(conn, child_node_map, all_sub_entity_map)
+        if edge is not None:
+            edges.append(edge)
 
     return VizDiagram(
         id=f"diagram.{root_id}",
@@ -480,6 +438,90 @@ def _find_port_id(
         if p.direction == direction and p.interface_name == ref.name and p.interface_version == ref.version:
             return p.id
     return None
+
+
+def _find_ref_by_port_name(
+    entity: Component | System | UserDef,
+    port_name: str,
+) -> tuple[Literal["requires", "provides"], InterfaceRef] | None:
+    """Find the direction and interface ref for a named port on *entity*.
+
+    The effective port name is ``ref.port_name`` when explicitly aliased with
+    ``as``, otherwise the interface name ``ref.name``.
+
+    Returns a ``(direction, ref)`` tuple, or ``None`` if not found.
+    """
+    for ref in entity.requires:
+        effective = ref.port_name if ref.port_name else ref.name
+        if effective == port_name:
+            return ("requires", ref)
+    for ref in entity.provides:
+        effective = ref.port_name if ref.port_name else ref.name
+        if effective == port_name:
+            return ("provides", ref)
+    return None
+
+
+def _build_edge_from_connect(
+    conn: ConnectDef,
+    child_node_map: dict[str, VizNode],
+    sub_entity_map: dict[str, Component | System | UserDef],
+) -> VizEdge | None:
+    """Attempt to build a :class:`VizEdge` from a :class:`ConnectDef`.
+
+    Returns ``None`` for one-sided connects (no src or no dst) and for
+    connects whose entity references cannot be resolved.
+    """
+    # One-sided connects don't produce edges.
+    if conn.src_entity is None or conn.src_port is None:
+        return None
+    if conn.dst_entity is None or conn.dst_port is None:
+        return None
+
+    src_sub = sub_entity_map.get(conn.src_entity)
+    dst_sub = sub_entity_map.get(conn.dst_entity)
+    if src_sub is None or dst_sub is None:
+        return None
+
+    src_result = _find_ref_by_port_name(src_sub, conn.src_port)
+    dst_result = _find_ref_by_port_name(dst_sub, conn.dst_port)
+    if src_result is None or dst_result is None:
+        return None
+
+    src_dir, src_ref = src_result
+    dst_dir, dst_ref = dst_result
+
+    src_node = child_node_map.get(conn.src_entity)
+    dst_node = child_node_map.get(conn.dst_entity)
+    if src_node is None or dst_node is None:
+        return None
+
+    src_port_id = _find_port_id(src_node, src_dir, src_ref)
+    dst_port_id = _find_port_id(dst_node, dst_dir, dst_ref)
+
+    if src_port_id is None:
+        p = _make_port(src_node.id, src_dir, src_ref)
+        src_node.ports.append(p)
+        src_port_id = p.id
+
+    if dst_port_id is None:
+        p = _make_port(dst_node.id, dst_dir, dst_ref)
+        dst_node.ports.append(p)
+        dst_port_id = p.id
+
+    # Use src_ref for the edge label (both sides should carry the same interface).
+    label = _iref_label(src_ref)
+    return VizEdge(
+        id=f"edge.{src_port_id}--{dst_port_id}",
+        source_port_id=src_port_id,
+        target_port_id=dst_port_id,
+        label=label,
+        interface_name=src_ref.name,
+        interface_version=src_ref.version,
+        protocol=conn.protocol,
+        is_async=conn.is_async,
+        description=conn.description,
+    )
 
 
 def _collect_boundary_ports(boundary: VizBoundary, result: dict[str, VizPort]) -> None:

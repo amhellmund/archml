@@ -7,8 +7,8 @@ from archml.compiler.parser import parse
 from archml.compiler.semantic_analysis import SemanticError, analyze
 from archml.model.entities import (
     ArchFile,
-    ChannelDef,
     Component,
+    ConnectDef,
     EnumDef,
     InterfaceDef,
     InterfaceRef,
@@ -113,41 +113,41 @@ interface Delivery {
 }
 """)
 
-    def test_system_with_components_and_channel(self) -> None:
+    def test_system_with_components_and_connect(self) -> None:
         _assert_clean("""
 interface DataFeed {
     field payload: String
 }
 
 system Pipeline {
-    channel feed: DataFeed
-
     component Producer {
-        provides DataFeed via feed
+        provides DataFeed
     }
 
     component Consumer {
-        requires DataFeed via feed
+        requires DataFeed
     }
+
+    connect Producer.DataFeed -> $feed -> Consumer.DataFeed
 }
 """)
 
-    def test_nested_components_with_channel(self) -> None:
+    def test_nested_components_with_connect(self) -> None:
         _assert_clean("""
 interface Signal {
     field value: Bool
 }
 
 component Router {
-    channel sig: Signal
-
     component Input {
-        provides Signal via sig
+        provides Signal
     }
 
     component Output {
-        requires Signal via sig
+        requires Signal
     }
+
+    connect Input.Signal -> $sig -> Output.Signal
 }
 """)
 
@@ -678,116 +678,79 @@ system Foo {
 # ###############
 
 
-class TestChannelValidation:
-    def test_valid_system_channel(self) -> None:
+class TestConnectValidation:
+    def test_valid_system_connect(self) -> None:
         _assert_clean("""
 interface DataFeed { field payload: String }
 system Pipeline {
-    channel feed: DataFeed
-    component Producer { provides DataFeed via feed }
-    component Consumer { requires DataFeed via feed }
+    component Producer { provides DataFeed }
+    component Consumer { requires DataFeed }
+    connect Producer.DataFeed -> $feed -> Consumer.DataFeed
 }
 """)
 
-    def test_valid_component_channel(self) -> None:
+    def test_valid_component_connect(self) -> None:
         _assert_clean("""
 interface Signal { field value: Int }
 component Processor {
-    channel sig: Signal
-    component Source { provides Signal via sig }
-    component Sink { requires Signal via sig }
+    component Source { provides Signal }
+    component Sink { requires Signal }
+    connect Source.Signal -> $sig -> Sink.Signal
 }
 """)
 
-    def test_channel_with_undefined_interface(self) -> None:
-        _assert_error(
-            """
-system Pipeline {
-    channel feed: UndefinedInterface
-}
-""",
-            "refers to unknown interface 'UndefinedInterface'",
-        )
-
-    def test_via_binding_to_unknown_channel(self) -> None:
+    def test_connect_with_unknown_src_entity(self) -> None:
         _assert_error(
             """
 interface DataFeed { field payload: String }
 system Pipeline {
-    component Producer { provides DataFeed via nonexistent }
+    component Consumer { requires DataFeed }
+    connect Ghost.DataFeed -> Consumer.DataFeed
 }
 """,
-            "channel 'nonexistent' is not defined in this scope",
+            "connect references unknown child entity 'Ghost'",
         )
 
-    def test_via_binding_in_component_to_unknown_channel(self) -> None:
+    def test_connect_with_unknown_dst_entity(self) -> None:
+        _assert_error(
+            """
+interface DataFeed { field payload: String }
+system Pipeline {
+    component Producer { provides DataFeed }
+    connect Producer.DataFeed -> Ghost.DataFeed
+}
+""",
+            "connect references unknown child entity 'Ghost'",
+        )
+
+    def test_expose_with_unknown_entity(self) -> None:
         _assert_error(
             """
 interface Signal { field v: Bool }
 component Router {
-    component Output { requires Signal via unknown_channel }
+    component Input { provides Signal }
+    expose Missing.Signal
 }
 """,
-            "channel 'unknown_channel' is not defined in this scope",
+            "expose references unknown child entity 'Missing'",
         )
 
-    def test_valid_via_binding_to_parent_system_channel(self) -> None:
-        _assert_clean("""
-interface DataFeed { field payload: String }
-system Pipeline {
-    channel feed: DataFeed
-    component Producer { provides DataFeed via feed }
-    component Consumer { requires DataFeed via feed }
-}
-""")
-
-    def test_channel_with_versioned_interface_ok(self) -> None:
-        _assert_clean("""
-interface Feed @v1 { field data: String }
-system Pipeline {
-    channel feed: Feed @v1
-    component A { provides Feed @v1 via feed }
-    component B { requires Feed @v1 via feed }
-}
-""")
-
-    def test_duplicate_channel_names_in_system(self) -> None:
-        _assert_error(
-            """
-interface X {}
-system S {
-    channel ch: X
-    channel ch: X
-}
-""",
-            "Duplicate channel name 'ch'",
-        )
-
-    def test_duplicate_channel_names_in_component(self) -> None:
-        _assert_error(
-            """
-interface X {}
-component C {
-    channel ch: X
-    channel ch: X
-}
-""",
-            "Duplicate channel name 'ch'",
-        )
-
-    def test_requires_without_via_is_valid(self) -> None:
-        _assert_clean("""
-interface DataFeed { field payload: String }
-component Producer { provides DataFeed }
-""")
-
-    def test_channel_in_component_scope(self) -> None:
+    def test_valid_expose(self) -> None:
         _assert_clean("""
 interface Signal { field value: Bool }
 component Router {
-    channel sig: Signal
-    component Input { provides Signal via sig }
-    component Output { requires Signal via sig }
+    component Input { provides Signal }
+    expose Input.Signal
+}
+""")
+
+    def test_direct_connect_no_channel(self) -> None:
+        _assert_clean("""
+interface DataFeed { field payload: String }
+system Pipeline {
+    component Producer { provides DataFeed }
+    component Consumer { requires DataFeed }
+    connect Producer.DataFeed -> Consumer.DataFeed
 }
 """)
 
@@ -953,16 +916,24 @@ class TestDirectModelConstruction:
         errors = analyze(arch_file)
         assert any("Duplicate enum name 'Status'" in e.message for e in errors)
 
-    def test_channel_with_known_interface_model(self) -> None:
+    def test_connect_with_known_interface_model(self) -> None:
         arch_file = ArchFile(
             interfaces=[InterfaceDef(name="Signal", version=None)],
             systems=[
                 System(
                     name="Sys",
-                    channels=[ChannelDef(name="sig", interface=InterfaceRef(name="Signal"))],
+                    connects=[
+                        ConnectDef(
+                            src_entity="A",
+                            src_port="Signal",
+                            channel="sig",
+                            dst_entity="B",
+                            dst_port="Signal",
+                        )
+                    ],
                     components=[
-                        Component(name="A", provides=[InterfaceRef(name="Signal", via="sig")]),
-                        Component(name="B", requires=[InterfaceRef(name="Signal", via="sig")]),
+                        Component(name="A", provides=[InterfaceRef(name="Signal")]),
+                        Component(name="B", requires=[InterfaceRef(name="Signal")]),
                     ],
                 )
             ],
@@ -1312,13 +1283,13 @@ user Customer {
             "name 'Sub' is used for both a user and a component or sub-system",
         )
 
-    def test_user_provides_with_via_in_system(self) -> None:
+    def test_user_provides_connected_in_system(self) -> None:
         _assert_clean("""
 interface OrderRequest {}
 system S {
-    channel orders: OrderRequest
-    user Customer { provides OrderRequest via orders }
-    component OrderService { requires OrderRequest via orders }
+    user Customer { provides OrderRequest }
+    component OrderService { requires OrderRequest }
+    connect Customer.OrderRequest -> $orders -> OrderService.OrderRequest
 }
 """)
 

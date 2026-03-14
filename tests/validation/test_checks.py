@@ -5,13 +5,11 @@
 
 from archml.model.entities import (
     ArchFile,
-    ChannelDef,
     Component,
     InterfaceDef,
     InterfaceRef,
     System,
     TypeDef,
-    UserDef,
 )
 from archml.model.types import (
     FieldDef,
@@ -32,14 +30,9 @@ from archml.validation.checks import (
 # ###############
 
 
-def _iref(name: str, version: str | None = None, via: str | None = None) -> InterfaceRef:
+def _iref(name: str, version: str | None = None) -> InterfaceRef:
     """Create an InterfaceRef."""
-    return InterfaceRef(name=name, version=version, via=via)
-
-
-def _channel(name: str, interface: str, version: str | None = None) -> ChannelDef:
-    """Create a ChannelDef."""
-    return ChannelDef(name=name, interface=InterfaceRef(name=interface, version=version))
+    return InterfaceRef(name=name, version=version)
 
 
 def _pfield(name: str) -> FieldDef:
@@ -431,144 +424,3 @@ class TestValidationResult:
         result = validate(ArchFile())
         assert result == ValidationResult()
         assert not result.has_errors
-
-
-# ###############
-# Unused Channels
-# ###############
-
-
-class TestUnusedChannels:
-    """Check: Channels declared in a scope must be bound by at least one member."""
-
-    # ---- No warning cases ----
-
-    def test_empty_archfile_no_warning(self) -> None:
-        _assert_no_warning(ArchFile())
-
-    def test_leaf_component_no_warning(self) -> None:
-        # A component with channels but no sub-components is a leaf — not checked.
-        arch = ArchFile(
-            components=[
-                Component(
-                    name="C",
-                    channels=[_channel("ch", "IFace")],
-                    requires=[_iref("IFace")],
-                )
-            ]
-        )
-        _assert_no_warning(arch)
-
-    def test_leaf_system_no_warning(self) -> None:
-        # A system with channels but no members is a leaf — not checked.
-        arch = ArchFile(systems=[System(name="S", channels=[_channel("ch", "I")])])
-        _assert_no_warning(arch)
-
-    def test_channel_bound_by_requires_no_warning(self) -> None:
-        comp = Component(name="C", requires=[_iref("I", via="ch")])
-        sys_ = System(name="S", channels=[_channel("ch", "I")], components=[comp])
-        arch = ArchFile(systems=[sys_])
-        _assert_no_warning(arch)
-
-    def test_channel_bound_by_provides_no_warning(self) -> None:
-        comp = Component(name="C", provides=[_iref("I", via="ch")])
-        sys_ = System(name="S", channels=[_channel("ch", "I")], components=[comp])
-        arch = ArchFile(systems=[sys_])
-        _assert_no_warning(arch)
-
-    def test_channel_bound_by_user_no_warning(self) -> None:
-        user = UserDef(name="Customer", provides=[_iref("OrderRequest", via="order_in")])
-        sys_ = System(name="S", channels=[_channel("order_in", "OrderRequest")], users=[user])
-        arch = ArchFile(systems=[sys_])
-        _assert_no_warning(arch)
-
-    def test_multiple_channels_all_bound_no_warning(self) -> None:
-        c1 = Component(name="C1", requires=[_iref("X", via="ch1")])
-        c2 = Component(name="C2", provides=[_iref("Y", via="ch2")])
-        sys_ = System(
-            name="S",
-            channels=[_channel("ch1", "X"), _channel("ch2", "Y")],
-            components=[c1, c2],
-        )
-        arch = ArchFile(systems=[sys_])
-        _assert_no_warning(arch)
-
-    def test_component_channel_bound_by_subcomponent_no_warning(self) -> None:
-        sub = Component(name="Sub", requires=[_iref("I", via="inner")])
-        outer = Component(
-            name="Outer",
-            channels=[_channel("inner", "I")],
-            components=[sub],
-        )
-        arch = ArchFile(components=[outer])
-        _assert_no_warning(arch)
-
-    # ---- Warning cases ----
-
-    def test_unbound_channel_in_system_warns(self) -> None:
-        comp = Component(name="C", requires=[_iref("I")])  # no via binding
-        sys_ = System(name="S", channels=[_channel("ch", "I")], components=[comp])
-        arch = ArchFile(systems=[sys_])
-        result = validate(arch)
-        msgs = _warnings(result)
-        assert any("'ch'" in m and "'S'" in m for m in msgs)
-
-    def test_warning_message_mentions_channel_and_scope(self) -> None:
-        comp = Component(name="C")
-        sys_ = System(name="MySystem", channels=[_channel("payment", "PaymentRequest")], components=[comp])
-        arch = ArchFile(systems=[sys_])
-        result = validate(arch)
-        msgs = _warnings(result)
-        assert any("'payment'" in m and "'MySystem'" in m for m in msgs)
-
-    def test_partially_bound_channel_second_unbound_warns(self) -> None:
-        # ch1 is bound, ch2 is not.
-        c1 = Component(name="C1", requires=[_iref("X", via="ch1")])
-        sys_ = System(
-            name="S",
-            channels=[_channel("ch1", "X"), _channel("ch2", "Y")],
-            components=[c1],
-        )
-        arch = ArchFile(systems=[sys_])
-        result = validate(arch)
-        msgs = _warnings(result)
-        assert any("'ch2'" in m for m in msgs)
-        assert not any("'ch1'" in m for m in msgs)
-
-    def test_unbound_channel_in_component_scope_warns(self) -> None:
-        sub = Component(name="Sub", requires=[_iref("I")])  # no via
-        outer = Component(
-            name="Outer",
-            channels=[_channel("inner", "I")],
-            components=[sub],
-        )
-        arch = ArchFile(components=[outer])
-        result = validate(arch)
-        msgs = _warnings(result)
-        assert any("'inner'" in m and "'Outer'" in m for m in msgs)
-
-    def test_nested_system_channels_checked_recursively(self) -> None:
-        inner_comp = Component(name="IC")  # no via binding
-        inner = System(
-            name="Inner",
-            channels=[_channel("ch", "I")],
-            components=[inner_comp],
-        )
-        outer = System(name="Outer", systems=[inner])
-        arch = ArchFile(systems=[outer])
-        result = validate(arch)
-        msgs = _warnings(result)
-        assert any("'ch'" in m and "'Inner'" in m for m in msgs)
-
-    def test_qualified_name_used_in_warning_when_set(self) -> None:
-        comp = Component(name="C")
-        sys_ = System(
-            name="S",
-            qualified_name="Root::S",
-            channels=[_channel("ch", "I")],
-            components=[comp],
-        )
-        arch = ArchFile(systems=[sys_])
-        result = validate(arch)
-        msgs = _warnings(result)
-        assert any("'Root::S'" in m for m in msgs)

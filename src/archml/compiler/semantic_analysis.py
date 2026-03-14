@@ -13,7 +13,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from archml.model.entities import ArchFile, ChannelDef, Component, EnumDef, InterfaceDef, InterfaceRef, System, UserDef
+from archml.model.entities import (
+    ArchFile,
+    Component,
+    ConnectDef,
+    EnumDef,
+    ExposeDef,
+    InterfaceDef,
+    InterfaceRef,
+    System,
+    UserDef,
+)
 from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
 
 # ###############
@@ -50,12 +60,12 @@ def analyze(
     - Interface references in ``requires`` / ``provides`` must resolve to a
       known interface (locally defined or imported); locally-defined
       versioned references are checked against the actual declared version.
-    - Channel interface references follow the same rules as requires/provides.
-    - ``via`` bindings in requires/provides must reference a channel declared
-      in the same scope (system or component body).
-    - Duplicate channel names within a system or component scope.
     - Duplicate member names within nested components and systems.
     - Name conflicts between components and sub-systems within a system.
+    - Connect statements: entity references in ``Entity.port`` must name
+      a direct child of the enclosing scope.
+    - Expose statements: ``Entity`` must name a direct child of the
+      enclosing scope.
     - Import entity validation: when *resolved_imports* is provided, each
       entity named in a ``from ... import`` statement must actually be
       defined at the top level of the resolved source file.
@@ -183,7 +193,6 @@ class _SemanticAnalyzer:
                     all_interface_plain_names,
                     local_interface_defs,
                     imported_names,
-                    channel_names=set(),
                 )
             )
 
@@ -199,7 +208,6 @@ class _SemanticAnalyzer:
         all_interface_names: set[str],
         local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
         imported_names: set[str],
-        parent_channel_names: set[str] | None = None,
     ) -> list[SemanticError]:
         errors: list[SemanticError] = []
         ctx = f"component '{comp.name}'"
@@ -212,32 +220,7 @@ class _SemanticAnalyzer:
             )
         )
 
-        # Check for duplicate channel names.
-        errors.extend(
-            _check_duplicate_names(
-                [ch.name for ch in comp.channels],
-                "Duplicate channel name '{}' in " + ctx,
-            )
-        )
-
-        own_channel_names = {ch.name for ch in comp.channels}
-        # The full channel scope available to this component's requires/provides:
-        # its own channels plus any channels from the enclosing scope.
-        available_channels = own_channel_names | (parent_channel_names or set())
-
-        # Check channel interface references.
-        for channel in comp.channels:
-            errors.extend(
-                _check_channel(
-                    ctx,
-                    channel,
-                    all_interface_names,
-                    local_interface_defs,
-                    imported_names,
-                )
-            )
-
-        # Check requires / provides interface references and via bindings.
+        # Check requires / provides interface references.
         for ref in comp.requires:
             errors.extend(
                 _check_interface_ref(
@@ -247,7 +230,6 @@ class _SemanticAnalyzer:
                     local_interface_defs,
                     imported_names,
                     "requires",
-                    available_channels,
                 )
             )
         for ref in comp.provides:
@@ -259,11 +241,17 @@ class _SemanticAnalyzer:
                     local_interface_defs,
                     imported_names,
                     "provides",
-                    available_channels,
                 )
             )
 
-        # Recurse into sub-components, passing this component's own channels.
+        # Check connect / expose statements.
+        child_names = {c.name for c in comp.components}
+        for conn in comp.connects:
+            errors.extend(_check_connect(ctx, conn, child_names))
+        for exp in comp.exposes:
+            errors.extend(_check_expose(ctx, exp, child_names))
+
+        # Recurse into sub-components.
         for sub in comp.components:
             errors.extend(
                 self._check_component(
@@ -272,7 +260,6 @@ class _SemanticAnalyzer:
                     all_interface_names,
                     local_interface_defs,
                     imported_names,
-                    parent_channel_names=own_channel_names,
                 )
             )
 
@@ -310,13 +297,6 @@ class _SemanticAnalyzer:
                 "Duplicate user name '{}' in " + ctx,
             )
         )
-        # Check for duplicate channel names.
-        errors.extend(
-            _check_duplicate_names(
-                [ch.name for ch in system.channels],
-                "Duplicate channel name '{}' in " + ctx,
-            )
-        )
 
         # Check for name conflicts between components, sub-systems, and users.
         comp_names = {c.name for c in system.components}
@@ -327,21 +307,7 @@ class _SemanticAnalyzer:
         for name in sorted((comp_names | sys_names) & user_names):
             errors.append(SemanticError(f"{ctx}: name '{name}' is used for both a user and a component or sub-system"))
 
-        channel_names = {ch.name for ch in system.channels}
-
-        # Check channel interface references.
-        for channel in system.channels:
-            errors.extend(
-                _check_channel(
-                    ctx,
-                    channel,
-                    all_interface_names,
-                    local_interface_defs,
-                    imported_names,
-                )
-            )
-
-        # Check requires / provides interface references and via bindings.
+        # Check requires / provides interface references.
         for ref in system.requires:
             errors.extend(
                 _check_interface_ref(
@@ -351,7 +317,6 @@ class _SemanticAnalyzer:
                     local_interface_defs,
                     imported_names,
                     "requires",
-                    channel_names,
                 )
             )
         for ref in system.provides:
@@ -363,21 +328,25 @@ class _SemanticAnalyzer:
                     local_interface_defs,
                     imported_names,
                     "provides",
-                    channel_names,
                 )
             )
 
-        # Recurse into children, passing the system's channel names so that
-        # inline sub-components and users can bind to them.
+        # Check connect / expose statements.
+        child_names = comp_names | sys_names | user_names
+        for conn in system.connects:
+            errors.extend(_check_connect(ctx, conn, child_names))
+        for exp in system.exposes:
+            errors.extend(_check_expose(ctx, exp, child_names))
+
+        # Recurse into children.
         for comp in system.components:
             errors.extend(
-                _check_component_in_system(
+                self._check_component(
                     comp,
                     all_type_names,
                     all_interface_names,
                     local_interface_defs,
                     imported_names,
-                    channel_names,
                 )
             )
         for sub_sys in system.systems:
@@ -397,7 +366,6 @@ class _SemanticAnalyzer:
                     all_interface_names,
                     local_interface_defs,
                     imported_names,
-                    channel_names,
                 )
             )
 
@@ -641,10 +609,8 @@ def _check_interface_ref(
     local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
     imported_names: set[str],
     keyword: str,
-    channel_names: set[str],
 ) -> list[SemanticError]:
-    """Check that an interface reference resolves to a known interface and that
-    any ``via`` binding refers to a channel declared in the current scope.
+    """Check that an interface reference resolves to a known interface.
 
     When the referenced interface is locally defined (not imported), a
     versioned reference is additionally checked against the declared version.
@@ -671,35 +637,32 @@ def _check_interface_ref(
             )
         )
 
-    # Check via binding when present.
-    if ref.via is not None and ref.via not in channel_names:
-        errors.append(
-            SemanticError(
-                f"{ctx}: '{keyword} {ref.name}{ver_str} via {ref.via}'"
-                f" — channel '{ref.via}' is not defined in this scope"
-            )
-        )
-
     return errors
 
 
-def _check_channel(
+def _check_connect(
     ctx: str,
-    channel: ChannelDef,
-    all_interface_names: set[str],
-    local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
-    imported_names: set[str],
+    conn: ConnectDef,
+    child_names: set[str],
 ) -> list[SemanticError]:
-    """Check that a channel's interface reference resolves to a known interface."""
-    return _check_interface_ref(
-        ctx,
-        channel.interface,
-        all_interface_names,
-        local_interface_defs,
-        imported_names,
-        f"channel '{channel.name}':",
-        channel_names=set(),  # channels themselves don't bind via other channels
-    )
+    """Check that entity references in a connect statement name direct children."""
+    errors: list[SemanticError] = []
+    if conn.src_entity is not None and conn.src_entity not in child_names:
+        errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{conn.src_entity}'"))
+    if conn.dst_entity is not None and conn.dst_entity not in child_names:
+        errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{conn.dst_entity}'"))
+    return errors
+
+
+def _check_expose(
+    ctx: str,
+    exp: ExposeDef,
+    child_names: set[str],
+) -> list[SemanticError]:
+    """Check that the entity in an expose statement names a direct child."""
+    if exp.entity not in child_names:
+        return [SemanticError(f"{ctx}: expose references unknown child entity '{exp.entity}'")]
+    return []
 
 
 def _check_user(
@@ -707,112 +670,16 @@ def _check_user(
     all_interface_names: set[str],
     local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
     imported_names: set[str],
-    channel_names: set[str],
 ) -> list[SemanticError]:
     """Check requires/provides interface references on a user entity."""
     errors: list[SemanticError] = []
     ctx = f"user '{user.name}'"
     for ref in user.requires:
         errors.extend(
-            _check_interface_ref(
-                ctx, ref, all_interface_names, local_interface_defs, imported_names, "requires", channel_names
-            )
+            _check_interface_ref(ctx, ref, all_interface_names, local_interface_defs, imported_names, "requires")
         )
     for ref in user.provides:
         errors.extend(
-            _check_interface_ref(
-                ctx, ref, all_interface_names, local_interface_defs, imported_names, "provides", channel_names
-            )
+            _check_interface_ref(ctx, ref, all_interface_names, local_interface_defs, imported_names, "provides")
         )
-    return errors
-
-
-def _check_component_in_system(
-    comp: Component,
-    all_type_names: set[str],
-    all_interface_names: set[str],
-    local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
-    imported_names: set[str],
-    parent_channel_names: set[str],
-) -> list[SemanticError]:
-    """Check a component that is declared inline within a system.
-
-    The component's own channels are checked first, then requires/provides
-    are validated against both own channels and the parent system's channels.
-    """
-    errors: list[SemanticError] = []
-    ctx = f"component '{comp.name}'"
-
-    # Check for duplicate sub-component names.
-    errors.extend(
-        _check_duplicate_names(
-            [c.name for c in comp.components],
-            "Duplicate sub-component name '{}' in " + ctx,
-        )
-    )
-
-    # Check for duplicate channel names.
-    errors.extend(
-        _check_duplicate_names(
-            [ch.name for ch in comp.channels],
-            "Duplicate channel name '{}' in " + ctx,
-        )
-    )
-
-    # The full channel scope available to this component's requires/provides
-    # is its own channels plus channels from the enclosing system.
-    own_channel_names = {ch.name for ch in comp.channels}
-    available_channels = own_channel_names | parent_channel_names
-
-    # Check channel interface references.
-    for channel in comp.channels:
-        errors.extend(
-            _check_channel(
-                ctx,
-                channel,
-                all_interface_names,
-                local_interface_defs,
-                imported_names,
-            )
-        )
-
-    # Check requires / provides with the combined channel scope.
-    for ref in comp.requires:
-        errors.extend(
-            _check_interface_ref(
-                ctx,
-                ref,
-                all_interface_names,
-                local_interface_defs,
-                imported_names,
-                "requires",
-                available_channels,
-            )
-        )
-    for ref in comp.provides:
-        errors.extend(
-            _check_interface_ref(
-                ctx,
-                ref,
-                all_interface_names,
-                local_interface_defs,
-                imported_names,
-                "provides",
-                available_channels,
-            )
-        )
-
-    # Recurse into sub-components using only the component's own channels.
-    for sub in comp.components:
-        errors.extend(
-            _check_component_in_system(
-                sub,
-                all_type_names,
-                all_interface_names,
-                local_interface_defs,
-                imported_names,
-                own_channel_names,
-            )
-        )
-
     return errors

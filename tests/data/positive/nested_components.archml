@@ -27,26 +27,26 @@ component OrderService {
     description = "Accepts, validates, and processes customer orders."
     tags = ["core", "stateful"]
 
-    requires OrderRequest
-    requires PaymentRequest
-    provides OrderConfirmation
-
-    channel validation: ValidationResult
-
     component Validator {
         title = "Order Validator"
         description = "Validates incoming order requests."
 
         requires OrderRequest
-        provides ValidationResult via validation
+        provides ValidationResult
     }
 
     component Processor {
         title = "Order Processor"
         description = "Processes validated orders and triggers payment."
 
-        requires ValidationResult via validation
+        requires ValidationResult
         requires PaymentRequest
         provides OrderConfirmation
     }
+
+    connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
+
+    expose Validator.OrderRequest
+    expose Processor.PaymentRequest
+    expose Processor.OrderConfirmation
 }

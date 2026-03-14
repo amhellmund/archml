@@ -5,8 +5,8 @@
 
 from archml.model import (
     ArchFile,
-    ChannelDef,
     Component,
+    ConnectDef,
     DirectoryTypeRef,
     EnumDef,
     FieldDef,
@@ -184,71 +184,92 @@ def test_external_component() -> None:
     assert ext.is_external
 
 
-def test_channel_definition() -> None:
-    """A ChannelDef is a named conduit carrying a specific interface."""
-    ch = ChannelDef(
-        name="payment",
-        interface=InterfaceRef(name="PaymentRequest"),
+def test_connect_definition() -> None:
+    """A ConnectDef wires two ports, optionally through a named channel."""
+    conn = ConnectDef(
+        src_entity="PaymentGateway",
+        src_port="PaymentRequest",
+        channel="payment",
+        dst_entity="OrderService",
+        dst_port="PaymentRequest",
         protocol="gRPC",
         is_async=True,
         description="Initiates payment processing.",
     )
-    assert ch.name == "payment"
-    assert ch.interface.name == "PaymentRequest"
-    assert ch.protocol == "gRPC"
-    assert ch.is_async
+    assert conn.src_entity == "PaymentGateway"
+    assert conn.src_port == "PaymentRequest"
+    assert conn.channel == "payment"
+    assert conn.dst_entity == "OrderService"
+    assert conn.protocol == "gRPC"
+    assert conn.is_async
 
 
-def test_interface_ref_with_via() -> None:
-    """An InterfaceRef can carry an optional via binding to a named channel."""
-    ref = InterfaceRef(name="PaymentRequest", via="payment")
+def test_interface_ref_with_port_name() -> None:
+    """An InterfaceRef can carry an explicit port alias assigned with 'as'."""
+    ref = InterfaceRef(name="PaymentRequest", port_name="pay_in")
     assert ref.name == "PaymentRequest"
-    assert ref.via == "payment"
+    assert ref.port_name == "pay_in"
 
 
 def test_nested_component() -> None:
-    """A Component can contain sub-components connected through channels."""
+    """A Component can contain sub-components connected through connect statements."""
     validator = Component(
         name="Validator",
         requires=[InterfaceRef(name="OrderRequest")],
-        provides=[InterfaceRef(name="ValidationResult", via="validation")],
+        provides=[InterfaceRef(name="ValidationResult")],
     )
     processor = Component(
         name="Processor",
-        requires=[InterfaceRef(name="ValidationResult", via="validation"), InterfaceRef(name="PaymentRequest")],
+        requires=[InterfaceRef(name="ValidationResult"), InterfaceRef(name="PaymentRequest")],
         provides=[InterfaceRef(name="OrderConfirmation")],
     )
     order_svc = Component(
         name="OrderService",
-        channels=[ChannelDef(name="validation", interface=InterfaceRef(name="ValidationResult"))],
+        connects=[
+            ConnectDef(
+                src_entity="Validator",
+                src_port="ValidationResult",
+                channel="validation",
+                dst_entity="Processor",
+                dst_port="ValidationResult",
+            )
+        ],
         components=[validator, processor],
     )
     assert len(order_svc.components) == 2
-    assert len(order_svc.channels) == 1
+    assert len(order_svc.connects) == 1
     assert order_svc.components[0].name == "Validator"
 
 
-def test_system_with_components_and_channels() -> None:
-    """A System groups components connected through named channels."""
+def test_system_with_components_and_connects() -> None:
+    """A System groups components wired through connect statements."""
     order_svc = Component(
         name="OrderService",
-        requires=[InterfaceRef(name="PaymentRequest", via="payment"), InterfaceRef(name="InventoryCheck")],
+        requires=[InterfaceRef(name="PaymentRequest"), InterfaceRef(name="InventoryCheck")],
         provides=[InterfaceRef(name="OrderConfirmation")],
     )
     payment_gw = Component(
         name="PaymentGateway",
         tags=["critical", "pci-scope"],
-        provides=[InterfaceRef(name="PaymentRequest", via="payment")],
+        provides=[InterfaceRef(name="PaymentRequest")],
     )
     ecommerce = System(
         name="ECommerce",
         title="E-Commerce Platform",
-        channels=[ChannelDef(name="payment", interface=InterfaceRef(name="PaymentRequest"))],
+        connects=[
+            ConnectDef(
+                src_entity="PaymentGateway",
+                src_port="PaymentRequest",
+                channel="payment",
+                dst_entity="OrderService",
+                dst_port="PaymentRequest",
+            )
+        ],
         components=[order_svc, payment_gw],
     )
     assert ecommerce.name == "ECommerce"
     assert len(ecommerce.components) == 2
-    assert len(ecommerce.channels) == 1
+    assert len(ecommerce.connects) == 1
     assert not ecommerce.is_external
 
 

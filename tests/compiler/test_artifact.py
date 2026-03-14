@@ -11,9 +11,10 @@ from archml.compiler.artifact import deserialize, read_artifact, serialize, writ
 from archml.compiler.parser import parse
 from archml.model.entities import (
     ArchFile,
-    ChannelDef,
     Component,
+    ConnectDef,
     EnumDef,
+    ExposeDef,
     ImportDeclaration,
     InterfaceDef,
     InterfaceRef,
@@ -266,7 +267,7 @@ class TestComponents:
         result = _roundtrip(af)
         assert result.components[0].components[0].name == "Child"
 
-    def test_channel_roundtrip(self) -> None:
+    def test_connect_roundtrip(self) -> None:
         af = ArchFile(
             components=[
                 Component(
@@ -274,32 +275,55 @@ class TestComponents:
                     components=[
                         Component(
                             name="A",
-                            provides=[InterfaceRef(name="Signal", via="sig_ch")],
+                            provides=[InterfaceRef(name="Signal")],
                         ),
                         Component(
                             name="B",
-                            requires=[InterfaceRef(name="Signal", via="sig_ch")],
+                            requires=[InterfaceRef(name="Signal")],
                         ),
                     ],
-                    channels=[
-                        ChannelDef(
-                            name="sig_ch",
-                            interface=InterfaceRef(name="Signal"),
+                    connects=[
+                        ConnectDef(
+                            src_entity="A",
+                            src_port="Signal",
+                            channel="sig_ch",
+                            dst_entity="B",
+                            dst_port="Signal",
                             protocol="gRPC",
                             is_async=True,
                             description="Data flow.",
                         )
                     ],
+                    exposes=[],
                 )
             ]
         )
         result = _roundtrip(af)
-        ch = result.components[0].channels[0]
-        assert ch.name == "sig_ch"
-        assert ch.interface.name == "Signal"
-        assert ch.protocol == "gRPC"
-        assert ch.is_async
-        assert ch.description == "Data flow."
+        conn = result.components[0].connects[0]
+        assert conn.src_entity == "A"
+        assert conn.src_port == "Signal"
+        assert conn.channel == "sig_ch"
+        assert conn.dst_entity == "B"
+        assert conn.dst_port == "Signal"
+        assert conn.protocol == "gRPC"
+        assert conn.is_async
+        assert conn.description == "Data flow."
+
+    def test_expose_roundtrip(self) -> None:
+        af = ArchFile(
+            components=[
+                Component(
+                    name="Parent",
+                    components=[Component(name="Inner", requires=[InterfaceRef(name="X")])],
+                    exposes=[ExposeDef(entity="Inner", port="X", as_name="x_port")],
+                )
+            ]
+        )
+        result = _roundtrip(af)
+        exp = result.components[0].exposes[0]
+        assert exp.entity == "Inner"
+        assert exp.port == "X"
+        assert exp.as_name == "x_port"
 
 
 class TestSystems:

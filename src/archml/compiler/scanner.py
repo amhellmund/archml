@@ -22,7 +22,8 @@ class TokenType(enum.Enum):
     COMPONENT = "component"
     USER = "user"
     INTERFACE = "interface"
-    CHANNEL = "channel"
+    CONNECT = "connect"
+    EXPOSE = "expose"
     TYPE = "type"
     ENUM = "enum"
     FIELD = "field"
@@ -30,7 +31,7 @@ class TokenType(enum.Enum):
     SCHEMA = "schema"
     REQUIRES = "requires"
     PROVIDES = "provides"
-    VIA = "via"
+    AS = "as"
     FROM = "from"
     IMPORT = "import"
     USE = "use"
@@ -53,6 +54,9 @@ class TokenType(enum.Enum):
     EQUALS = "="
     AT = "@"
     SLASH = "/"
+    ARROW = "->"
+    DOLLAR = "$"
+    DOT = "."
 
     # Literals
     STRING = "STRING"
@@ -124,7 +128,8 @@ _KEYWORDS: dict[str, TokenType] = {
     "component": TokenType.COMPONENT,
     "user": TokenType.USER,
     "interface": TokenType.INTERFACE,
-    "channel": TokenType.CHANNEL,
+    "connect": TokenType.CONNECT,
+    "expose": TokenType.EXPOSE,
     "type": TokenType.TYPE,
     "enum": TokenType.ENUM,
     "field": TokenType.FIELD,
@@ -132,7 +137,7 @@ _KEYWORDS: dict[str, TokenType] = {
     "schema": TokenType.SCHEMA,
     "requires": TokenType.REQUIRES,
     "provides": TokenType.PROVIDES,
-    "via": TokenType.VIA,
+    "as": TokenType.AS,
     "from": TokenType.FROM,
     "import": TokenType.IMPORT,
     "use": TokenType.USE,
@@ -156,6 +161,8 @@ _SINGLE_CHAR_TOKENS: dict[str, TokenType] = {
     "=": TokenType.EQUALS,
     "@": TokenType.AT,
     "/": TokenType.SLASH,
+    "$": TokenType.DOLLAR,
+    ".": TokenType.DOT,
 }
 
 
@@ -252,7 +259,11 @@ class _Lexer:
         line = self._line
         col = self._column
 
-        if ch in _SINGLE_CHAR_TOKENS:
+        if ch == "-" and self._peek() == ">":
+            self._advance()  # -
+            self._advance()  # >
+            self._tokens.append(Token(TokenType.ARROW, "->", line, col))
+        elif ch in _SINGLE_CHAR_TOKENS:
             self._advance()
             self._tokens.append(Token(_SINGLE_CHAR_TOKENS[ch], ch, line, col))
         elif ch == '"':

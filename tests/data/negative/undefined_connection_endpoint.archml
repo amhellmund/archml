@@ -1,7 +1,7 @@
-// Negative: via references point to non-existent channels
+// Negative: connect and expose statements reference non-existent child entities
 // Expected errors:
-//   component 'Processor': via binding 'ghost_ch' refers to unknown channel
-//   component 'Worker': via binding 'missing_ch' refers to unknown channel
+//   system 'Pipeline': connect references unknown child entity 'Ghost'
+//   component 'Router': expose references unknown child entity 'Missing'
 
 interface DataFeed {
     field payload: String
@@ -12,17 +12,17 @@ interface Signal {
 }
 
 system Pipeline {
-    channel data_in: DataFeed
-
     component Consumer {
-        requires DataFeed via ghost_ch
+        requires DataFeed
     }
+
+    connect Ghost.DataFeed -> Consumer.DataFeed
 }
 
 component Router {
-    channel signal_ch: Signal
-
     component Input {
-        provides Signal via missing_ch
+        provides Signal
     }
+
+    expose Missing.Signal
 }

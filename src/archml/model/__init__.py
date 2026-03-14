@@ -5,9 +5,10 @@
 
 from archml.model.entities import (
     ArchFile,
-    ChannelDef,
     Component,
+    ConnectDef,
     EnumDef,
+    ExposeDef,
     ImportDeclaration,
     InterfaceDef,
     InterfaceRef,
@@ -45,7 +46,8 @@ __all__ = [
     "EnumDef",
     "TypeDef",
     "InterfaceDef",
-    "ChannelDef",
+    "ConnectDef",
+    "ExposeDef",
     "Component",
     "System",
     "UserDef",

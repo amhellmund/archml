@@ -8,7 +8,8 @@ import pytest
 from archml.compiler.parser import ParseError, parse
 from archml.model.entities import (
     ArchFile,
-    ChannelDef,
+    ConnectDef,
+    ExposeDef,
 )
 from archml.model.types import (
     DirectoryTypeRef,
@@ -625,7 +626,8 @@ class TestComponentDeclarations:
         assert comp.requires == []
         assert comp.provides == []
         assert comp.components == []
-        assert comp.channels == []
+        assert comp.connects == []
+        assert comp.exposes == []
 
     def test_component_with_title(self) -> None:
         result = _parse('component OrderService { title = "Order Service" }')
@@ -728,21 +730,23 @@ component A {
         assert c.name == "C"
         assert c.requires[0].name == "X"
 
-    def test_component_with_channel(self) -> None:
+    def test_component_with_connect(self) -> None:
         source = """\
 component OrderService {
-    channel validation: ValidationResult
-    component Validator { provides ValidationResult via validation }
-    component Processor { requires ValidationResult via validation }
+    component Validator { provides ValidationResult }
+    component Processor { requires ValidationResult }
+    connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
 }"""
         result = _parse(source)
         comp = result.components[0]
-        assert len(comp.channels) == 1
-        ch = comp.channels[0]
-        assert ch.name == "validation"
-        assert ch.interface.name == "ValidationResult"
-        assert comp.components[0].provides[0].via == "validation"
-        assert comp.components[1].requires[0].via == "validation"
+        assert len(comp.connects) == 1
+        conn = comp.connects[0]
+        assert isinstance(conn, ConnectDef)
+        assert conn.src_entity == "Validator"
+        assert conn.src_port == "ValidationResult"
+        assert conn.channel == "validation"
+        assert conn.dst_entity == "Processor"
+        assert conn.dst_port == "ValidationResult"
 
     def test_external_component(self) -> None:
         result = _parse("external component StripeSDK { requires PaymentRequest }")
@@ -779,7 +783,8 @@ class TestSystemDeclarations:
         assert system.is_external is False
         assert system.components == []
         assert system.systems == []
-        assert system.channels == []
+        assert system.connects == []
+        assert system.exposes == []
 
     def test_system_with_title(self) -> None:
         result = _parse('system ECommerce { title = "E-Commerce Platform" }')
@@ -822,28 +827,35 @@ system ECommerce {
             "InventoryManager",
         ]
 
-    def test_system_with_channel(self) -> None:
+    def test_system_with_connect(self) -> None:
         source = """\
 system ECommerce {
-    channel payment: PaymentRequest
-    component A { provides PaymentRequest via payment }
-    component B { requires PaymentRequest via payment }
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest
 }"""
         result = _parse(source)
         system = result.systems[0]
-        assert len(system.channels) == 1
-        ch = system.channels[0]
-        assert ch.name == "payment"
-        assert ch.interface.name == "PaymentRequest"
+        assert len(system.connects) == 1
+        conn = system.connects[0]
+        assert conn.src_entity == "A"
+        assert conn.src_port == "PaymentRequest"
+        assert conn.channel == "payment"
+        assert conn.dst_entity == "B"
+        assert conn.dst_port == "PaymentRequest"
 
-    def test_system_with_multiple_channels(self) -> None:
+    def test_system_with_multiple_connects(self) -> None:
         source = """\
 system ECommerce {
-    channel payment: PaymentRequest
-    channel inventory: InventoryCheck
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    component C { provides InventoryCheck }
+    component D { requires InventoryCheck }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest
+    connect C.InventoryCheck -> $inventory -> D.InventoryCheck
 }"""
         result = _parse(source)
-        assert len(result.systems[0].channels) == 2
+        assert len(result.systems[0].connects) == 2
 
     def test_system_with_nested_system(self) -> None:
         source = """\
@@ -933,141 +945,165 @@ external system StripeAPI {
         assert system.tags == []
         assert system.is_external is False
 
-    def test_nested_system_with_channel(self) -> None:
+    def test_nested_system_with_connect(self) -> None:
         source = """\
 system Enterprise {
     title = "Enterprise Landscape"
-    channel inventory: InventorySync
-    system ECommerce {}
-    system Warehouse {}
+    system ECommerce { provides InventorySync }
+    system Warehouse { requires InventorySync }
+    connect ECommerce.InventorySync -> $inventory -> Warehouse.InventorySync
 }"""
         result = _parse(source)
         system = result.systems[0]
         assert system.title == "Enterprise Landscape"
         assert len(system.systems) == 2
-        assert len(system.channels) == 1
-        assert system.channels[0].interface.name == "InventorySync"
+        assert len(system.connects) == 1
+        assert system.connects[0].channel == "inventory"
 
 
 # ###############
-# Channel Declarations
+# Connect Statements
 # ###############
 
 
-class TestChannelDeclarations:
-    def test_simple_channel(self) -> None:
-        result = _parse("system S { channel payment: PaymentRequest }")
-        ch = result.systems[0].channels[0]
-        assert isinstance(ch, ChannelDef)
-        assert ch.name == "payment"
-        assert ch.interface.name == "PaymentRequest"
-        assert ch.interface.version is None
-        assert ch.protocol is None
-        assert ch.is_async is False
-        assert ch.description is None
-
-    def test_channel_with_versioned_interface(self) -> None:
-        result = _parse("system S { channel payment: PaymentRequest @v2 }")
-        ch = result.systems[0].channels[0]
-        assert ch.interface.name == "PaymentRequest"
-        assert ch.interface.version == "v2"
-
-    def test_channel_with_protocol(self) -> None:
+class TestConnectStatements:
+    def test_full_chain_connect(self) -> None:
         source = """\
 system S {
-    channel payment: PaymentRequest {
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest
+}"""
+        result = _parse(source)
+        conn = result.systems[0].connects[0]
+        assert isinstance(conn, ConnectDef)
+        assert conn.src_entity == "A"
+        assert conn.src_port == "PaymentRequest"
+        assert conn.channel == "payment"
+        assert conn.dst_entity == "B"
+        assert conn.dst_port == "PaymentRequest"
+
+    def test_direct_connect_no_channel(self) -> None:
+        source = """\
+system S {
+    component A { provides ValidationResult }
+    component B { requires ValidationResult }
+    connect A.ValidationResult -> B.ValidationResult
+}"""
+        result = _parse(source)
+        conn = result.systems[0].connects[0]
+        assert conn.src_entity == "A"
+        assert conn.src_port == "ValidationResult"
+        assert conn.channel is None
+        assert conn.dst_entity == "B"
+        assert conn.dst_port == "ValidationResult"
+
+    def test_one_sided_src_connect(self) -> None:
+        source = """\
+system S {
+    component A { provides PaymentRequest }
+    connect A.PaymentRequest -> $payment
+}"""
+        result = _parse(source)
+        conn = result.systems[0].connects[0]
+        assert conn.src_entity == "A"
+        assert conn.src_port == "PaymentRequest"
+        assert conn.channel == "payment"
+        assert conn.dst_entity is None
+        assert conn.dst_port is None
+
+    def test_one_sided_dst_connect(self) -> None:
+        source = """\
+system S {
+    component B { requires PaymentRequest }
+    connect $payment -> B.PaymentRequest
+}"""
+        result = _parse(source)
+        conn = result.systems[0].connects[0]
+        assert conn.src_entity is None
+        assert conn.src_port is None
+        assert conn.channel == "payment"
+        assert conn.dst_entity == "B"
+        assert conn.dst_port == "PaymentRequest"
+
+    def test_connect_with_protocol(self) -> None:
+        source = """\
+system S {
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
         protocol = "gRPC"
     }
 }"""
         result = _parse(source)
-        ch = result.systems[0].channels[0]
-        assert ch.protocol == "gRPC"
+        conn = result.systems[0].connects[0]
+        assert conn.protocol == "gRPC"
 
-    def test_channel_with_async_true(self) -> None:
+    def test_connect_with_async_true(self) -> None:
         source = """\
 system S {
-    channel payment: PaymentRequest {
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
         async = true
     }
 }"""
         result = _parse(source)
-        assert result.systems[0].channels[0].is_async is True
+        assert result.systems[0].connects[0].is_async is True
 
-    def test_channel_with_async_false(self) -> None:
+    def test_connect_with_async_false(self) -> None:
         source = """\
 system S {
-    channel payment: PaymentRequest {
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
         async = false
     }
 }"""
         result = _parse(source)
-        assert result.systems[0].channels[0].is_async is False
+        assert result.systems[0].connects[0].is_async is False
 
-    def test_channel_with_description(self) -> None:
+    def test_connect_with_description(self) -> None:
         source = """\
 system S {
-    channel payment: PaymentRequest {
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
         description = "Carries payment processing requests."
     }
 }"""
         result = _parse(source)
-        assert result.systems[0].channels[0].description == "Carries payment processing requests."
+        assert result.systems[0].connects[0].description == "Carries payment processing requests."
 
-    def test_channel_with_all_annotations(self) -> None:
+    def test_connect_with_all_annotations(self) -> None:
         source = """\
 system S {
-    channel payment: PaymentRequest {
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
         protocol = "gRPC"
         async = true
         description = "Initiates payment processing for confirmed orders."
     }
 }"""
         result = _parse(source)
-        ch = result.systems[0].channels[0]
-        assert ch.name == "payment"
-        assert ch.interface.name == "PaymentRequest"
-        assert ch.protocol == "gRPC"
-        assert ch.is_async is True
-        assert ch.description == "Initiates payment processing for confirmed orders."
+        conn = result.systems[0].connects[0]
+        assert conn.channel == "payment"
+        assert conn.protocol == "gRPC"
+        assert conn.is_async is True
+        assert conn.description == "Initiates payment processing for confirmed orders."
 
-    def test_channel_with_http_protocol(self) -> None:
-        source = """\
-system S {
-    channel inventory: InventoryCheck {
-        protocol = "HTTP"
-    }
-}"""
-        result = _parse(source)
-        assert result.systems[0].channels[0].protocol == "HTTP"
-
-    def test_multiple_channels_in_system(self) -> None:
-        source = """\
-system ECommerce {
-    channel payment: PaymentRequest {
-        protocol = "gRPC"
-        async = true
-    }
-    channel inventory: InventoryCheck {
-        protocol = "HTTP"
-    }
-    channel orders: OrderRequest
-}"""
-        result = _parse(source)
-        channels = result.systems[0].channels
-        assert len(channels) == 3
-        assert channels[0].interface.name == "PaymentRequest"
-        assert channels[1].interface.name == "InventoryCheck"
-        assert channels[2].protocol is None
-
-    def test_channel_attr_on_same_line_as_lbrace_raises(self) -> None:
+    def test_connect_attr_on_same_line_as_lbrace_raises(self) -> None:
         with pytest.raises(ParseError) as exc_info:
-            _parse('system S { channel payment: PaymentRequest { protocol = "HTTP" } }')
+            _parse('system S { component A {} component B {} connect A.X -> B.X { protocol = "HTTP" } }')
         assert "new line" in str(exc_info.value)
 
-    def test_channel_attrs_on_same_line_as_each_other_raises(self) -> None:
+    def test_connect_attrs_on_same_line_as_each_other_raises(self) -> None:
         source = """\
 system S {
-    channel payment: PaymentRequest {
+    component A { provides X }
+    component B { requires X }
+    connect A.X -> $ch -> B.X {
         protocol = "HTTP"  async = true
     }
 }"""
@@ -1075,41 +1111,123 @@ system S {
             _parse(source)
         assert "new line" in str(exc_info.value)
 
-    def test_requires_with_via(self) -> None:
-        result = _parse("component X { requires PaymentRequest via payment }")
-        ref = result.components[0].requires[0]
-        assert ref.name == "PaymentRequest"
-        assert ref.via == "payment"
+    def test_multiple_connects_in_system(self) -> None:
+        source = """\
+system ECommerce {
+    component A { provides PaymentRequest }
+    component B { requires PaymentRequest }
+    component C { provides InventoryCheck }
+    component D { requires InventoryCheck }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
+        protocol = "gRPC"
+        async = true
+    }
+    connect C.InventoryCheck -> $inventory -> D.InventoryCheck {
+        protocol = "HTTP"
+    }
+    connect A.PaymentRequest -> B.PaymentRequest
+}"""
+        result = _parse(source)
+        connects = result.systems[0].connects
+        assert len(connects) == 3
+        assert connects[0].channel == "payment"
+        assert connects[1].channel == "inventory"
+        assert connects[2].channel is None
 
-    def test_provides_with_via(self) -> None:
-        result = _parse("component X { provides OrderConfirmation via confirm }")
-        ref = result.components[0].provides[0]
-        assert ref.name == "OrderConfirmation"
-        assert ref.via == "confirm"
-
-    def test_requires_versioned_with_via(self) -> None:
-        result = _parse("component X { requires PaymentRequest @v2 via payment }")
-        ref = result.components[0].requires[0]
-        assert ref.name == "PaymentRequest"
-        assert ref.version == "v2"
-        assert ref.via == "payment"
-
-    def test_requires_without_via_has_none(self) -> None:
-        result = _parse("component X { requires PaymentRequest }")
-        ref = result.components[0].requires[0]
-        assert ref.via is None
-
-    def test_channel_in_component(self) -> None:
+    def test_connect_in_component(self) -> None:
         source = """\
 component OrderService {
-    channel validation: ValidationResult
-    component Validator { provides ValidationResult via validation }
-    component Processor { requires ValidationResult via validation }
+    component Validator { provides ValidationResult }
+    component Processor { requires ValidationResult }
+    connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
 }"""
         result = _parse(source)
         comp = result.components[0]
-        assert len(comp.channels) == 1
-        assert comp.channels[0].name == "validation"
+        assert len(comp.connects) == 1
+        assert comp.connects[0].channel == "validation"
+
+    def test_requires_with_as(self) -> None:
+        result = _parse("component X { requires PaymentRequest as pay_in }")
+        ref = result.components[0].requires[0]
+        assert ref.name == "PaymentRequest"
+        assert ref.port_name == "pay_in"
+
+    def test_provides_with_as(self) -> None:
+        result = _parse("component X { provides OrderConfirmation as confirmed }")
+        ref = result.components[0].provides[0]
+        assert ref.name == "OrderConfirmation"
+        assert ref.port_name == "confirmed"
+
+    def test_requires_versioned_with_as(self) -> None:
+        result = _parse("component X { requires PaymentRequest @v2 as pay_in }")
+        ref = result.components[0].requires[0]
+        assert ref.name == "PaymentRequest"
+        assert ref.version == "v2"
+        assert ref.port_name == "pay_in"
+
+    def test_requires_without_as_has_none_port_name(self) -> None:
+        result = _parse("component X { requires PaymentRequest }")
+        ref = result.components[0].requires[0]
+        assert ref.port_name is None
+
+
+# ###############
+# Expose Statements
+# ###############
+
+
+class TestExposeStatements:
+    def test_simple_expose(self) -> None:
+        source = """\
+component OrderService {
+    component Processor { requires PaymentRequest }
+    expose Processor.PaymentRequest
+}"""
+        result = _parse(source)
+        exp = result.components[0].exposes[0]
+        assert isinstance(exp, ExposeDef)
+        assert exp.entity == "Processor"
+        assert exp.port == "PaymentRequest"
+        assert exp.as_name is None
+
+    def test_expose_with_as(self) -> None:
+        source = """\
+component OrderService {
+    component Processor { requires PaymentRequest }
+    expose Processor.PaymentRequest as pay_in
+}"""
+        result = _parse(source)
+        exp = result.components[0].exposes[0]
+        assert exp.entity == "Processor"
+        assert exp.port == "PaymentRequest"
+        assert exp.as_name == "pay_in"
+
+    def test_multiple_exposes(self) -> None:
+        source = """\
+component OrderService {
+    component Validator { requires OrderRequest }
+    component Processor { requires PaymentRequest provides OrderConfirmation }
+    expose Validator.OrderRequest
+    expose Processor.PaymentRequest as pay_in
+    expose Processor.OrderConfirmation
+}"""
+        result = _parse(source)
+        exposes = result.components[0].exposes
+        assert len(exposes) == 3
+        assert exposes[0].entity == "Validator"
+        assert exposes[1].as_name == "pay_in"
+        assert exposes[2].as_name is None
+
+    def test_expose_in_system(self) -> None:
+        source = """\
+system ECommerce {
+    component OrderService { provides OrderConfirmation }
+    expose OrderService.OrderConfirmation
+}"""
+        result = _parse(source)
+        exp = result.systems[0].exposes[0]
+        assert exp.entity == "OrderService"
+        assert exp.port == "OrderConfirmation"
 
 
 # ###############
@@ -1442,29 +1560,29 @@ external system StripeAPI {
 system ECommerce {
     title = "E-Commerce Platform"
 
-    channel payment: PaymentRequest {
-        protocol = "HTTP"
-        async = true
-    }
-    channel inventory: InventoryCheck {
-        protocol = "HTTP"
-    }
-
     use component OrderService
 
     component PaymentGateway {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        requires PaymentRequest via payment
+        requires PaymentRequest
         provides PaymentResult
     }
 
     component InventoryManager {
         title = "Inventory Manager"
 
-        requires InventoryCheck via inventory
+        requires InventoryCheck
         provides InventoryStatus
+    }
+
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
+        protocol = "HTTP"
+        async = true
+    }
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
+        protocol = "HTTP"
     }
 }
 """
@@ -1480,54 +1598,57 @@ system ECommerce {
         ecommerce = next(s for s in result.systems if s.name == "ECommerce")
         assert ecommerce.title == "E-Commerce Platform"
         assert len(ecommerce.components) == 3  # use + 2 inline
-        assert len(ecommerce.channels) == 2
+        assert len(ecommerce.connects) == 2
 
         gw = next(c for c in ecommerce.components if c.name == "PaymentGateway")
         assert gw.tags == ["critical", "pci-scope"]
 
-        payment_ch = ecommerce.channels[0]
-        assert payment_ch.protocol == "HTTP"
-        assert payment_ch.is_async is True
+        payment_conn = ecommerce.connects[0]
+        assert payment_conn.protocol == "HTTP"
+        assert payment_conn.is_async is True
 
-    def test_nested_component_with_channels(self) -> None:
-        """Parse a component with nested sub-components and internal channel."""
+    def test_nested_component_with_connects(self) -> None:
+        """Parse a component with nested sub-components and internal connect."""
         source = """\
 component OrderService {
     title = "Order Service"
-
-    channel validation: ValidationResult
 
     component Validator {
         title = "Order Validator"
 
         requires OrderRequest
-        provides ValidationResult via validation
+        provides ValidationResult
     }
 
     component Processor {
         title = "Order Processor"
 
-        requires ValidationResult via validation
+        requires ValidationResult
         requires PaymentRequest
         requires InventoryCheck
         provides OrderConfirmation
     }
+
+    connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
 }
 """
         result = _parse(source)
         comp = result.components[0]
         assert comp.name == "OrderService"
         assert len(comp.components) == 2
-        assert len(comp.channels) == 1
+        assert len(comp.connects) == 1
 
         validator = comp.components[0]
         assert validator.name == "Validator"
         assert validator.requires[0].name == "OrderRequest"
         assert validator.provides[0].name == "ValidationResult"
-        assert validator.provides[0].via == "validation"
 
-        processor = comp.components[1]
-        assert processor.requires[0].via == "validation"
+        conn = comp.connects[0]
+        assert conn.src_entity == "Validator"
+        assert conn.src_port == "ValidationResult"
+        assert conn.channel == "validation"
+        assert conn.dst_entity == "Processor"
+        assert conn.dst_port == "ValidationResult"
 
     def test_enterprise_nested_systems(self) -> None:
         """Parse an enterprise system with nested sub-systems."""
@@ -1535,37 +1656,35 @@ component OrderService {
 system Enterprise {
     title = "Enterprise Landscape"
 
-    channel inventory: InventorySync
-
     system ECommerce {}
     system Warehouse {}
+
+    connect ECommerce.InventorySync -> $inventory -> Warehouse.InventorySync
 }
 """
         result = _parse(source)
         enterprise = result.systems[0]
         assert enterprise.title == "Enterprise Landscape"
         assert len(enterprise.systems) == 2
-        assert len(enterprise.channels) == 1
-        assert enterprise.channels[0].interface.name == "InventorySync"
+        assert len(enterprise.connects) == 1
+        assert enterprise.connects[0].channel == "inventory"
 
-    def test_multiple_via_bindings(self) -> None:
-        """Components can bind to multiple channels independently."""
+    def test_multiple_port_aliases(self) -> None:
+        """Components can declare requires/provides with explicit port aliases using 'as'."""
         source = """\
 system S {
-    channel payment: PaymentRequest
-    channel inventory: InventoryCheck
     component OrderService {
-        requires PaymentRequest via payment
-        requires InventoryCheck via inventory
+        requires PaymentRequest as pay_in
+        requires InventoryCheck as inv_in
         provides OrderConfirmation
     }
 }
 """
         result = _parse(source)
         comp = result.systems[0].components[0]
-        assert comp.requires[0].via == "payment"
-        assert comp.requires[1].via == "inventory"
-        assert comp.provides[0].via is None
+        assert comp.requires[0].port_name == "pay_in"
+        assert comp.requires[1].port_name == "inv_in"
+        assert comp.provides[0].port_name is None
 
 
 # ###############
@@ -1707,10 +1826,10 @@ class TestParseErrors:
         with pytest.raises(ParseError):
             _parse("from interfaces/order X")
 
-    def test_unknown_channel_attribute(self) -> None:
+    def test_unknown_connect_attribute(self) -> None:
         with pytest.raises(ParseError) as exc_info:
-            _parse("system S {\n    channel payment: PaymentRequest {\n        timeout = 30\n    }\n}")
-        assert "Unknown channel attribute" in str(exc_info.value)
+            _parse("system S {\n    connect A.p -> $ch -> B.p {\n        timeout = 30\n    }\n}")
+        assert "Unknown connect attribute" in str(exc_info.value)
 
     def test_unknown_field_annotation(self) -> None:
         with pytest.raises(ParseError):
@@ -1754,10 +1873,17 @@ class TestEdgeCases:
         result = _parse("interface X @v10 {}")
         assert result.interfaces[0].version == "v10"
 
-    def test_channel_interface_version(self) -> None:
-        result = _parse("system S { channel feed: DataFeed @v2 }")
-        ch = result.systems[0].channels[0]
-        assert ch.interface.version == "v2"
+    def test_connect_with_versioned_interface(self) -> None:
+        source = (
+            "system S { component A { provides DataFeed } "
+            "component B { requires DataFeed } "
+            "connect A.DataFeed -> $feed -> B.DataFeed }"
+        )
+        result = _parse(source)
+        conn = result.systems[0].connects[0]
+        assert conn.src_entity == "A"
+        assert conn.channel == "feed"
+        assert conn.dst_entity == "B"
 
     def test_requires_with_version(self) -> None:
         result = _parse("component X { requires Interface @v2 }")
@@ -1925,12 +2051,17 @@ interface AllPrimitives {
         assert isinstance(map_type.value_type, NamedTypeRef)
         assert map_type.value_type.name == "OrderItem"
 
-    def test_channel_without_annotation_block(self) -> None:
-        result = _parse("system S { channel payment: PaymentRequest }")
-        ch = result.systems[0].channels[0]
-        assert ch.protocol is None
-        assert ch.is_async is False
-        assert ch.description is None
+    def test_connect_without_annotation_block(self) -> None:
+        source = (
+            "system S { component A { provides PaymentRequest } "
+            "component B { requires PaymentRequest } "
+            "connect A.PaymentRequest -> $payment -> B.PaymentRequest }"
+        )
+        result = _parse(source)
+        conn = result.systems[0].connects[0]
+        assert conn.protocol is None
+        assert conn.is_async is False
+        assert conn.description is None
 
     def test_interface_field_empty_annotation_block(self) -> None:
         source = "interface I { field x: String {} }"

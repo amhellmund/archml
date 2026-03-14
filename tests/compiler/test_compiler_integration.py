@@ -178,12 +178,12 @@ class TestNegativeExamples:
             "refers to unknown interface 'ExternalFeed'",
         )
 
-    def test_undefined_via_channel(self) -> None:
+    def test_undefined_connection_endpoint(self) -> None:
         path = NEGATIVE_DIR / "undefined_connection_endpoint.archml"
         _assert_errors(
             path,
-            "ghost_ch",
-            "missing_ch",
+            "Ghost",
+            "Missing",
         )
 
     def test_wrong_interface_version(self) -> None:
@@ -320,15 +320,16 @@ external system StripeAPI {
 system ECommerce {
     component OrderServiceInst {
         requires OrderRequest @v2
-        requires PaymentRequest via payment
+        requires PaymentRequest
         provides OrderConfirmation
     }
-    channel payment: PaymentRequest
 
     component PaymentGatewayInst {
-        provides PaymentRequest via payment
+        provides PaymentRequest
         provides PaymentResult
     }
+
+    connect PaymentGatewayInst.PaymentRequest -> $payment -> OrderServiceInst.PaymentRequest
 }
 """
         arch_file = parse(source)
@@ -371,14 +372,13 @@ interface Signal { field v: Int }
 
 system Outer {
     system Middle {
-        channel sig_ch: Signal
-
         component Inner {
-            provides Signal via sig_ch
+            provides Signal
         }
         component Sink {
-            requires Signal via sig_ch
+            requires Signal
         }
+        connect Inner.Signal -> $sig_ch -> Sink.Signal
     }
 }
 """
@@ -394,14 +394,15 @@ interface Signal { field v: Int }
 system Outer {
     system Middle {
         component Inner {
-            provides Signal via ghost_ch
+            provides Signal
         }
+        connect Ghost.Signal -> Inner.Signal
     }
 }
 """
         arch_file = parse(source)
         errors = analyze(arch_file)
-        assert any("ghost_ch" in e.message for e in errors)
+        assert any("Ghost" in e.message for e in errors)
 
     def test_file_and_directory_type_refs_are_valid(self) -> None:
         """File and Directory types require no resolution and are always valid."""
@@ -421,7 +422,7 @@ interface Artifacts {
         assert errors == [], f"Expected clean but got: {[e.message for e in errors]}"
 
     def test_use_statement_adds_component_to_scope(self) -> None:
-        """Components added via 'use' are valid channel binding targets."""
+        """Components added via 'use' are valid connect targets."""
         source = """
 from services import OrderService
 
@@ -429,16 +430,17 @@ interface PaymentRequest { field amount: Decimal }
 
 system ECommerce {
     use component OrderService
-    channel payment: PaymentRequest
 
     component PaymentGateway {
-        requires PaymentRequest via payment
+        provides PaymentRequest
     }
+
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
 }
 """
         arch_file = parse(source)
         errors = analyze(arch_file)
         # OrderService is in the imported names list, and 'use component' adds it
-        # as a stub component in the system — no via binding errors expected here.
-        via_errors = [e for e in errors if "is not defined in this scope" in e.message]
-        assert via_errors == [], f"Via channel errors: {via_errors}"
+        # as a stub component in the system — no connect errors expected here.
+        connect_errors = [e for e in errors if "unknown child entity" in e.message]
+        assert connect_errors == [], f"Connect errors: {connect_errors}"

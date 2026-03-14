@@ -82,8 +82,9 @@ class TestKeywords:
             ("schema", TokenType.SCHEMA),
             ("requires", TokenType.REQUIRES),
             ("provides", TokenType.PROVIDES),
-            ("channel", TokenType.CHANNEL),
-            ("via", TokenType.VIA),
+            ("connect", TokenType.CONNECT),
+            ("expose", TokenType.EXPOSE),
+            ("as", TokenType.AS),
             ("from", TokenType.FROM),
             ("import", TokenType.IMPORT),
             ("use", TokenType.USE),
@@ -564,12 +565,12 @@ class TestSourceLocations:
         assert tokens[0].line == 3
         assert tokens[0].column == 4
 
-    def test_via_keyword_position(self) -> None:
-        tokens = _tokens_no_eof("requires X via ch")
-        via_tok = tokens[2]
-        assert via_tok.type == TokenType.VIA
-        assert via_tok.line == 1
-        assert via_tok.column == 12
+    def test_as_keyword_position(self) -> None:
+        tokens = _tokens_no_eof("requires X as pay_in")
+        as_tok = tokens[2]
+        assert as_tok.type == TokenType.AS
+        assert as_tok.line == 1
+        assert as_tok.column == 12
 
     def test_string_start_position_is_at_opening_quote(self) -> None:
         tokens = _tokens_no_eof('x = "hello"')
@@ -608,9 +609,12 @@ class TestErrors:
         with pytest.raises(LexerError):
             tokenize(";")
 
-    def test_unexpected_character_dollar(self) -> None:
-        with pytest.raises(LexerError):
-            tokenize("$")
+    def test_dollar_sign_produces_dollar_token(self) -> None:
+        tokens = _tokens_no_eof("$payment")
+        assert tokens[0].type == TokenType.DOLLAR
+        assert tokens[0].value == "$"
+        assert tokens[1].type == TokenType.IDENTIFIER
+        assert tokens[1].value == "payment"
 
     def test_unexpected_character_tilde(self) -> None:
         with pytest.raises(LexerError):
@@ -725,25 +729,49 @@ class TestStructuralPatterns:
             TokenType.RANGLE,
         ]
 
-    def test_channel_declaration(self) -> None:
-        source = "channel payment: PaymentRequest"
+    def test_connect_statement(self) -> None:
+        source = "connect A.PaymentRequest -> $payment -> B.PaymentRequest"
         types = _types(source)
         assert types == [
-            TokenType.CHANNEL,
+            TokenType.CONNECT,
             TokenType.IDENTIFIER,
-            TokenType.COLON,
+            TokenType.DOT,
+            TokenType.IDENTIFIER,
+            TokenType.ARROW,
+            TokenType.DOLLAR,
+            TokenType.IDENTIFIER,
+            TokenType.ARROW,
+            TokenType.IDENTIFIER,
+            TokenType.DOT,
             TokenType.IDENTIFIER,
         ]
 
-    def test_requires_via_declaration(self) -> None:
-        source = "requires PaymentRequest via payment"
+    def test_expose_statement(self) -> None:
+        source = "expose Processor.OrderConfirmation as confirmed"
+        types = _types(source)
+        assert types == [
+            TokenType.EXPOSE,
+            TokenType.IDENTIFIER,
+            TokenType.DOT,
+            TokenType.IDENTIFIER,
+            TokenType.AS,
+            TokenType.IDENTIFIER,
+        ]
+
+    def test_requires_as_declaration(self) -> None:
+        source = "requires PaymentRequest as pay_in"
         types = _types(source)
         assert types == [
             TokenType.REQUIRES,
             TokenType.IDENTIFIER,
-            TokenType.VIA,
+            TokenType.AS,
             TokenType.IDENTIFIER,
         ]
+
+    def test_arrow_token(self) -> None:
+        tokens = _tokens_no_eof("->")
+        assert tokens[0].type == TokenType.ARROW
+        assert tokens[0].value == "->"
 
     def test_import_statement(self) -> None:
         source = "from interfaces/order import OrderRequest, OrderConfirmation"
@@ -834,18 +862,25 @@ class TestStructuralPatterns:
         types = _types(source)
         assert types == [TokenType.SCHEMA, TokenType.EQUALS, TokenType.STRING]
 
-    def test_channel_with_block_annotation(self) -> None:
+    def test_connect_with_block_annotation(self) -> None:
         source = """
-            channel payment: PaymentRequest {
+            connect A.PaymentRequest -> $payment -> B.PaymentRequest {
                 protocol = "HTTP"
                 async = true
             }
         """
         types = _types(source)
         assert types == [
-            TokenType.CHANNEL,
+            TokenType.CONNECT,
             TokenType.IDENTIFIER,
-            TokenType.COLON,
+            TokenType.DOT,
+            TokenType.IDENTIFIER,
+            TokenType.ARROW,
+            TokenType.DOLLAR,
+            TokenType.IDENTIFIER,
+            TokenType.ARROW,
+            TokenType.IDENTIFIER,
+            TokenType.DOT,
             TokenType.IDENTIFIER,
             TokenType.LBRACE,
             TokenType.IDENTIFIER,
@@ -946,26 +981,31 @@ class TestFullExample:
         assert "Order Creation Request" in string_values
         assert "Payload for submitting a new customer order." in string_values
 
-    def test_system_with_channels(self) -> None:
+    def test_system_with_connect(self) -> None:
         source = """
             system ECommerce {
                 title = "E-Commerce Platform"
 
-                channel payment: PaymentRequest
-
                 component PaymentGateway {
                     tags = ["critical", "pci-scope"]
-                    requires PaymentRequest via payment
-                    provides PaymentResult
+                    provides PaymentRequest
                 }
+
+                component OrderService {
+                    requires PaymentRequest
+                }
+
+                connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
             }
         """
         tokens = _tokens_no_eof(source)
         assert tokens[0].type == TokenType.SYSTEM
-        channel_tokens = [t for t in tokens if t.type == TokenType.CHANNEL]
-        via_tokens = [t for t in tokens if t.type == TokenType.VIA]
-        assert len(channel_tokens) == 1
-        assert len(via_tokens) == 1
+        connect_tokens = [t for t in tokens if t.type == TokenType.CONNECT]
+        arrow_tokens = [t for t in tokens if t.type == TokenType.ARROW]
+        dollar_tokens = [t for t in tokens if t.type == TokenType.DOLLAR]
+        assert len(connect_tokens) == 1
+        assert len(arrow_tokens) == 2
+        assert len(dollar_tokens) == 1
 
     def test_file_field_annotation(self) -> None:
         source = """
