@@ -12,7 +12,7 @@ ArchML sits between these extremes:
 
 - **Text-first** — `.archml` files are plain text, stored in git, reviewed in pull requests.
 - **Model-based** — one model, many views. Define a component once; reference it everywhere.
-- **Consistency checking** — the tooling catches dangling references, unused interfaces, and disconnected components.
+- **Consistency checking** — the tooling catches dangling references, ports missing `connect` or `expose`, and type mismatches across channels.
 - **Navigable views** — drill down from system landscape to individual component internals.
 - **Sphinx-native** — embed live architecture views directly in your documentation.
 
@@ -65,100 +65,91 @@ interface InventoryCheck {
 // systems/ecommerce.archml
 from types import OrderRequest, OrderConfirmation, PaymentRequest, InventoryCheck
 
-user Customer {
-    title = "Customer"
-    description = "An end user who places orders through the e-commerce platform."
-
-    provides OrderRequest
-    requires OrderConfirmation
-}
-
-external system StripeAPI {
-    title = "Stripe Payment API"
-    requires PaymentRequest
-    provides PaymentResult
-}
-
 system ECommerce {
     title = "E-Commerce Platform"
     description = "Customer-facing online store."
 
-    // Channels decouple providers from requirers — no explicit wiring between pairs
-    channel order_in:   OrderRequest
-    channel order_out:  OrderConfirmation
-    channel payment:    PaymentRequest {
-        protocol = "gRPC"
-        async = true
-    }
-    channel inventory:  InventoryCheck {
-        protocol = "HTTP"
-    }
-
     user Customer {
-        provides OrderRequest   via order_in
-        requires OrderConfirmation via order_out
+        provides OrderRequest
+        requires OrderConfirmation
     }
 
     component OrderService {
         title = "Order Service"
         description = "Accepts, validates, and processes customer orders."
 
-        // Internal channel wires Validator to Processor without naming either
-        channel validation: ValidationResult
-
         component Validator {
             requires OrderRequest
-            provides ValidationResult via validation
+            provides ValidationResult
         }
 
         component Processor {
-            requires ValidationResult via validation
+            requires ValidationResult
             requires PaymentRequest
             requires InventoryCheck
             provides OrderConfirmation
         }
 
-        // Unbound ports (OrderRequest, PaymentRequest, etc.) are visible at the boundary
+        // Internal wiring: Validator feeds Processor via an implicit channel
+        connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
+
+        // Remaining ports must be explicitly exposed at the OrderService boundary
+        expose Validator.OrderRequest
+        expose Processor.PaymentRequest
+        expose Processor.InventoryCheck
+        expose Processor.OrderConfirmation
     }
 
     component PaymentGateway {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        requires PaymentRequest via payment
-        provides PaymentResult
+        provides PaymentRequest
     }
 
     component InventoryManager {
         title = "Inventory Manager"
 
-        requires InventoryCheck via inventory
-        provides InventoryStatus
+        provides InventoryCheck
+    }
+
+    // Wire customer to order pipeline
+    connect Customer.OrderRequest -> $order_in -> OrderService.OrderRequest
+    connect OrderService.OrderConfirmation -> $order_out -> Customer.OrderConfirmation
+
+    // Wire OrderService to backing services
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
+        protocol = "gRPC"
+        async = true
+    }
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
+        protocol = "HTTP"
     }
 }
 ```
 
-Large architectures split naturally across files. A `from ... import` statement brings named definitions into scope; `use component X` places an imported component inside a system without redefining it. Remote repositories can be referenced with `@repo-name` prefixes for multi-repo workspace setups.
+Large architectures split naturally across files. A `from ... import` statement brings named definitions into scope; `use component X` places an imported component inside a system without redefining it. Its exposed ports are available as `Entity.port_name` in `connect` and `expose` statements. Remote repositories can be referenced with `@repo-name` prefixes for multi-repo workspace setups.
 
 ## Language at a Glance
 
-| Keyword                   | Purpose                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| `system`                  | Group of components or sub-systems with a shared goal                             |
-| `component`               | Module with a clear responsibility; may nest sub-components                       |
-| `user`                    | Human actor (role or persona) that interacts with the system                      |
-| `interface`               | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
-| `channel name: Interface` | Named conduit within a system or component scope; decouples providers from requirers |
-| `type`                    | Reusable data structure (used within interfaces)                                  |
-| `enum`                    | Constrained set of named values                                                   |
-| `field`                   | Named, typed data element with optional `description` and `schema`                |
-| `requires` / `provides`   | Declare consumed and exposed interfaces on a component, system, or user           |
-| `requires X via channel`  | Bind a `requires` declaration to a named channel                                  |
-| `provides X via channel`  | Bind a `provides` declaration to a named channel                                  |
-| `external`                | Marks a system, component, or user as outside the development boundary            |
-| `from … import`           | Bring specific definitions from another file into scope                           |
-| `use component X`         | Place an imported entity inside a system                                          |
-| `tags`                    | Arbitrary labels for filtering and view generation                                |
+| Keyword                            | Purpose                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| `system`                           | Group of components or sub-systems with a shared goal                             |
+| `component`                        | Module with a clear responsibility; may nest sub-components                       |
+| `user`                             | Human actor (role or persona) that interacts with the system                      |
+| `interface`                        | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
+| `type`                             | Reusable data structure (used within interfaces)                                  |
+| `enum`                             | Constrained set of named values                                                   |
+| `field`                            | Named, typed data element with optional `description` and `schema`                |
+| `requires` / `provides`            | Declare a port that consumes or exposes an interface                              |
+| `requires X as port`               | Assign an explicit name to a port                                                 |
+| `connect A.p -> $ch -> B.p`        | Wire two ports via a named implicit channel                                       |
+| `connect A.p -> B.p`               | Wire two ports directly (no named channel)                                        |
+| `expose Entity.port [as name]`     | Explicitly surface a sub-entity's port at the enclosing boundary                 |
+| `external`                         | Marks a system, component, or user as outside the development boundary            |
+| `from … import`                    | Bring specific definitions from another file into scope                           |
+| `use component X`                  | Place an imported entity inside a system                                          |
+| `tags`                             | Arbitrary labels for filtering and view generation                                |
 
 Primitive types: `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
@@ -173,7 +164,7 @@ Delegates payment to PaymentGateway.
 """
 ```
 
-Enum values and channel block attributes each occupy their own line — no commas needed.
+Enum values each occupy their own line — no commas needed.
 
 Full syntax reference: [docs/LANGUAGE_SYNTAX.md](docs/LANGUAGE_SYNTAX.md)
 
@@ -264,7 +255,7 @@ archml sync-remote
 
 ## Project Status
 
-ArchML is in early development. The functional architecture domain (systems, components, interfaces, channels) is implemented. Behavioral and deployment domains are planned.
+ArchML is in early development. The functional architecture domain (systems, components, interfaces, ports, and channels) is implemented. Behavioral and deployment domains are planned.
 
 See [docs/PROJECT_SCOPE.md](docs/PROJECT_SCOPE.md) for the full vision and roadmap.
 
