@@ -1,5 +1,5 @@
-// Nested components with internal connections
-// Expected result: no semantic errors
+# Nested components with internal connections
+# Expected result: no semantic errors
 
 interface ValidationResult {
     field is_valid: Bool
@@ -21,7 +21,7 @@ interface PaymentRequest {
     field amount: Decimal
 }
 
-// A component with sub-components and internal routing
+# A component with sub-components and internal routing
 component OrderService {
     title = "Order Service"
     description = "Accepts, validates, and processes customer orders."

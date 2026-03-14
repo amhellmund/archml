@@ -1,4 +1,4 @@
-// Top-level system that imports from both shared/types and worker.
+# Top-level system that imports from both shared/types and worker.
 
 from compiler/shared/types import TaskRequest, TaskResult
 from compiler/worker import TaskWorker, PriorityRouter

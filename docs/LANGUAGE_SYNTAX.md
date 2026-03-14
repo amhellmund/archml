@@ -13,9 +13,7 @@
 ArchML files use the `.archml` extension. A file contains one or more top-level declarations. Declarations can be nested to express containment.
 
 ```
-// Line comments start with double slashes.
-
-/* Block comments are also supported. */
+# Line comments start with a hash sign.
 ```
 
 Strings use double quotes. Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional human-readable `title` and `description`.

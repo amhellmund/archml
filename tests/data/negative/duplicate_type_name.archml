@@ -1,5 +1,5 @@
-// Negative: duplicate type name at top level
-// Expected error: Duplicate type name 'Address'
+# Negative: duplicate type name at top level
+# Expected error: Duplicate type name 'Address'
 
 type Address {
     field street: String

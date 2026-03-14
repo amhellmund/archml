@@ -1,8 +1,8 @@
-// Negative: requires/provides reference undefined interfaces
-// Expected errors:
-//   component 'OrderService': 'requires OrderRequest' refers to unknown interface 'OrderRequest'
-//   component 'PaymentProcessor': 'provides PaymentResult' refers to unknown interface 'PaymentResult'
-//   system 'ECommerce': 'requires ExternalFeed' refers to unknown interface 'ExternalFeed'
+# Negative: requires/provides reference undefined interfaces
+# Expected errors:
+#   component 'OrderService': 'requires OrderRequest' refers to unknown interface 'OrderRequest'
+#   component 'PaymentProcessor': 'provides PaymentResult' refers to unknown interface 'PaymentResult'
+#   system 'ECommerce': 'requires ExternalFeed' refers to unknown interface 'ExternalFeed'
 
 component OrderService {
     title = "Order Service"

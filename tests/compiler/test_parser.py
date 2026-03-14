@@ -56,7 +56,7 @@ class TestEmptyInput:
         assert result.components == []
 
     def test_comment_only_returns_empty_arch_file(self) -> None:
-        result = _parse("// just a comment\n/* block too */")
+        result = _parse("# just a comment\n# another comment")
         assert result.imports == []
 
 
@@ -1895,10 +1895,9 @@ class TestEdgeCases:
 
     def test_comments_in_source(self) -> None:
         source = """\
-// Top-level comment
+# Top-level comment
 component X {
-    // Inner comment
-    /* Block comment */
+    # Inner comment
     requires Y
 }
 """

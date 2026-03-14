@@ -1,4 +1,4 @@
-// Worker component that depends on shared types.
+# Worker component that depends on shared types.
 
 from compiler/shared/types import TaskRequest, TaskResult, Priority
 

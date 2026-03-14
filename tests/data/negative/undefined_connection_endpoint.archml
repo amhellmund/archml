@@ -1,7 +1,7 @@
-// Negative: connect and expose statements reference non-existent child entities
-// Expected errors:
-//   system 'Pipeline': connect references unknown child entity 'Ghost'
-//   component 'Router': expose references unknown child entity 'Missing'
+# Negative: connect and expose statements reference non-existent child entities
+# Expected errors:
+#   system 'Pipeline': connect references unknown child entity 'Ghost'
+#   component 'Router': expose references unknown child entity 'Missing'
 
 interface DataFeed {
     field payload: String

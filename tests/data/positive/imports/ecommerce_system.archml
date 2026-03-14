@@ -1,10 +1,10 @@
-// System file that imports from multiple sources
-// Expected result: no semantic errors when resolved with types.archml and order_service.archml
+# System file that imports from multiple sources
+# Expected result: no semantic errors when resolved with types.archml and order_service.archml
 
 from imports/types import PaymentRequest, OrderStatus
 from imports/order_service import OrderService
 
-// PaymentResult defined locally (not in the types file)
+# PaymentResult defined locally (not in the types file)
 interface PaymentResult {
     field order_id: String
     field success: Bool

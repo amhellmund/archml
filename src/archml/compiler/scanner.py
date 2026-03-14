@@ -223,31 +223,15 @@ class _Lexer:
             ch = self._current()
             if ch in " \t\r\n":
                 self._advance()
-            elif ch == "/" and self._peek() == "/":
+            elif ch == "#":
                 self._skip_line_comment()
-            elif ch == "/" and self._peek() == "*":
-                self._skip_block_comment()
             else:
                 break
 
     def _skip_line_comment(self) -> None:
-        """Consume from '//' through end-of-line (exclusive of the newline itself)."""
+        """Consume from '#' through end-of-line (exclusive of the newline itself)."""
         while self._pos < len(self._source) and self._current() != "\n":
             self._advance()
-
-    def _skip_block_comment(self) -> None:
-        """Consume from '/*' through the matching '*/'."""
-        start_line = self._line
-        start_col = self._column
-        self._advance()  # /
-        self._advance()  # *
-        while self._pos < len(self._source):
-            if self._current() == "*" and self._peek() == "/":
-                self._advance()  # *
-                self._advance()  # /
-                return
-            self._advance()
-        raise LexerError("Unterminated block comment", start_line, start_col)
 
     # ------------------------------------------------------------------
     # Token scanning dispatcher

@@ -1,5 +1,5 @@
-// Comprehensive types and enums file
-// Expected result: no semantic errors
+# Comprehensive types and enums file
+# Expected result: no semantic errors
 
 enum OrderStatus {
     title = "Order Status"

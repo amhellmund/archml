@@ -1,5 +1,5 @@
-// Minimal component: no ports, no fields
-// Expected result: no semantic errors
+# Minimal component: no ports, no fields
+# Expected result: no semantic errors
 
 component Processor {
     title = "Simple Processor"

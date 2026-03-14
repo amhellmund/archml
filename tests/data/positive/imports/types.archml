@@ -1,5 +1,5 @@
-// Source file for multi-file import tests
-// This file defines types, enums, and interfaces that can be imported
+# Source file for multi-file import tests
+# This file defines types, enums, and interfaces that can be imported
 
 enum OrderStatus {
     Pending

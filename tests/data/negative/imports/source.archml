@@ -1,5 +1,5 @@
-// Source file for negative import test
-// This file defines only some of the entities that consumer.archml tries to import
+# Source file for negative import test
+# This file defines only some of the entities that consumer.archml tries to import
 
 interface OrderRequest {
     field order_id: String
@@ -10,4 +10,4 @@ type OrderItem {
     field quantity: Int
 }
 
-// Note: OrderConfirmation is NOT defined here, but consumer.archml tries to import it
+# Note: OrderConfirmation is NOT defined here, but consumer.archml tries to import it

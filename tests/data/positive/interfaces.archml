@@ -1,5 +1,5 @@
-// Interface definitions with versioning and type references
-// Expected result: no semantic errors
+# Interface definitions with versioning and type references
+# Expected result: no semantic errors
 
 enum OrderStatus {
     Pending
@@ -15,7 +15,7 @@ type OrderItem {
     field unit_price: Decimal
 }
 
-// Unversioned interface
+# Unversioned interface
 interface OrderRequest {
     title = "Order Creation Request"
     description = "Payload for placing a new customer order."
@@ -33,7 +33,7 @@ interface OrderRequest {
     }
 }
 
-// Versioned interface v2 (adds shipping_method)
+# Versioned interface v2 (adds shipping_method)
 interface OrderRequest @v2 {
     title = "Order Creation Request v2"
 

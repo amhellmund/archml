@@ -438,59 +438,32 @@ class TestNumberLiterals:
 
 class TestComments:
     def test_line_comment_skipped(self) -> None:
-        tokens = _tokens_no_eof("// this is a comment")
+        tokens = _tokens_no_eof("# this is a comment")
         assert len(tokens) == 0
 
     def test_line_comment_does_not_consume_next_line(self) -> None:
-        tokens = _tokens_no_eof("// comment\nsystem")
+        tokens = _tokens_no_eof("# comment\nsystem")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.SYSTEM
 
     def test_line_comment_after_token(self) -> None:
-        types = _types("system // the top-level system")
+        types = _types("system # the top-level system")
         assert types == [TokenType.SYSTEM]
 
     def test_line_comment_between_tokens(self) -> None:
-        types = _types("system // comment\ncomponent")
+        types = _types("system # comment\ncomponent")
         assert types == [TokenType.SYSTEM, TokenType.COMPONENT]
 
     def test_multiple_line_comments(self) -> None:
-        source = "// first\n// second\nsystem"
+        source = "# first\n# second\nsystem"
         types = _types(source)
         assert types == [TokenType.SYSTEM]
 
-    def test_block_comment_skipped(self) -> None:
-        tokens = _tokens_no_eof("/* block comment */")
-        assert len(tokens) == 0
-
-    def test_block_comment_inline(self) -> None:
-        types = _types("system /* a comment */ component")
-        assert types == [TokenType.SYSTEM, TokenType.COMPONENT]
-
-    def test_block_comment_multiline(self) -> None:
-        source = "system /* line 1\nline 2\nline 3 */ component"
-        types = _types(source)
-        assert types == [TokenType.SYSTEM, TokenType.COMPONENT]
-
-    def test_block_comment_at_start(self) -> None:
-        source = "/* header comment */\nsystem"
-        types = _types(source)
-        assert types == [TokenType.SYSTEM]
-
-    def test_unterminated_block_comment_raises(self) -> None:
-        with pytest.raises(LexerError) as exc_info:
-            tokenize("/* not closed")
-        assert "Unterminated block comment" in str(exc_info.value)
-
-    def test_block_comment_star_not_followed_by_slash(self) -> None:
-        types = _types("/* star * but not end */ system")
-        assert types == [TokenType.SYSTEM]
-
-    def test_double_slash_in_string_not_comment(self) -> None:
-        tokens = _tokens_no_eof('"http://example.com"')
+    def test_hash_in_string_not_comment(self) -> None:
+        tokens = _tokens_no_eof('"color: #ff0000"')
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == "http://example.com"
+        assert tokens[0].value == "color: #ff0000"
 
 
 # ###############
@@ -559,12 +532,6 @@ class TestSourceLocations:
         assert tokens[1].line == 2
         assert tokens[1].column == 5
 
-    def test_token_after_multiline_block_comment(self) -> None:
-        tokens = _tokens_no_eof("/* line1\nline2\n */system")
-        # The block comment spans 3 lines; "system" starts byline 3, column 4
-        assert tokens[0].line == 3
-        assert tokens[0].column == 4
-
     def test_as_keyword_position(self) -> None:
         tokens = _tokens_no_eof("requires X as pay_in")
         as_tok = tokens[2]
@@ -597,14 +564,6 @@ class TestSourceLocations:
 
 
 class TestErrors:
-    def test_unexpected_character_hash(self) -> None:
-        with pytest.raises(LexerError) as exc_info:
-            tokenize("#")
-        error = exc_info.value
-        assert "Unexpected character" in str(error)
-        assert error.line == 1
-        assert error.column == 1
-
     def test_unexpected_character_semicolon(self) -> None:
         with pytest.raises(LexerError):
             tokenize(";")
@@ -626,17 +585,17 @@ class TestErrors:
 
     def test_error_includes_line_number(self) -> None:
         with pytest.raises(LexerError) as exc_info:
-            tokenize("\n\n#")
+            tokenize("\n\n~")
         assert exc_info.value.line == 3
 
     def test_error_includes_column_number(self) -> None:
         with pytest.raises(LexerError) as exc_info:
-            tokenize("   #")
+            tokenize("   ~")
         assert exc_info.value.column == 4
 
     def test_error_message_format(self) -> None:
         with pytest.raises(LexerError) as exc_info:
-            tokenize("#")
+            tokenize("~")
         assert "Line 1, column 1:" in str(exc_info.value)
 
     def test_unterminated_string_error_location(self) -> None:
@@ -645,13 +604,6 @@ class TestErrors:
         error = exc_info.value
         assert error.line == 1
         assert error.column == 4
-
-    def test_unterminated_block_comment_error_location(self) -> None:
-        with pytest.raises(LexerError) as exc_info:
-            tokenize("/* open")
-        error = exc_info.value
-        assert error.line == 1
-        assert error.column == 1
 
 
 # ###############
@@ -958,7 +910,7 @@ class TestFullExample:
 
     def test_interface_block(self) -> None:
         source = """
-            // Interface definition
+            # Interface definition
             interface OrderRequest {
                 title = "Order Creation Request"
                 description = "Payload for submitting a new customer order."

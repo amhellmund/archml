@@ -1,4 +1,4 @@
-// A self-contained .archml file with no external imports.
+# A self-contained .archml file with no external imports.
 
 enum Status {
     Active

@@ -1,5 +1,5 @@
-// Component file that imports from types.archml
-// Expected result: no semantic errors when resolved with types.archml
+# Component file that imports from types.archml
+# Expected result: no semantic errors when resolved with types.archml
 
 from imports/types import OrderRequest, PaymentRequest, OrderConfirmation
 

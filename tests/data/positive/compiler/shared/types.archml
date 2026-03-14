@@ -1,4 +1,4 @@
-// Shared types and interfaces used by worker and system files.
+# Shared types and interfaces used by worker and system files.
 
 enum Priority {
     Low

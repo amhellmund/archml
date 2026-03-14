@@ -1,6 +1,6 @@
-// Negative: component and sub-system share the same name within a system
-// Expected error:
-//   system 'Enterprise': name 'Services' is used for both a component and a sub-system
+# Negative: component and sub-system share the same name within a system
+# Expected error:
+#   system 'Enterprise': name 'Services' is used for both a component and a sub-system
 
 interface API { field endpoint: String }
 

@@ -1,5 +1,5 @@
-// Full system with nested components, external entity, and connect statements
-// Expected result: no semantic errors
+# Full system with nested components, external entity, and connect statements
+# Expected result: no semantic errors
 
 interface PaymentRequest {
     field order_id: String
@@ -33,7 +33,7 @@ interface OrderConfirmation {
     field confirmed: Bool
 }
 
-// External payment provider
+# External payment provider
 external system StripeAPI {
     title = "Stripe Payment API"
     description = "Third-party payment processing service."
@@ -41,7 +41,7 @@ external system StripeAPI {
     provides PaymentResult
 }
 
-// E-commerce platform
+# E-commerce platform
 system ECommerce {
     title = "E-Commerce Platform"
     description = "Customer-facing online store back-end."

@@ -1,5 +1,5 @@
-// Negative: duplicate enum name at top level
-// Expected error: Duplicate enum name 'OrderStatus'
+# Negative: duplicate enum name at top level
+# Expected error: Duplicate enum name 'OrderStatus'
 
 enum OrderStatus {
     Pending
