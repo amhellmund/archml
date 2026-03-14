@@ -182,8 +182,8 @@ class TestNegativeExamples:
         path = NEGATIVE_DIR / "undefined_connection_endpoint.archml"
         _assert_errors(
             path,
-            "connection source 'GhostProducer' is not a known member entity",
-            "connection target 'GhostOutput' is not a known member entity",
+            "Ghost",
+            "Missing",
         )
 
     def test_wrong_interface_version(self) -> None:
@@ -323,11 +323,13 @@ system ECommerce {
         requires PaymentRequest
         provides OrderConfirmation
     }
+
     component PaymentGatewayInst {
-        requires PaymentRequest
+        provides PaymentRequest
         provides PaymentResult
     }
-    connect OrderServiceInst -> PaymentGatewayInst by PaymentRequest
+
+    connect PaymentGatewayInst.PaymentRequest -> $payment -> OrderServiceInst.PaymentRequest
 }
 """
         arch_file = parse(source)
@@ -376,7 +378,7 @@ system Outer {
         component Sink {
             requires Signal
         }
-        connect Inner -> Sink by Signal
+        connect Inner.Signal -> $sig_ch -> Sink.Signal
     }
 }
 """
@@ -394,13 +396,13 @@ system Outer {
         component Inner {
             provides Signal
         }
-        connect Inner -> UnknownTarget by Signal
+        connect Ghost.Signal -> Inner.Signal
     }
 }
 """
         arch_file = parse(source)
         errors = analyze(arch_file)
-        assert any("'UnknownTarget' is not a known member entity" in e.message for e in errors)
+        assert any("Ghost" in e.message for e in errors)
 
     def test_file_and_directory_type_refs_are_valid(self) -> None:
         """File and Directory types require no resolution and are always valid."""
@@ -420,7 +422,7 @@ interface Artifacts {
         assert errors == [], f"Expected clean but got: {[e.message for e in errors]}"
 
     def test_use_statement_adds_component_to_scope(self) -> None:
-        """Components added via 'use' are valid connection endpoints."""
+        """Components added via 'use' are valid connect targets."""
         source = """
 from services import OrderService
 
@@ -428,15 +430,17 @@ interface PaymentRequest { field amount: Decimal }
 
 system ECommerce {
     use component OrderService
+
     component PaymentGateway {
-        requires PaymentRequest
+        provides PaymentRequest
     }
-    connect OrderService -> PaymentGateway by PaymentRequest
+
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
 }
 """
         arch_file = parse(source)
         errors = analyze(arch_file)
         # OrderService is in the imported names list, and 'use component' adds it
-        # as a stub component in the system — the connection should be valid.
-        conn_errors = [e for e in errors if "is not a known member entity" in e.message]
-        assert conn_errors == [], f"Connection endpoint errors: {conn_errors}"
+        # as a stub component in the system — no connect errors expected here.
+        connect_errors = [e for e in errors if "unknown child entity" in e.message]
+        assert connect_errors == [], f"Connect errors: {connect_errors}"

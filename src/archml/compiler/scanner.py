@@ -22,6 +22,8 @@ class TokenType(enum.Enum):
     COMPONENT = "component"
     USER = "user"
     INTERFACE = "interface"
+    CONNECT = "connect"
+    EXPOSE = "expose"
     TYPE = "type"
     ENUM = "enum"
     FIELD = "field"
@@ -29,8 +31,7 @@ class TokenType(enum.Enum):
     SCHEMA = "schema"
     REQUIRES = "requires"
     PROVIDES = "provides"
-    CONNECT = "connect"
-    BY = "by"
+    AS = "as"
     FROM = "from"
     IMPORT = "import"
     USE = "use"
@@ -52,8 +53,10 @@ class TokenType(enum.Enum):
     COLON = ":"
     EQUALS = "="
     AT = "@"
-    ARROW = "->"
     SLASH = "/"
+    ARROW = "->"
+    DOLLAR = "$"
+    DOT = "."
 
     # Literals
     STRING = "STRING"
@@ -125,6 +128,8 @@ _KEYWORDS: dict[str, TokenType] = {
     "component": TokenType.COMPONENT,
     "user": TokenType.USER,
     "interface": TokenType.INTERFACE,
+    "connect": TokenType.CONNECT,
+    "expose": TokenType.EXPOSE,
     "type": TokenType.TYPE,
     "enum": TokenType.ENUM,
     "field": TokenType.FIELD,
@@ -132,8 +137,7 @@ _KEYWORDS: dict[str, TokenType] = {
     "schema": TokenType.SCHEMA,
     "requires": TokenType.REQUIRES,
     "provides": TokenType.PROVIDES,
-    "connect": TokenType.CONNECT,
-    "by": TokenType.BY,
+    "as": TokenType.AS,
     "from": TokenType.FROM,
     "import": TokenType.IMPORT,
     "use": TokenType.USE,
@@ -157,6 +161,8 @@ _SINGLE_CHAR_TOKENS: dict[str, TokenType] = {
     "=": TokenType.EQUALS,
     "@": TokenType.AT,
     "/": TokenType.SLASH,
+    "$": TokenType.DOLLAR,
+    ".": TokenType.DOT,
 }
 
 
@@ -253,16 +259,13 @@ class _Lexer:
         line = self._line
         col = self._column
 
-        if ch in _SINGLE_CHAR_TOKENS:
+        if ch == "-" and self._peek() == ">":
+            self._advance()  # -
+            self._advance()  # >
+            self._tokens.append(Token(TokenType.ARROW, "->", line, col))
+        elif ch in _SINGLE_CHAR_TOKENS:
             self._advance()
             self._tokens.append(Token(_SINGLE_CHAR_TOKENS[ch], ch, line, col))
-        elif ch == "-":
-            if self._peek() == ">":
-                self._advance()  # -
-                self._advance()  # >
-                self._tokens.append(Token(TokenType.ARROW, "->", line, col))
-            else:
-                raise LexerError("Unexpected character: '-'", line, col)
         elif ch == '"':
             self._scan_string(line, col)
         elif ch.isdigit():

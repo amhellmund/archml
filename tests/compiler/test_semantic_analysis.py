@@ -8,8 +8,7 @@ from archml.compiler.semantic_analysis import SemanticError, analyze
 from archml.model.entities import (
     ArchFile,
     Component,
-    Connection,
-    ConnectionEndpoint,
+    ConnectDef,
     EnumDef,
     InterfaceDef,
     InterfaceRef,
@@ -114,7 +113,7 @@ interface Delivery {
 }
 """)
 
-    def test_system_with_components_and_connection(self) -> None:
+    def test_system_with_components_and_connect(self) -> None:
         _assert_clean("""
 interface DataFeed {
     field payload: String
@@ -129,11 +128,11 @@ system Pipeline {
         requires DataFeed
     }
 
-    connect Producer -> Consumer by DataFeed
+    connect Producer.DataFeed -> $feed -> Consumer.DataFeed
 }
 """)
 
-    def test_nested_components_with_connection(self) -> None:
+    def test_nested_components_with_connect(self) -> None:
         _assert_clean("""
 interface Signal {
     field value: Bool
@@ -148,7 +147,7 @@ component Router {
         requires Signal
     }
 
-    connect Input -> Output by Signal
+    connect Input.Signal -> $sig -> Output.Signal
 }
 """)
 
@@ -675,118 +674,83 @@ system Foo {
 
 
 # ###############
-# Connection Endpoint Validation
+# Channel Validation
 # ###############
 
 
-class TestConnectionEndpoints:
-    def test_unknown_source_in_component_connection(self) -> None:
-        _assert_error(
-            """
-interface Signal { field v: Bool }
-component Router {
-    component Output { requires Signal }
-    connect UnknownInput -> Output by Signal
-}
-""",
-            "connection source 'UnknownInput' is not a known member entity",
-        )
-
-    def test_unknown_target_in_component_connection(self) -> None:
-        _assert_error(
-            """
-interface Signal { field v: Bool }
-component Router {
-    component Input { provides Signal }
-    connect Input -> UnknownOutput by Signal
-}
-""",
-            "connection target 'UnknownOutput' is not a known member entity",
-        )
-
-    def test_unknown_source_in_system_connection(self) -> None:
-        _assert_error(
-            """
-interface DataFeed { field payload: String }
-system Pipeline {
-    component Consumer { requires DataFeed }
-    connect MissingProducer -> Consumer by DataFeed
-}
-""",
-            "connection source 'MissingProducer' is not a known member entity",
-        )
-
-    def test_unknown_target_in_system_connection(self) -> None:
-        _assert_error(
-            """
-interface DataFeed { field payload: String }
-system Pipeline {
-    component Producer { provides DataFeed }
-    connect Producer -> MissingConsumer by DataFeed
-}
-""",
-            "connection target 'MissingConsumer' is not a known member entity",
-        )
-
-    def test_valid_system_connection(self) -> None:
+class TestConnectValidation:
+    def test_valid_system_connect(self) -> None:
         _assert_clean("""
 interface DataFeed { field payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
     component Consumer { requires DataFeed }
-    connect Producer -> Consumer by DataFeed
+    connect Producer.DataFeed -> $feed -> Consumer.DataFeed
 }
 """)
 
-    def test_valid_component_connection(self) -> None:
+    def test_valid_component_connect(self) -> None:
         _assert_clean("""
 interface Signal { field value: Int }
 component Processor {
     component Source { provides Signal }
     component Sink { requires Signal }
-    connect Source -> Sink by Signal
+    connect Source.Signal -> $sig -> Sink.Signal
 }
 """)
 
-    def test_connection_with_undefined_interface(self) -> None:
+    def test_connect_with_unknown_src_entity(self) -> None:
         _assert_error(
             """
+interface DataFeed { field payload: String }
 system Pipeline {
-    component A {}
-    component B {}
-    connect A -> B by UndefinedInterface
+    component Consumer { requires DataFeed }
+    connect Ghost.DataFeed -> Consumer.DataFeed
 }
 """,
-            "refers to unknown interface 'UndefinedInterface'",
+            "connect references unknown child entity 'Ghost'",
         )
 
-    def test_connection_with_versioned_interface_ok(self) -> None:
-        _assert_clean("""
-interface Feed @v1 { field data: String }
+    def test_connect_with_unknown_dst_entity(self) -> None:
+        _assert_error(
+            """
+interface DataFeed { field payload: String }
 system Pipeline {
-    component A { provides Feed @v1 }
-    component B { requires Feed @v1 }
-    connect A -> B by Feed @v1
+    component Producer { provides DataFeed }
+    connect Producer.DataFeed -> Ghost.DataFeed
+}
+""",
+            "connect references unknown child entity 'Ghost'",
+        )
+
+    def test_expose_with_unknown_entity(self) -> None:
+        _assert_error(
+            """
+interface Signal { field v: Bool }
+component Router {
+    component Input { provides Signal }
+    expose Missing.Signal
+}
+""",
+            "expose references unknown child entity 'Missing'",
+        )
+
+    def test_valid_expose(self) -> None:
+        _assert_clean("""
+interface Signal { field value: Bool }
+component Router {
+    component Input { provides Signal }
+    expose Input.Signal
 }
 """)
 
-    def test_connection_endpoint_can_be_sub_system(self) -> None:
+    def test_direct_connect_no_channel(self) -> None:
         _assert_clean("""
-interface API { field endpoint: String }
-system Enterprise {
-    system Frontend { provides API }
-    system Backend { requires API }
-    connect Frontend -> Backend by API
-}
-""")
-
-    def test_external_component_valid_connection_endpoint(self) -> None:
-        _assert_clean("""
-interface PayReq { field amount: Decimal }
-system ECommerce {
-    component OrderService { provides PayReq }
-    external component StripeAPI { requires PayReq }
-    connect OrderService -> StripeAPI by PayReq
+interface DataFeed { field payload: String }
+system Pipeline {
+    component Producer { provides DataFeed }
+    component Consumer { requires DataFeed }
+    connect Producer.DataFeed -> Consumer.DataFeed
 }
 """)
 
@@ -952,22 +916,24 @@ class TestDirectModelConstruction:
         errors = analyze(arch_file)
         assert any("Duplicate enum name 'Status'" in e.message for e in errors)
 
-    def test_connection_with_known_interface_model(self) -> None:
+    def test_connect_with_known_interface_model(self) -> None:
         arch_file = ArchFile(
             interfaces=[InterfaceDef(name="Signal", version=None)],
             systems=[
                 System(
                     name="Sys",
-                    components=[
-                        Component(name="A"),
-                        Component(name="B"),
-                    ],
-                    connections=[
-                        Connection(
-                            source=ConnectionEndpoint(entity="A"),
-                            target=ConnectionEndpoint(entity="B"),
-                            interface=InterfaceRef(name="Signal"),
+                    connects=[
+                        ConnectDef(
+                            src_entity="A",
+                            src_port="Signal",
+                            channel="sig",
+                            dst_entity="B",
+                            dst_port="Signal",
                         )
+                    ],
+                    components=[
+                        Component(name="A", provides=[InterfaceRef(name="Signal")]),
+                        Component(name="B", requires=[InterfaceRef(name="Signal")]),
                     ],
                 )
             ],
@@ -1317,27 +1283,21 @@ user Customer {
             "name 'Sub' is used for both a user and a component or sub-system",
         )
 
-    def test_user_as_connection_endpoint_in_system(self) -> None:
+    def test_user_provides_connected_in_system(self) -> None:
         _assert_clean("""
 interface OrderRequest {}
-user Customer { provides OrderRequest }
-component OrderService { requires OrderRequest }
 system S {
-    use user Customer
-    use component OrderService
-    connect Customer -> OrderService by OrderRequest
+    user Customer { provides OrderRequest }
+    component OrderService { requires OrderRequest }
+    connect Customer.OrderRequest -> $orders -> OrderService.OrderRequest
 }
 """)
 
-    def test_top_level_user_as_connection_endpoint(self) -> None:
+    def test_user_without_via_is_valid(self) -> None:
         _assert_clean("""
 interface I {}
 user A { provides I }
 component B { requires I }
-system S {
-    use component B
-    connect A -> B by I
-}
 """)
 
     def test_user_qualified_name_top_level(self) -> None:

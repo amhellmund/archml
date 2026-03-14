@@ -1,4 +1,4 @@
-// Full system with nested components, external entity, and connections
+// Full system with nested components, external entity, and connect statements
 // Expected result: no semantic errors
 
 interface PaymentRequest {
@@ -60,29 +60,27 @@ system ECommerce {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        requires PaymentRequest
-        provides PaymentResult
+        provides PaymentRequest
+        requires PaymentResult
     }
 
     component InventoryManager {
         title = "Inventory Manager"
 
-        requires InventoryCheck
+        provides InventoryCheck
         provides InventoryStatus
     }
 
-    connect OrderService -> PaymentGateway by PaymentRequest {
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
         protocol = "gRPC"
         async = false
         description = "Submit payment for confirmed order."
     }
-    connect OrderService -> InventoryManager by InventoryCheck {
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
         protocol = "HTTP"
         async = true
     }
-    connect PaymentGateway -> StripeAPI by PaymentRequest {
-        protocol = "HTTP"
-        async = true
-        description = "Delegate payment processing to Stripe."
-    }
+
+    expose OrderService.OrderRequest
+    expose OrderService.OrderConfirmation
 }

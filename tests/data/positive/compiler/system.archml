@@ -6,10 +6,11 @@ from compiler/worker import TaskWorker, PriorityRouter
 system TaskProcessingSystem {
     use component TaskWorker
     use component PriorityRouter
+
     component Dispatcher {
         requires TaskRequest
         provides TaskRequest
     }
-    connect Dispatcher -> PriorityRouter by TaskRequest
-    connect PriorityRouter -> TaskWorker by TaskRequest
+
+    connect Dispatcher.TaskRequest -> $task_req -> TaskWorker.TaskRequest
 }

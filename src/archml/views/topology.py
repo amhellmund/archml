@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from archml.model.entities import Component, InterfaceRef, System, UserDef
+from archml.model.entities import Component, ConnectDef, InterfaceRef, System, UserDef
 
 # ###############
 # Public Interface
@@ -223,8 +223,6 @@ class VizDiagram:
 
 def build_viz_diagram(
     entity: Component | System,
-    *,
-    external_entities: dict[str, Component | System | UserDef] | None = None,
 ) -> VizDiagram:
     """Build a :class:`VizDiagram` topology from a model entity.
 
@@ -235,26 +233,16 @@ def build_viz_diagram(
     :class:`VizNode` instances in ``peripheral_nodes`` — one node per
     interface, positioned at the diagram boundary.
 
-    External actors that appear in ``connect`` statements but are not direct
-    children of *entity* are also appended to ``peripheral_nodes``.  When
-    *external_entities* supplies model data for an actor, the resulting node
-    carries full metadata (title, description, tags, ports); otherwise a
-    minimal stub is created.
-
-    If a ``connect`` statement references an interface that is not declared as
-    a port on either endpoint, an implicit port is created on that node so
-    that the edge can always be connected.
+    Each ``connect`` statement on the entity produces a :class:`VizEdge`
+    between the two wired ports.  One-sided connects (only a source or only
+    a destination) are skipped — they do not produce edges in the diagram.
 
     Args:
         entity: The focus component or system to visualize.
-        external_entities: Optional mapping from entity name to model entity
-            for resolving external connection endpoints.  Only names that do
-            not match a direct child of *entity* are consulted.
 
     Returns:
         A :class:`VizDiagram` describing the full diagram topology.
     """
-    ext = external_entities or {}
     entity_path = entity.qualified_name or entity.name
     root_id = _make_id(entity_path)
 
@@ -286,66 +274,29 @@ def build_viz_diagram(
         children=list(child_node_map.values()),
     )
 
-    # --- Peripheral nodes ---
+    # --- Peripheral nodes (terminal interface anchors at the diagram boundary) ---
     peripheral_nodes: list[VizNode] = []
-
-    # Terminals: the focus entity's own interface boundary points.
     for ref in entity.requires:
         peripheral_nodes.append(_make_terminal_node(ref, "requires"))
     for ref in entity.provides:
         peripheral_nodes.append(_make_terminal_node(ref, "provides"))
 
-    # External endpoints: actors referenced in connections but not children.
-    all_child_names = set(child_node_map)
-    external_node_map: dict[str, VizNode] = {}
-    for conn in entity.connections:
-        for ep_name in (conn.source.entity, conn.target.entity):
-            if ep_name in all_child_names or ep_name in external_node_map:
-                continue
-            ext_model = ext.get(ep_name)
-            ext_node = _make_external_node(ep_name, ext_model)
-            external_node_map[ep_name] = ext_node
-            peripheral_nodes.append(ext_node)
+    # --- Sub-entity map for connect statement port lookup ---
+    all_sub_entity_map: dict[str, Component | System | UserDef] = {}
+    for comp in entity.components:
+        all_sub_entity_map[comp.name] = comp
+    if isinstance(entity, System):
+        for sys in entity.systems:
+            all_sub_entity_map[sys.name] = sys
+        for user in entity.users:
+            all_sub_entity_map[user.name] = user
 
-    # --- Edges (from explicit connect statements) ---
-    all_node_map: dict[str, VizNode] = {**child_node_map, **external_node_map}
+    # --- Edges (derived from connect statements) ---
     edges: list[VizEdge] = []
-
-    for conn in entity.connections:
-        src_node = all_node_map.get(conn.source.entity)
-        tgt_node = all_node_map.get(conn.target.entity)
-        if src_node is None or tgt_node is None:
-            # Endpoint not resolvable — skip the edge rather than crashing.
-            continue
-
-        src_port_id = _find_port_id(src_node, "requires", conn.interface)
-        tgt_port_id = _find_port_id(tgt_node, "provides", conn.interface)
-
-        if src_port_id is None:
-            # Interface not explicitly declared — create an implicit port.
-            p = _make_port(src_node.id, "requires", conn.interface)
-            src_node.ports.append(p)
-            src_port_id = p.id
-
-        if tgt_port_id is None:
-            p = _make_port(tgt_node.id, "provides", conn.interface)
-            tgt_node.ports.append(p)
-            tgt_port_id = p.id
-
-        label = _iref_label(conn.interface)
-        edges.append(
-            VizEdge(
-                id=f"edge.{src_port_id}--{tgt_port_id}",
-                source_port_id=src_port_id,
-                target_port_id=tgt_port_id,
-                label=label,
-                interface_name=conn.interface.name,
-                interface_version=conn.interface.version,
-                protocol=conn.protocol,
-                is_async=conn.is_async,
-                description=conn.description,
-            )
-        )
+    for conn in entity.connects:
+        edge = _build_edge_from_connect(conn, child_node_map, all_sub_entity_map)
+        if edge is not None:
+            edges.append(edge)
 
     return VizDiagram(
         id=f"diagram.{root_id}",
@@ -446,42 +397,6 @@ def _make_child_node(entity: Component | System | UserDef, entity_path: str) -> 
     )
 
 
-def _make_external_node(name: str, entity: Component | System | UserDef | None) -> VizNode:
-    """Create a :class:`VizNode` for an external connection endpoint.
-
-    When *entity* is provided its full metadata is used; otherwise a minimal
-    stub is created so the edge can still be represented.
-    """
-    if entity is not None:
-        path = entity.qualified_name or name
-        node_id = _make_id(path)
-        if isinstance(entity, Component):
-            kind: NodeKind = "external_component"
-        elif isinstance(entity, System):
-            kind = "external_system"
-        else:
-            kind = "external_user"
-        return VizNode(
-            id=node_id,
-            label=entity.name,
-            title=entity.title,
-            kind=kind,
-            entity_path=path,
-            description=entity.description,
-            tags=list(entity.tags),
-            ports=_make_ports(node_id, entity),
-        )
-    # Stub for an endpoint whose model entity is unavailable.
-    node_id = f"ext.{name}"
-    return VizNode(
-        id=node_id,
-        label=name,
-        title=None,
-        kind="external_component",
-        entity_path=name,
-    )
-
-
 def _make_terminal_node(
     ref: InterfaceRef,
     direction: Literal["requires", "provides"],
@@ -523,6 +438,90 @@ def _find_port_id(
         if p.direction == direction and p.interface_name == ref.name and p.interface_version == ref.version:
             return p.id
     return None
+
+
+def _find_ref_by_port_name(
+    entity: Component | System | UserDef,
+    port_name: str,
+) -> tuple[Literal["requires", "provides"], InterfaceRef] | None:
+    """Find the direction and interface ref for a named port on *entity*.
+
+    The effective port name is ``ref.port_name`` when explicitly aliased with
+    ``as``, otherwise the interface name ``ref.name``.
+
+    Returns a ``(direction, ref)`` tuple, or ``None`` if not found.
+    """
+    for ref in entity.requires:
+        effective = ref.port_name if ref.port_name else ref.name
+        if effective == port_name:
+            return ("requires", ref)
+    for ref in entity.provides:
+        effective = ref.port_name if ref.port_name else ref.name
+        if effective == port_name:
+            return ("provides", ref)
+    return None
+
+
+def _build_edge_from_connect(
+    conn: ConnectDef,
+    child_node_map: dict[str, VizNode],
+    sub_entity_map: dict[str, Component | System | UserDef],
+) -> VizEdge | None:
+    """Attempt to build a :class:`VizEdge` from a :class:`ConnectDef`.
+
+    Returns ``None`` for one-sided connects (no src or no dst) and for
+    connects whose entity references cannot be resolved.
+    """
+    # One-sided connects don't produce edges.
+    if conn.src_entity is None or conn.src_port is None:
+        return None
+    if conn.dst_entity is None or conn.dst_port is None:
+        return None
+
+    src_sub = sub_entity_map.get(conn.src_entity)
+    dst_sub = sub_entity_map.get(conn.dst_entity)
+    if src_sub is None or dst_sub is None:
+        return None
+
+    src_result = _find_ref_by_port_name(src_sub, conn.src_port)
+    dst_result = _find_ref_by_port_name(dst_sub, conn.dst_port)
+    if src_result is None or dst_result is None:
+        return None
+
+    src_dir, src_ref = src_result
+    dst_dir, dst_ref = dst_result
+
+    src_node = child_node_map.get(conn.src_entity)
+    dst_node = child_node_map.get(conn.dst_entity)
+    if src_node is None or dst_node is None:
+        return None
+
+    src_port_id = _find_port_id(src_node, src_dir, src_ref)
+    dst_port_id = _find_port_id(dst_node, dst_dir, dst_ref)
+
+    if src_port_id is None:
+        p = _make_port(src_node.id, src_dir, src_ref)
+        src_node.ports.append(p)
+        src_port_id = p.id
+
+    if dst_port_id is None:
+        p = _make_port(dst_node.id, dst_dir, dst_ref)
+        dst_node.ports.append(p)
+        dst_port_id = p.id
+
+    # Use src_ref for the edge label (both sides should carry the same interface).
+    label = _iref_label(src_ref)
+    return VizEdge(
+        id=f"edge.{src_port_id}--{dst_port_id}",
+        source_port_id=src_port_id,
+        target_port_id=dst_port_id,
+        label=label,
+        interface_name=src_ref.name,
+        interface_version=src_ref.version,
+        protocol=conn.protocol,
+        is_async=conn.is_async,
+        description=conn.description,
+    )
 
 
 def _collect_boundary_ports(boundary: VizBoundary, result: dict[str, VizPort]) -> None:

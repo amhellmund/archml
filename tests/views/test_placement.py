@@ -5,7 +5,7 @@
 
 import pytest
 
-from archml.model.entities import Component, Connection, ConnectionEndpoint, InterfaceRef, System
+from archml.model.entities import Component, ConnectDef, InterfaceRef, System
 from archml.views.placement import (
     LayoutConfig,
     LayoutPlan,
@@ -29,11 +29,23 @@ def _iref(name: str, version: str | None = None) -> InterfaceRef:
     return InterfaceRef(name=name, version=version)
 
 
-def _conn(source: str, target: str, interface: str) -> Connection:
-    return Connection(
-        source=ConnectionEndpoint(entity=source),
-        target=ConnectionEndpoint(entity=target),
-        interface=InterfaceRef(name=interface),
+def _connect(
+    src_entity: str,
+    src_port: str,
+    dst_entity: str,
+    dst_port: str,
+    channel: str | None = None,
+    protocol: str | None = None,
+    is_async: bool = False,
+) -> ConnectDef:
+    return ConnectDef(
+        src_entity=src_entity,
+        src_port=src_port,
+        channel=channel,
+        dst_entity=dst_entity,
+        dst_port=dst_port,
+        protocol=protocol,
+        is_async=is_async,
     )
 
 
@@ -626,9 +638,13 @@ def test_peripheral_nodes_outside_boundary_in_total_width() -> None:
 
 
 def test_ecommerce_system_produces_complete_plan() -> None:
-    """Full integration: ecommerce system with multiple components and connections."""
+    """Full integration: ecommerce system with multiple components connected via connect statements."""
     sys = System(
         name="ECommerce",
+        connects=[
+            _connect("PaymentService", "PaymentRequest", "OrderService", "PaymentRequest", channel="payment"),
+            _connect("OrderService", "OrderRequest", "NotificationService", "OrderRequest", channel="notification"),
+        ],
         components=[
             Component(
                 name="OrderService",
@@ -643,10 +659,6 @@ def test_ecommerce_system_produces_complete_plan() -> None:
                 name="NotificationService",
                 requires=[_iref("OrderRequest")],
             ),
-        ],
-        connections=[
-            _conn("OrderService", "PaymentService", "PaymentRequest"),
-            _conn("NotificationService", "OrderService", "OrderRequest"),
         ],
     )
     diagram = build_viz_diagram(sys)
@@ -663,10 +675,11 @@ def test_ecommerce_system_produces_complete_plan() -> None:
     assert len(plan.edge_routes) == len(diagram.edges)
 
 
-def test_ecommerce_order_service_left_of_payment_service() -> None:
-    """OrderService (requirer) is to the left of PaymentService (provider)."""
+def test_ecommerce_payment_service_left_of_order_service() -> None:
+    """PaymentService (provider/source) is to the left of OrderService (requirer/target)."""
     sys = System(
         name="ECommerce",
+        connects=[_connect("PaymentService", "PaymentRequest", "OrderService", "PaymentRequest", channel="payment")],
         components=[
             Component(
                 name="OrderService",
@@ -677,46 +690,47 @@ def test_ecommerce_order_service_left_of_payment_service() -> None:
                 provides=[_iref("PaymentRequest")],
             ),
         ],
-        connections=[_conn("OrderService", "PaymentService", "PaymentRequest")],
     )
     diagram = build_viz_diagram(sys)
     plan = compute_layout(diagram)
     order_id = next(c.id for c in diagram.root.children if c.label == "OrderService")
     payment_id = next(c.id for c in diagram.root.children if c.label == "PaymentService")
-    assert plan.nodes[order_id].x < plan.nodes[payment_id].x
+    assert plan.nodes[payment_id].x < plan.nodes[order_id].x
 
 
-def test_external_actor_resolved_and_positioned() -> None:
-    """An external actor resolved via external_entities receives a layout entry."""
+def test_external_actor_in_components_positioned() -> None:
+    """An external actor declared in components receives a layout entry."""
     stripe = Component(name="Stripe", is_external=True, provides=[_iref("PaymentGateway")])
     sys = System(
         name="ECommerce",
+        connects=[_connect("Stripe", "PaymentGateway", "OrderService", "PaymentGateway", channel="payment")],
         components=[
             Component(name="OrderService", requires=[_iref("PaymentGateway")]),
+            stripe,
         ],
-        connections=[_conn("OrderService", "Stripe", "PaymentGateway")],
     )
-    diagram = build_viz_diagram(sys, external_entities={"Stripe": stripe})
+    diagram = build_viz_diagram(sys)
     plan = compute_layout(diagram)
-    stripe_node = next(n for n in diagram.peripheral_nodes if n.label == "Stripe")
+    stripe_node = next(c for c in diagram.root.children if c.label == "Stripe")
     assert stripe_node.id in plan.nodes
 
 
-def test_external_actor_right_of_boundary_when_it_provides() -> None:
-    """An external provider (target of edges) is placed right of the boundary."""
+def test_external_actor_left_of_requirer_when_it_provides() -> None:
+    """An external provider (source of edge) is placed left of the requirer (target)."""
     stripe = Component(name="Stripe", is_external=True, provides=[_iref("PaymentGateway")])
     sys = System(
         name="ECommerce",
+        connects=[_connect("Stripe", "PaymentGateway", "OrderService", "PaymentGateway", channel="payment")],
         components=[
             Component(name="OrderService", requires=[_iref("PaymentGateway")]),
+            stripe,
         ],
-        connections=[_conn("OrderService", "Stripe", "PaymentGateway")],
     )
-    diagram = build_viz_diagram(sys, external_entities={"Stripe": stripe})
+    diagram = build_viz_diagram(sys)
     plan = compute_layout(diagram)
-    bl = plan.boundaries[diagram.root.id]
-    stripe_node = next(n for n in diagram.peripheral_nodes if n.label == "Stripe")
-    assert plan.nodes[stripe_node.id].x >= bl.x + bl.width
+    order_id = next(c.id for c in diagram.root.children if c.label == "OrderService")
+    stripe_id = next(c.id for c in diagram.root.children if c.label == "Stripe")
+    assert plan.nodes[stripe_id].x < plan.nodes[order_id].x
 
 
 def test_all_ports_in_diagram_have_anchors() -> None:
@@ -725,11 +739,11 @@ def test_all_ports_in_diagram_have_anchors() -> None:
         name="ECommerce",
         requires=[_iref("ClientRequest")],
         provides=[_iref("ClientResponse")],
+        connects=[_connect("B", "BService", "A", "BService", channel="b_service")],
         components=[
             Component(name="A", requires=[_iref("BService")]),
             Component(name="B", provides=[_iref("BService")]),
         ],
-        connections=[_conn("A", "B", "BService")],
     )
     diagram = build_viz_diagram(sys)
     plan = compute_layout(diagram)

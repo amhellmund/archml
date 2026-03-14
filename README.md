@@ -12,7 +12,7 @@ ArchML sits between these extremes:
 
 - **Text-first** — `.archml` files are plain text, stored in git, reviewed in pull requests.
 - **Model-based** — one model, many views. Define a component once; reference it everywhere.
-- **Consistency checking** — the tooling catches dangling references, unused interfaces, and disconnected components.
+- **Consistency checking** — the tooling catches dangling references, ports missing `connect` or `expose`, and type mismatches across channels.
 - **Navigable views** — drill down from system landscape to individual component internals.
 - **Sphinx-native** — embed live architecture views directly in your documentation.
 
@@ -65,102 +65,91 @@ interface InventoryCheck {
 // systems/ecommerce.archml
 from types import OrderRequest, OrderConfirmation, PaymentRequest, InventoryCheck
 
-user Customer {
-    title = "Customer"
-    description = "An end user who places orders through the e-commerce platform."
-
-    provides OrderRequest
-    requires OrderConfirmation
-}
-
-external system StripeAPI {
-    title = "Stripe Payment API"
-    requires PaymentRequest
-    provides PaymentResult
-}
-
 system ECommerce {
     title = "E-Commerce Platform"
     description = "Customer-facing online store."
+
+    user Customer {
+        provides OrderRequest
+        requires OrderConfirmation
+    }
 
     component OrderService {
         title = "Order Service"
         description = "Accepts, validates, and processes customer orders."
 
-        // Internal pipeline: Validator feeds into Processor
         component Validator {
-            requires OrderRequest as input
-            provides ValidationResult as output
+            requires OrderRequest
+            provides ValidationResult
         }
 
         component Processor {
-            requires ValidationResult as input
+            requires ValidationResult
             requires PaymentRequest
             requires InventoryCheck
             provides OrderConfirmation
         }
 
-        connect Validator.output -> Processor.input
+        // Internal wiring: Validator feeds Processor via an implicit channel
+        connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
 
-        // Promote inner ports to the OrderService boundary
-        expose Validator.input             // requires OrderRequest
-        expose Processor.PaymentRequest    // requires PaymentRequest
-        expose Processor.InventoryCheck    // requires InventoryCheck
-        expose Processor.OrderConfirmation // provides OrderConfirmation
+        // Remaining ports must be explicitly exposed at the OrderService boundary
+        expose Validator.OrderRequest
+        expose Processor.PaymentRequest
+        expose Processor.InventoryCheck
+        expose Processor.OrderConfirmation
     }
 
     component PaymentGateway {
         title = "Payment Gateway"
         tags = ["critical", "pci-scope"]
 
-        requires PaymentRequest
-        provides PaymentResult
+        provides PaymentRequest
     }
 
     component InventoryManager {
         title = "Inventory Manager"
 
-        requires InventoryCheck as requests [1..*]  // accepts requests from multiple sources
-        provides InventoryStatus
+        provides InventoryCheck
     }
 
-    // Short form: interface is unambiguous on both sides
-    connect Customer      -> OrderService     by OrderRequest
-    connect OrderService  -> Customer         by OrderConfirmation
-    connect OrderService  -> PaymentGateway   by PaymentRequest
-    connect OrderService  -> InventoryManager by InventoryCheck {
-        protocol = "HTTP"
-    }
-    connect PaymentGateway -> StripeAPI by PaymentRequest {
-        protocol = "HTTP"
+    // Wire customer to order pipeline
+    connect Customer.OrderRequest -> $order_in -> OrderService.OrderRequest
+    connect OrderService.OrderConfirmation -> $order_out -> Customer.OrderConfirmation
+
+    // Wire OrderService to backing services
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
+        protocol = "gRPC"
         async = true
+    }
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
+        protocol = "HTTP"
     }
 }
 ```
 
-Large architectures split naturally across files. A `from ... import` statement brings named definitions into scope; `use component X` places an imported component inside a system without redefining it. Remote repositories can be referenced with `@repo-name` prefixes for multi-repo workspace setups.
+Large architectures split naturally across files. A `from ... import` statement brings named definitions into scope; `use component X` places an imported component inside a system without redefining it. Its exposed ports are available as `Entity.port_name` in `connect` and `expose` statements. Remote repositories can be referenced with `@repo-name` prefixes for multi-repo workspace setups.
 
 ## Language at a Glance
 
-| Keyword                      | Purpose                                                                           |
-| ---------------------------- | --------------------------------------------------------------------------------- |
-| `system`                     | Group of components or sub-systems with a shared goal                             |
-| `component`                  | Module with a clear responsibility; may nest sub-components                       |
-| `user`                       | Human actor (role or persona) that interacts with the system                      |
-| `interface`                  | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
-| `type`                       | Reusable data structure (used within interfaces)                                  |
-| `enum`                       | Constrained set of named values                                                   |
-| `field`                      | Named, typed data element with optional `description` and `schema`                |
-| `requires` / `provides`      | Declare consumed and exposed interface ports on a component or user               |
-| `requires X as name`         | Named port — required when the same interface appears more than once              |
-| `requires X as name [1..*]`  | Multi-port with cardinality — for fan-in patterns; `[N]`, `[*]`, `[M..N]` also valid |
-| `expose Sub.port`            | Promote a nested component's port to the enclosing component's boundary           |
-| `connect A -> B by I`        | Short form: wire interface I between A and B (when I is unambiguous on both sides) |
-| `connect A.p -> B.p`         | Long form: wire named ports directly (no `by` needed)                             |
-| `external`                   | Marks a system, component, or user as outside the development boundary            |
-| `from … import`              | Bring specific definitions from another file into scope                           |
-| `use component X`            | Place an imported entity inside a system                                          |
-| `tags`                       | Arbitrary labels for filtering and view generation                                |
+| Keyword                            | Purpose                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| `system`                           | Group of components or sub-systems with a shared goal                             |
+| `component`                        | Module with a clear responsibility; may nest sub-components                       |
+| `user`                             | Human actor (role or persona) that interacts with the system                      |
+| `interface`                        | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
+| `type`                             | Reusable data structure (used within interfaces)                                  |
+| `enum`                             | Constrained set of named values                                                   |
+| `field`                            | Named, typed data element with optional `description` and `schema`                |
+| `requires` / `provides`            | Declare a port that consumes or exposes an interface                              |
+| `requires X as port`               | Assign an explicit name to a port                                                 |
+| `connect A.p -> $ch -> B.p`        | Wire two ports via a named implicit channel                                       |
+| `connect A.p -> B.p`               | Wire two ports directly (no named channel)                                        |
+| `expose Entity.port [as name]`     | Explicitly surface a sub-entity's port at the enclosing boundary                 |
+| `external`                         | Marks a system, component, or user as outside the development boundary            |
+| `from … import`                    | Bring specific definitions from another file into scope                           |
+| `use component X`                  | Place an imported entity inside a system                                          |
+| `tags`                             | Arbitrary labels for filtering and view generation                                |
 
 Primitive types: `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
@@ -175,7 +164,7 @@ Delegates payment to PaymentGateway.
 """
 ```
 
-Enum values and connection block attributes each occupy their own line — no commas needed.
+Enum values each occupy their own line — no commas needed.
 
 Full syntax reference: [docs/LANGUAGE_SYNTAX.md](docs/LANGUAGE_SYNTAX.md)
 
@@ -266,7 +255,7 @@ archml sync-remote
 
 ## Project Status
 
-ArchML is in early development. The functional architecture domain (systems, components, interfaces, connections) is implemented. Behavioral and deployment domains are planned.
+ArchML is in early development. The functional architecture domain (systems, components, interfaces, ports, and channels) is implemented. Behavioral and deployment domains are planned.
 
 See [docs/PROJECT_SCOPE.md](docs/PROJECT_SCOPE.md) for the full vision and roadmap.
 

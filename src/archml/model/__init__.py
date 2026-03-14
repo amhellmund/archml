@@ -6,14 +6,15 @@
 from archml.model.entities import (
     ArchFile,
     Component,
-    Connection,
-    ConnectionEndpoint,
+    ConnectDef,
     EnumDef,
+    ExposeDef,
     ImportDeclaration,
     InterfaceDef,
     InterfaceRef,
     System,
     TypeDef,
+    UserDef,
 )
 from archml.model.types import (
     DirectoryTypeRef,
@@ -45,10 +46,11 @@ __all__ = [
     "EnumDef",
     "TypeDef",
     "InterfaceDef",
-    "ConnectionEndpoint",
-    "Connection",
+    "ConnectDef",
+    "ExposeDef",
     "Component",
     "System",
+    "UserDef",
     "ImportDeclaration",
     "ArchFile",
 ]

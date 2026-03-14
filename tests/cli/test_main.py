@@ -165,14 +165,13 @@ def test_check_reports_validation_errors(
 ) -> None:
     """check exits with code 1 when business validation finds errors."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    # Connection cycle: A -> B -> A (inline components inside system)
-    (tmp_path / "cycle.archml").write_text(
+    # Interface propagation error: system provides I but no member provides I.
+    (tmp_path / "propagation.archml").write_text(
         "interface I { field v: Int }\n"
+        "interface J { field v: Int }\n"
         "system S {\n"
-        "  component A { provides I requires I }\n"
-        "  component B { provides I requires I }\n"
-        "  connect A -> B by I\n"
-        "  connect B -> A by I\n"
+        "  provides I\n"
+        "  component A { provides J }\n"
         "}\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from archml.model.entities import Component, Connection, ConnectionEndpoint, InterfaceRef, System
+from archml.model.entities import Component, ConnectDef, InterfaceRef, System
 from archml.views.backend.diagram import render_diagram
 from archml.views.placement import compute_layout
 from archml.views.topology import build_viz_diagram
@@ -24,11 +24,9 @@ def _iref(name: str, version: str | None = None) -> InterfaceRef:
     return InterfaceRef(name=name, version=version)
 
 
-def _conn(source: str, target: str, interface: str) -> Connection:
-    return Connection(
-        source=ConnectionEndpoint(entity=source),
-        target=ConnectionEndpoint(entity=target),
-        interface=InterfaceRef(name=interface),
+def _connect(src_entity: str, src_port: str, dst_entity: str, dst_port: str, channel: str | None = None) -> ConnectDef:
+    return ConnectDef(
+        src_entity=src_entity, src_port=src_port, channel=channel, dst_entity=dst_entity, dst_port=dst_port
     )
 
 
@@ -237,13 +235,13 @@ def test_render_versioned_terminal_label(tmp_path: Path) -> None:
 
 
 def test_render_edge_label_present(tmp_path: Path) -> None:
-    """Connection interface name appears as a text label in the SVG."""
+    """Connect interface name appears as a text label in the SVG."""
     a = Component(name="A", requires=[_iref("PaymentRequest")])
     b = Component(name="B", provides=[_iref("PaymentRequest")])
     sys = System(
         name="Root",
+        connects=[_connect("B", "PaymentRequest", "A", "PaymentRequest", channel="payment")],
         components=[a, b],
-        connections=[_conn("A", "B", "PaymentRequest")],
     )
     root = _render_and_parse(sys, tmp_path)
     assert "PaymentRequest" in _text_content(root)
@@ -273,8 +271,8 @@ def test_render_edge_polyline_present(tmp_path: Path) -> None:
     b = Component(name="B", provides=[_iref("IFace")])
     sys = System(
         name="Root",
+        connects=[_connect("B", "IFace", "A", "IFace", channel="ch")],
         components=[a, b],
-        connections=[_conn("A", "B", "IFace")],
     )
     root = _render_and_parse(sys, tmp_path)
     polylines = list(root.iter(f"{{{_SVG_NS}}}polyline"))
@@ -287,8 +285,8 @@ def test_render_edge_has_explicit_arrowhead_polygon(tmp_path: Path) -> None:
     b = Component(name="B", provides=[_iref("IFace")])
     sys = System(
         name="Root",
+        connects=[_connect("B", "IFace", "A", "IFace", channel="ch")],
         components=[a, b],
-        connections=[_conn("A", "B", "IFace")],
     )
     root = _render_and_parse(sys, tmp_path)
     polygons = list(root.iter(f"{{{_SVG_NS}}}polygon"))
@@ -304,16 +302,14 @@ def test_render_edge_has_explicit_arrowhead_polygon(tmp_path: Path) -> None:
 
 
 def test_render_ecommerce_system(tmp_path: Path) -> None:
-    """Full integration: multi-component system with connections renders without error."""
+    """Full integration: multi-component system with connect renders without error."""
     sys = System(
         name="ECommerce",
+        connects=[_connect("PaymentService", "PaymentRequest", "OrderService", "PaymentRequest", channel="payment")],
         components=[
             Component(name="OrderService", requires=[_iref("PaymentRequest")]),
             Component(name="PaymentService", provides=[_iref("PaymentRequest")]),
             Component(name="NotificationService", requires=[_iref("OrderRequest")]),
-        ],
-        connections=[
-            _conn("OrderService", "PaymentService", "PaymentRequest"),
         ],
     )
     root = _render_and_parse(sys, tmp_path)

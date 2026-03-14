@@ -13,7 +13,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from archml.model.entities import ArchFile, Component, Connection, EnumDef, InterfaceDef, InterfaceRef, System, UserDef
+from archml.model.entities import (
+    ArchFile,
+    Component,
+    ConnectDef,
+    EnumDef,
+    ExposeDef,
+    InterfaceDef,
+    InterfaceRef,
+    System,
+    UserDef,
+)
 from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
 
 # ###############
@@ -50,14 +60,12 @@ def analyze(
     - Interface references in ``requires`` / ``provides`` must resolve to a
       known interface (locally defined or imported); locally-defined
       versioned references are checked against the actual declared version.
-    - Interface references in ``connect ... by`` statements follow the same
-      rules as requires/provides references.
-    - Connection endpoint names in a system must refer to direct members of
-      that system, to top-level entities in the file, or to imported names.
-    - Connection endpoint names in a component must refer to direct
-      sub-components of that component.
     - Duplicate member names within nested components and systems.
     - Name conflicts between components and sub-systems within a system.
+    - Connect statements: entity references in ``Entity.port`` must name
+      a direct child of the enclosing scope.
+    - Expose statements: ``Entity`` must name a direct child of the
+      enclosing scope.
     - Import entity validation: when *resolved_imports* is provided, each
       entity named in a ``from ... import`` statement must actually be
       defined at the top level of the resolved source file.
@@ -107,13 +115,6 @@ class _SemanticAnalyzer:
     ) -> None:
         self._file = arch_file
         self._resolved = resolved_imports
-        # Top-level component, system, and user names visible at file scope.
-        # These are valid connection endpoints from within any nested system.
-        self._file_entity_names: set[str] = (
-            {c.name for c in arch_file.components}
-            | {s.name for s in arch_file.systems}
-            | {u.name for u in arch_file.users}
-        )
 
     def analyze(self) -> list[SemanticError]:
         """Run all semantic checks and return collected errors."""
@@ -243,19 +244,12 @@ class _SemanticAnalyzer:
                 )
             )
 
-        # Check connections: endpoints must be direct sub-components.
-        sub_names = {c.name for c in comp.components}
-        for conn in comp.connections:
-            errors.extend(
-                _check_connection(
-                    ctx,
-                    conn,
-                    sub_names,
-                    all_interface_names,
-                    local_interface_defs,
-                    imported_names,
-                )
-            )
+        # Check connect / expose statements.
+        child_names = {c.name for c in comp.components}
+        for conn in comp.connects:
+            errors.extend(_check_connect(ctx, conn, child_names))
+        for exp in comp.exposes:
+            errors.extend(_check_expose(ctx, exp, child_names))
 
         # Recurse into sub-components.
         for sub in comp.components:
@@ -337,25 +331,12 @@ class _SemanticAnalyzer:
                 )
             )
 
-        # Connection endpoints in a system may reference:
-        #   1. Direct members of this system (components, sub-systems, and users),
-        #   2. Top-level entities in the file (e.g. external systems defined
-        #      at the top level and referenced in an internal connection), or
-        #   3. Imported names (brought in via `from ... import` and used via
-        #      `use component/system/user`).
-        member_names = comp_names | sys_names | user_names
-        connection_scope = member_names | self._file_entity_names | imported_names
-        for conn in system.connections:
-            errors.extend(
-                _check_connection(
-                    ctx,
-                    conn,
-                    connection_scope,
-                    all_interface_names,
-                    local_interface_defs,
-                    imported_names,
-                )
-            )
+        # Check connect / expose statements.
+        child_names = comp_names | sys_names | user_names
+        for conn in system.connects:
+            errors.extend(_check_connect(ctx, conn, child_names))
+        for exp in system.exposes:
+            errors.extend(_check_expose(ctx, exp, child_names))
 
         # Recurse into children.
         for comp in system.components:
@@ -659,6 +640,31 @@ def _check_interface_ref(
     return errors
 
 
+def _check_connect(
+    ctx: str,
+    conn: ConnectDef,
+    child_names: set[str],
+) -> list[SemanticError]:
+    """Check that entity references in a connect statement name direct children."""
+    errors: list[SemanticError] = []
+    if conn.src_entity is not None and conn.src_entity not in child_names:
+        errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{conn.src_entity}'"))
+    if conn.dst_entity is not None and conn.dst_entity not in child_names:
+        errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{conn.dst_entity}'"))
+    return errors
+
+
+def _check_expose(
+    ctx: str,
+    exp: ExposeDef,
+    child_names: set[str],
+) -> list[SemanticError]:
+    """Check that the entity in an expose statement names a direct child."""
+    if exp.entity not in child_names:
+        return [SemanticError(f"{ctx}: expose references unknown child entity '{exp.entity}'")]
+    return []
+
+
 def _check_user(
     user: UserDef,
     all_interface_names: set[str],
@@ -676,36 +682,4 @@ def _check_user(
         errors.extend(
             _check_interface_ref(ctx, ref, all_interface_names, local_interface_defs, imported_names, "provides")
         )
-    return errors
-
-
-def _check_connection(
-    ctx: str,
-    conn: Connection,
-    member_names: set[str],
-    all_interface_names: set[str],
-    local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
-    imported_names: set[str],
-) -> list[SemanticError]:
-    """Check a single connection for endpoint and interface validity."""
-    errors: list[SemanticError] = []
-
-    src = conn.source.entity
-    tgt = conn.target.entity
-    if src not in member_names:
-        errors.append(SemanticError(f"{ctx}: connection source '{src}' is not a known member entity"))
-    if tgt not in member_names:
-        errors.append(SemanticError(f"{ctx}: connection target '{tgt}' is not a known member entity"))
-
-    errors.extend(
-        _check_interface_ref(
-            ctx,
-            conn.interface,
-            all_interface_names,
-            local_interface_defs,
-            imported_names,
-            "connect ... by",
-        )
-    )
-
     return errors

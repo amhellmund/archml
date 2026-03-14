@@ -3,7 +3,7 @@
 
 """Tests for the abstract visualization topology model and its builder."""
 
-from archml.model.entities import Component, Connection, ConnectionEndpoint, InterfaceRef, System, UserDef
+from archml.model.entities import Component, ConnectDef, InterfaceRef, System, UserDef
 from archml.views.topology import (
     VizBoundary,
     VizNode,
@@ -21,19 +21,22 @@ def _iref(name: str, version: str | None = None) -> InterfaceRef:
     return InterfaceRef(name=name, version=version)
 
 
-def _conn(
-    source: str,
-    target: str,
-    interface: str,
-    version: str | None = None,
+def _connect(
+    src_entity: str,
+    src_port: str,
+    dst_entity: str,
+    dst_port: str,
+    channel: str | None = None,
     protocol: str | None = None,
     is_async: bool = False,
     description: str | None = None,
-) -> Connection:
-    return Connection(
-        source=ConnectionEndpoint(entity=source),
-        target=ConnectionEndpoint(entity=target),
-        interface=InterfaceRef(name=interface, version=version),
+) -> ConnectDef:
+    return ConnectDef(
+        src_entity=src_entity,
+        src_port=src_port,
+        channel=channel,
+        dst_entity=dst_entity,
+        dst_port=dst_port,
         protocol=protocol,
         is_async=is_async,
         description=description,
@@ -334,88 +337,43 @@ def test_no_terminals_for_leaf_without_interfaces() -> None:
 
 
 # ###############
-# Peripheral nodes — external actors
+# Edges — connect-based
 # ###############
 
 
-def test_external_actor_stub_created_for_unresolved_endpoint() -> None:
-    """An endpoint not among the children creates a stub external node."""
-    child = Component(name="A", requires=[_iref("IFace")])
-    conn = _conn("A", "StripeAPI", "IFace")
-    parent = System(name="S", components=[child], connections=[conn])
-    diag = build_viz_diagram(parent)
-    ext_ids = _node_ids(diag.peripheral_nodes)
-    assert "ext.StripeAPI" in ext_ids
-
-
-def test_external_actor_stub_has_external_kind() -> None:
-    child = Component(name="A", requires=[_iref("IFace")])
-    conn = _conn("A", "Ext", "IFace")
-    parent = System(name="S", components=[child], connections=[conn])
-    diag = build_viz_diagram(parent)
-    ext_node = next(n for n in diag.peripheral_nodes if n.id == "ext.Ext")
-    assert ext_node.kind in ("external_component", "external_system")
-
-
-def test_external_actor_resolved_from_external_entities() -> None:
-    """When external_entities provides model data it is used for the node."""
-    child = Component(name="A", requires=[_iref("Pay")])
-    stripe = Component(name="StripeAPI", title="Stripe", provides=[_iref("Pay")], is_external=True)
-    conn = _conn("A", "StripeAPI", "Pay")
-    parent = System(name="S", components=[child], connections=[conn])
-
-    diag = build_viz_diagram(parent, external_entities={"StripeAPI": stripe})
-
-    ext_node = next(n for n in diag.peripheral_nodes if n.label == "StripeAPI")
-    assert ext_node.title == "Stripe"
-    assert ext_node.kind == "external_component"
-    # Resolved node carries full ports.
-    assert any(p.interface_name == "Pay" for p in ext_node.ports)
-
-
-def test_external_actor_appears_only_once_even_in_multiple_connections() -> None:
-    """The same external actor referenced twice produces a single peripheral node."""
-    a = Component(name="A", requires=[_iref("X"), _iref("Y")])
-    conn1 = _conn("A", "Ext", "X")
-    conn2 = _conn("A", "Ext", "Y")
-    parent = System(name="S", components=[a], connections=[conn1, conn2])
-    diag = build_viz_diagram(parent)
-    ext_nodes = [n for n in diag.peripheral_nodes if n.label == "Ext"]
-    assert len(ext_nodes) == 1
-
-
-def test_child_not_added_to_peripheral_nodes() -> None:
-    """A direct child of the focus entity never appears in peripheral_nodes."""
-    child_a = Component(name="A", requires=[_iref("IFace")])
-    child_b = Component(name="B", provides=[_iref("IFace")])
-    conn = _conn("A", "B", "IFace")
-    parent = System(name="S", components=[child_a, child_b], connections=[conn])
-    diag = build_viz_diagram(parent)
-    peripheral_labels = {n.label for n in diag.peripheral_nodes}
-    assert "A" not in peripheral_labels
-    assert "B" not in peripheral_labels
-
-
-# ###############
-# Edges
-# ###############
-
-
-def test_edge_created_for_connection() -> None:
-    """A VizEdge is created for each connect statement."""
+def test_edge_created_for_connect_statement() -> None:
+    """A VizEdge is created for each full connect statement."""
     a = Component(name="A", requires=[_iref("IFace")])
     b = Component(name="B", provides=[_iref("IFace")])
-    conn = _conn("A", "B", "IFace")
-    parent = System(name="S", components=[a, b], connections=[conn])
+    parent = System(
+        name="S",
+        connects=[_connect("B", "IFace", "A", "IFace", channel="ch")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     assert len(diag.edges) == 1
+
+
+def test_one_sided_connect_creates_no_edge() -> None:
+    """A one-sided connect (no dst) produces no edge."""
+    a = Component(name="A", provides=[_iref("IFace")])
+    parent = System(
+        name="S",
+        connects=[ConnectDef(src_entity="A", src_port="IFace", channel="ch")],
+        components=[a],
+    )
+    diag = build_viz_diagram(parent)
+    assert len(diag.edges) == 0
 
 
 def test_edge_label_is_interface_name() -> None:
     a = Component(name="A", requires=[_iref("PayReq")])
     b = Component(name="B", provides=[_iref("PayReq")])
-    conn = _conn("A", "B", "PayReq")
-    parent = System(name="S", components=[a, b], connections=[conn])
+    parent = System(
+        name="S",
+        connects=[_connect("B", "PayReq", "A", "PayReq", channel="pay")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     assert diag.edges[0].label == "PayReq"
 
@@ -423,56 +381,74 @@ def test_edge_label_is_interface_name() -> None:
 def test_edge_label_includes_version() -> None:
     a = Component(name="A", requires=[_iref("API", "v2")])
     b = Component(name="B", provides=[_iref("API", "v2")])
-    conn = _conn("A", "B", "API", version="v2")
-    parent = System(name="S", components=[a, b], connections=[conn])
+    parent = System(
+        name="S",
+        connects=[ConnectDef(src_entity="B", src_port="API", channel="ch", dst_entity="A", dst_port="API")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     assert diag.edges[0].label == "API@v2"
 
 
-def test_edge_source_port_is_requires_port() -> None:
-    """Edge source_port_id references a requires port on the source node."""
+def test_edge_source_port_is_src_entity_port() -> None:
+    """Edge source_port_id references the src_entity's port."""
     a = Component(name="A", requires=[_iref("IFace")])
     b = Component(name="B", provides=[_iref("IFace")])
-    conn = _conn("A", "B", "IFace")
-    parent = System(name="S", components=[a, b], connections=[conn])
+    # B is src_entity (provider), A is dst_entity (requirer)
+    parent = System(
+        name="S",
+        connects=[_connect("B", "IFace", "A", "IFace", channel="ch")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     all_ports = collect_all_ports(diag)
     src_port = all_ports[diag.edges[0].source_port_id]
-    assert src_port.direction == "requires"
+    assert src_port.direction == "provides"
     assert src_port.interface_name == "IFace"
 
 
-def test_edge_target_port_is_provides_port() -> None:
-    """Edge target_port_id references a provides port on the target node."""
+def test_edge_target_port_is_dst_entity_port() -> None:
+    """Edge target_port_id references the dst_entity's port."""
     a = Component(name="A", requires=[_iref("IFace")])
     b = Component(name="B", provides=[_iref("IFace")])
-    conn = _conn("A", "B", "IFace")
-    parent = System(name="S", components=[a, b], connections=[conn])
+    parent = System(
+        name="S",
+        connects=[_connect("B", "IFace", "A", "IFace", channel="ch")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     all_ports = collect_all_ports(diag)
     tgt_port = all_ports[diag.edges[0].target_port_id]
-    assert tgt_port.direction == "provides"
+    assert tgt_port.direction == "requires"
     assert tgt_port.interface_name == "IFace"
 
 
 def test_edge_source_and_target_port_owners() -> None:
-    """Source port belongs to the source node; target port to the target node."""
+    """Source port belongs to src_entity node; target port to dst_entity node."""
     a = Component(name="A", requires=[_iref("IFace")])
     b = Component(name="B", provides=[_iref("IFace")])
-    conn = _conn("A", "B", "IFace")
-    parent = System(name="S", components=[a, b], connections=[conn])
+    # B is src (provider), A is dst (requirer)
+    parent = System(
+        name="S",
+        connects=[_connect("B", "IFace", "A", "IFace", channel="ch")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     all_ports = collect_all_ports(diag)
     edge = diag.edges[0]
-    assert all_ports[edge.source_port_id].node_id == "S__A"
-    assert all_ports[edge.target_port_id].node_id == "S__B"
+    assert all_ports[edge.source_port_id].node_id == "S__B"
+    assert all_ports[edge.target_port_id].node_id == "S__A"
 
 
 def test_edge_protocol_and_async_propagated() -> None:
+    """Connect protocol and async attributes are propagated to the edge."""
     a = Component(name="A", requires=[_iref("X")])
     b = Component(name="B", provides=[_iref("X")])
-    conn = _conn("A", "B", "X", protocol="gRPC", is_async=True, description="async call")
-    parent = System(name="S", components=[a, b], connections=[conn])
+    parent = System(
+        name="S",
+        connects=[_connect("B", "X", "A", "X", channel="ch", protocol="gRPC", is_async=True, description="async call")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     edge = diag.edges[0]
     assert edge.protocol == "gRPC"
@@ -480,73 +456,74 @@ def test_edge_protocol_and_async_propagated() -> None:
     assert edge.description == "async call"
 
 
-def test_multiple_edges_created() -> None:
+def test_multiple_edges_from_multiple_connects() -> None:
+    """Multiple connect statements each produce their own edge."""
     a = Component(name="A", requires=[_iref("X"), _iref("Y")])
     b = Component(name="B", provides=[_iref("X")])
     c = Component(name="C", provides=[_iref("Y")])
-    conns = [_conn("A", "B", "X"), _conn("A", "C", "Y")]
-    parent = System(name="S", components=[a, b, c], connections=conns)
+    parent = System(
+        name="S",
+        connects=[
+            _connect("B", "X", "A", "X", channel="ch1"),
+            _connect("C", "Y", "A", "Y", channel="ch2"),
+        ],
+        components=[a, b, c],
+    )
     diag = build_viz_diagram(parent)
     assert len(diag.edges) == 2
 
 
-def test_edge_to_unknown_source_creates_stub_and_edge() -> None:
-    """An unknown source endpoint becomes a stub external node and the edge is kept."""
-    b = Component(name="B", provides=[_iref("IFace")])
-    conn = _conn("Ghost", "B", "IFace")
-    parent = System(name="S", components=[b], connections=[conn])
+def test_external_component_connected() -> None:
+    """An external component (is_external=True) can be wired via connect."""
+    stripe = Component(name="StripeAPI", is_external=True, requires=[_iref("PaymentRequest")])
+    gateway = Component(name="PaymentGateway", provides=[_iref("PaymentRequest")])
+    parent = System(
+        name="S",
+        connects=[_connect("PaymentGateway", "PaymentRequest", "StripeAPI", "PaymentRequest", channel="payment")],
+        components=[stripe, gateway],
+    )
     diag = build_viz_diagram(parent)
-    # Stub node is created for "Ghost".
-    peripheral_labels = {n.label for n in diag.peripheral_nodes}
-    assert "Ghost" in peripheral_labels
-    # Edge is still produced (connecting stub → B).
+    # Both should be child nodes inside the boundary.
+    child_labels = {c.label for c in diag.root.children}
+    assert "StripeAPI" in child_labels
+    assert "PaymentGateway" in child_labels
+    # One edge connects them.
     assert len(diag.edges) == 1
+    stripe_node = next(c for c in diag.root.children if c.label == "StripeAPI")
+    assert isinstance(stripe_node, VizNode)
+    assert stripe_node.kind == "external_component"
 
 
-def test_edge_to_unknown_target_creates_stub_and_edge() -> None:
-    """An unknown target endpoint becomes a stub external node and the edge is kept."""
+def test_child_component_not_in_peripheral_nodes() -> None:
+    """Direct children of the focus entity never appear in peripheral_nodes."""
     a = Component(name="A", requires=[_iref("IFace")])
-    conn = _conn("A", "Ghost", "IFace")
-    parent = System(name="S", components=[a], connections=[conn])
+    b = Component(name="B", provides=[_iref("IFace")])
+    parent = System(
+        name="S",
+        connects=[_connect("B", "IFace", "A", "IFace", channel="ch")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     peripheral_labels = {n.label for n in diag.peripheral_nodes}
-    assert "Ghost" in peripheral_labels
-    assert len(diag.edges) == 1
+    assert "A" not in peripheral_labels
+    assert "B" not in peripheral_labels
 
 
-# ###############
-# Implicit ports
-# ###############
-
-
-def test_implicit_port_created_when_requires_missing() -> None:
-    """When the source lacks an explicit requires declaration an implicit port is added."""
-    # A has no requires declarations at all.
-    a = Component(name="A")
-    b = Component(name="B", provides=[_iref("IFace")])
-    conn = _conn("A", "B", "IFace")
-    parent = System(name="S", components=[a, b], connections=[conn])
+def test_one_provider_multiple_requirers_creates_n_edges() -> None:
+    """One provider connected to N requirers via separate connects creates N edges."""
+    a = Component(name="A", requires=[_iref("X")])
+    b = Component(name="B", requires=[_iref("X")])
+    c = Component(name="C", provides=[_iref("X")])
+    parent = System(
+        name="S",
+        connects=[
+            _connect("C", "X", "A", "X", channel="ch"),
+            _connect("C", "X", "B", "X", channel="ch"),
+        ],
+        components=[a, b, c],
+    )
     diag = build_viz_diagram(parent)
-
-    assert len(diag.edges) == 1
-    all_ports = collect_all_ports(diag)
-    src_port = all_ports[diag.edges[0].source_port_id]
-    assert src_port.direction == "requires"
-    assert src_port.interface_name == "IFace"
-
-
-def test_implicit_port_created_when_provides_missing() -> None:
-    a = Component(name="A", requires=[_iref("IFace")])
-    b = Component(name="B")  # no provides
-    conn = _conn("A", "B", "IFace")
-    parent = System(name="S", components=[a, b], connections=[conn])
-    diag = build_viz_diagram(parent)
-
-    assert len(diag.edges) == 1
-    all_ports = collect_all_ports(diag)
-    tgt_port = all_ports[diag.edges[0].target_port_id]
-    assert tgt_port.direction == "provides"
-    assert tgt_port.interface_name == "IFace"
+    assert len(diag.edges) == 2
 
 
 # ###############
@@ -580,23 +557,15 @@ def test_collect_all_ports_includes_terminal_ports() -> None:
     assert "Out" in names
 
 
-def test_collect_all_ports_includes_external_node_ports() -> None:
-    child = Component(name="A", requires=[_iref("Pay")])
-    stripe = Component(name="Stripe", provides=[_iref("Pay")], is_external=True)
-    conn = _conn("A", "Stripe", "Pay")
-    parent = System(name="S", components=[child], connections=[conn])
-    diag = build_viz_diagram(parent, external_entities={"Stripe": stripe})
-    all_ports = collect_all_ports(diag)
-    prov_ports = [p for p in all_ports.values() if p.direction == "provides" and p.interface_name == "Pay"]
-    assert len(prov_ports) >= 1
-
-
 def test_collect_all_ports_returns_unique_ids() -> None:
     """All returned port IDs are distinct."""
     a = Component(name="A", requires=[_iref("X")])
     b = Component(name="B", provides=[_iref("X")])
-    conn = _conn("A", "B", "X")
-    parent = System(name="S", components=[a, b], connections=[conn])
+    parent = System(
+        name="S",
+        connects=[_connect("B", "X", "A", "X", channel="ch")],
+        components=[a, b],
+    )
     diag = build_viz_diagram(parent)
     all_ports = collect_all_ports(diag)
     assert len(all_ports) == len(set(all_ports))
@@ -619,57 +588,65 @@ def test_ecommerce_system_topology() -> None:
         name="PaymentGateway",
         title="Payment Gateway",
         tags=["critical", "pci-scope"],
-        requires=[_iref("PaymentRequest")],
-        provides=[_iref("PaymentResult")],
-    )
-    inventory = Component(
-        name="InventoryManager",
-        title="Inventory Manager",
-        requires=[_iref("InventoryCheck")],
-        provides=[_iref("InventoryStatus")],
+        provides=[_iref("PaymentRequest")],
+        requires=[_iref("StripePayment")],
     )
     stripe = Component(
         name="StripeAPI",
         title="Stripe Payment API",
-        requires=[_iref("PaymentRequest")],
-        provides=[_iref("PaymentResult")],
         is_external=True,
+        provides=[_iref("StripePayment")],
+    )
+    inventory = Component(
+        name="InventoryManager",
+        title="Inventory Manager",
+        provides=[_iref("InventoryCheck")],
     )
 
     ecommerce = System(
         name="ECommerce",
         title="E-Commerce Platform",
-        components=[order_svc, payment_gw, inventory],
-        connections=[
-            _conn("OrderService", "PaymentGateway", "PaymentRequest"),
-            _conn("OrderService", "InventoryManager", "InventoryCheck"),
-            _conn("PaymentGateway", "StripeAPI", "PaymentRequest", protocol="HTTP", is_async=True),
+        connects=[
+            _connect("PaymentGateway", "PaymentRequest", "OrderService", "PaymentRequest", channel="payment"),
+            _connect("InventoryManager", "InventoryCheck", "OrderService", "InventoryCheck", channel="inventory"),
+            _connect(
+                "StripeAPI",
+                "StripePayment",
+                "PaymentGateway",
+                "StripePayment",
+                channel="stripe",
+                protocol="HTTP",
+                is_async=True,
+            ),
         ],
+        components=[order_svc, payment_gw, inventory, stripe],
     )
 
-    diag = build_viz_diagram(ecommerce, external_entities={"StripeAPI": stripe})
+    diag = build_viz_diagram(ecommerce)
 
     # Root boundary is ECommerce.
     assert diag.root.id == "ECommerce"
     assert diag.root.kind == "system"
 
-    # Three children inside the boundary.
+    # Four children inside the boundary (including external StripeAPI).
     child_labels = {c.label for c in diag.root.children if isinstance(c, VizNode)}
-    assert child_labels == {"OrderService", "PaymentGateway", "InventoryManager"}
+    assert "OrderService" in child_labels
+    assert "PaymentGateway" in child_labels
+    assert "InventoryManager" in child_labels
+    assert "StripeAPI" in child_labels
 
-    # StripeAPI is a peripheral (external) node.
-    peripheral_labels = {n.label for n in diag.peripheral_nodes}
-    assert "StripeAPI" in peripheral_labels
-    stripe_node = next(n for n in diag.peripheral_nodes if n.label == "StripeAPI")
+    # StripeAPI is an external_component child (not peripheral).
+    stripe_node = next(c for c in diag.root.children if c.label == "StripeAPI")
+    assert isinstance(stripe_node, VizNode)
     assert stripe_node.kind == "external_component"
 
-    # Three edges.
+    # Three edges (one per connect statement).
     assert len(diag.edges) == 3
     edge_labels = {e.label for e in diag.edges}
     assert "PaymentRequest" in edge_labels
     assert "InventoryCheck" in edge_labels
 
-    # Async annotation on the Stripe edge.
+    # Async annotation on the stripe edge.
     stripe_edge = next(e for e in diag.edges if e.protocol == "HTTP")
     assert stripe_edge.is_async is True
 
@@ -727,35 +704,31 @@ def test_user_child_ports_are_built() -> None:
     assert "provides" in directions
 
 
-def test_user_as_connection_endpoint() -> None:
-    """A user can be a source or target of a connection edge."""
-    iref = InterfaceRef(name="OrderRequest")
-    customer = UserDef(name="Customer", provides=[iref])
-    order_svc = Component(name="OrderService", requires=[iref])
-    conn = _conn("Customer", "OrderService", "OrderRequest")
+def test_user_connect_creates_edge() -> None:
+    """A connect statement involving a user entity creates an edge."""
+    customer = UserDef(name="Customer", provides=[InterfaceRef(name="OrderRequest")])
+    order_svc = Component(name="OrderService", requires=[InterfaceRef(name="OrderRequest")])
     system = System(
         name="ECommerce",
+        connects=[
+            ConnectDef(
+                src_entity="Customer",
+                src_port="OrderRequest",
+                channel="order_in",
+                dst_entity="OrderService",
+                dst_port="OrderRequest",
+            )
+        ],
         users=[customer],
         components=[order_svc],
-        connections=[conn],
     )
     diag = build_viz_diagram(system)
     assert len(diag.edges) == 1
     edge = diag.edges[0]
+    # Customer is the provider → source port
+    # OrderService is the requirer → target port
     assert "Customer" in edge.source_port_id
     assert "OrderService" in edge.target_port_id
     all_ports = collect_all_ports(diag)
     assert edge.source_port_id in all_ports
     assert edge.target_port_id in all_ports
-
-
-def test_external_user_as_peripheral_node() -> None:
-    """A user supplied via external_entities appears as an external_user peripheral node."""
-    iref = InterfaceRef(name="Report")
-    ext_user = UserDef(name="Analyst", provides=[iref])
-    comp = Component(name="ReportService", requires=[iref])
-    conn = _conn("Analyst", "ReportService", "Report")
-    system = System(name="S", components=[comp], connections=[conn])
-    diag = build_viz_diagram(system, external_entities={"Analyst": ext_user})
-    kinds = {n.kind for n in diag.peripheral_nodes}
-    assert "external_user" in kinds

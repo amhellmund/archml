@@ -26,12 +26,13 @@ component Worker {
 }
 
 system SimpleSystem {
+    channel data_req: DataRequest
+
     component Client {
-        requires DataRequest
+        requires DataRequest via data_req
     }
     component WorkerInst {
-        requires DataRequest
+        requires DataRequest via data_req
         provides DataResponse
     }
-    connect Client -> WorkerInst by DataRequest
 }

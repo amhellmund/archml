@@ -1,7 +1,7 @@
-// Negative: connection endpoints reference non-existent members
+// Negative: connect and expose statements reference non-existent child entities
 // Expected errors:
-//   system 'Pipeline': connection source 'GhostProducer' is not a known member entity
-//   component 'Router': connection target 'GhostOutput' is not a known member entity
+//   system 'Pipeline': connect references unknown child entity 'Ghost'
+//   component 'Router': expose references unknown child entity 'Missing'
 
 interface DataFeed {
     field payload: String
@@ -16,8 +16,7 @@ system Pipeline {
         requires DataFeed
     }
 
-    // GhostProducer is not defined as a member
-    connect GhostProducer -> Consumer by DataFeed
+    connect Ghost.DataFeed -> Consumer.DataFeed
 }
 
 component Router {
@@ -25,6 +24,5 @@ component Router {
         provides Signal
     }
 
-    // GhostOutput is not defined as a sub-component
-    connect Input -> GhostOutput by Signal
+    expose Missing.Signal
 }
