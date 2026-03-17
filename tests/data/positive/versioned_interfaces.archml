@@ -30,8 +30,8 @@ component LegacyOrderService {
 
 component OrderServiceV2 {
     title = "Order Service v2"
-    requires OrderRequest @v2
-    provides OrderRequest @v3
+    requires OrderRequest @v2 as request_in
+    provides OrderRequest @v3 as request_out
 }
 
 component ModernOrderService {

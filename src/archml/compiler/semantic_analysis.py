@@ -60,6 +60,10 @@ def analyze(
     - Interface references in ``requires`` / ``provides`` must resolve to a
       known interface (locally defined or imported); locally-defined
       versioned references are checked against the actual declared version.
+    - Duplicate port names within each component, system, and user:
+      ``requires`` and ``provides`` declarations share a port namespace; the
+      effective port name defaults to the interface name when no explicit
+      ``as`` alias is given.
     - Duplicate member names within nested components and systems.
     - Name conflicts between components and sub-systems within a system.
     - Connect statements: entity references in ``Entity.port`` must name
@@ -244,6 +248,9 @@ class _SemanticAnalyzer:
                 )
             )
 
+        # Check for duplicate port names across requires and provides.
+        errors.extend(_check_port_names(ctx, comp.requires, comp.provides))
+
         # Check connect / expose statements.
         child_names = {c.name for c in comp.components}
         for conn in comp.connects:
@@ -330,6 +337,9 @@ class _SemanticAnalyzer:
                     "provides",
                 )
             )
+
+        # Check for duplicate port names across requires and provides.
+        errors.extend(_check_port_names(ctx, system.requires, system.provides))
 
         # Check connect / expose statements.
         child_names = comp_names | sys_names | user_names
@@ -665,6 +675,33 @@ def _check_expose(
     return []
 
 
+def _effective_port_name(ref: InterfaceRef) -> str:
+    """Return the effective port name for an interface reference.
+
+    When no explicit ``as`` alias is given, the port name defaults to the
+    interface name.
+    """
+    return ref.port_name if ref.port_name is not None else ref.name
+
+
+def _check_port_names(
+    ctx: str,
+    requires: list[InterfaceRef],
+    provides: list[InterfaceRef],
+) -> list[SemanticError]:
+    """Check that all port names within an entity are unique.
+
+    ``requires`` and ``provides`` ports share the same port namespace.
+    The effective port name defaults to the interface name when no explicit
+    ``as`` alias is given.
+    """
+    all_port_names = [_effective_port_name(r) for r in requires] + [_effective_port_name(p) for p in provides]
+    return _check_duplicate_names(
+        all_port_names,
+        f"Duplicate port name '{{}}' in {ctx}",
+    )
+
+
 def _check_user(
     user: UserDef,
     all_interface_names: set[str],
@@ -682,4 +719,5 @@ def _check_user(
         errors.extend(
             _check_interface_ref(ctx, ref, all_interface_names, local_interface_defs, imported_names, "provides")
         )
+    errors.extend(_check_port_names(ctx, user.requires, user.provides))
     return errors

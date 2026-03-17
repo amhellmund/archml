@@ -1326,3 +1326,133 @@ external user ExternalClient { provides I }
 interface I @v2 {}
 user Customer { requires I @v2 }
 """)
+
+
+# ###############
+# Port Name Uniqueness
+# ###############
+
+
+class TestPortNameUniqueness:
+    def test_duplicate_implicit_port_name_in_component(self) -> None:
+        _assert_error(
+            """
+interface Foo { field x: String }
+component Bar {
+    requires Foo
+    provides Foo
+}
+""",
+            "Duplicate port name 'Foo' in component 'Bar'",
+        )
+
+    def test_duplicate_explicit_port_name_in_component(self) -> None:
+        _assert_error(
+            """
+interface Foo { field x: String }
+interface Baz { field y: Int }
+component Bar {
+    requires Foo as my_port
+    provides Baz as my_port
+}
+""",
+            "Duplicate port name 'my_port' in component 'Bar'",
+        )
+
+    def test_duplicate_mixed_implicit_explicit_port_name(self) -> None:
+        _assert_error(
+            """
+interface Foo { field x: String }
+interface Baz { field y: Int }
+component Bar {
+    requires Foo
+    provides Baz as Foo
+}
+""",
+            "Duplicate port name 'Foo' in component 'Bar'",
+        )
+
+    def test_duplicate_requires_port_names_in_component(self) -> None:
+        _assert_error(
+            """
+interface Foo { field x: String }
+interface Bar { field y: Int }
+component Comp {
+    requires Foo
+    requires Bar as Foo
+}
+""",
+            "Duplicate port name 'Foo' in component 'Comp'",
+        )
+
+    def test_unique_port_names_ok(self) -> None:
+        _assert_clean("""
+interface Foo { field x: String }
+interface Baz { field y: Int }
+component Bar {
+    requires Foo as in_port
+    provides Baz as out_port
+}
+""")
+
+    def test_different_interfaces_different_names_ok(self) -> None:
+        _assert_clean("""
+interface Foo { field x: String }
+interface Bar { field y: Int }
+component Comp {
+    requires Foo
+    provides Bar
+}
+""")
+
+    def test_duplicate_port_name_in_system(self) -> None:
+        _assert_error(
+            """
+interface Foo { field x: String }
+system Sys {
+    requires Foo
+    provides Foo
+}
+""",
+            "Duplicate port name 'Foo' in system 'Sys'",
+        )
+
+    def test_duplicate_port_name_in_user(self) -> None:
+        _assert_error(
+            """
+interface Foo { field x: String }
+user Alice {
+    requires Foo
+    provides Foo
+}
+""",
+            "Duplicate port name 'Foo' in user 'Alice'",
+        )
+
+    def test_duplicate_port_name_in_nested_component(self) -> None:
+        _assert_error(
+            """
+interface Sig { field v: Bool }
+component Outer {
+    component Inner {
+        requires Sig
+        provides Sig
+    }
+}
+""",
+            "Duplicate port name 'Sig' in component 'Inner'",
+        )
+
+    def test_duplicate_port_name_in_system_nested_component(self) -> None:
+        _assert_error(
+            """
+interface Sig { field v: Bool }
+system Sys {
+    component Worker {
+        requires Sig
+        provides Sig
+    }
+}
+""",
+            "Duplicate port name 'Sig' in component 'Worker'",
+        )

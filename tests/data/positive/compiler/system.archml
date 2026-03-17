@@ -8,9 +8,9 @@ system TaskProcessingSystem {
     use component PriorityRouter
 
     component Dispatcher {
-        requires TaskRequest
-        provides TaskRequest
+        requires TaskRequest as task_in
+        provides TaskRequest as task_out
     }
 
-    connect Dispatcher.TaskRequest -> $task_req -> TaskWorker.TaskRequest
+    connect Dispatcher.task_out -> $task_req -> TaskWorker.TaskRequest
 }

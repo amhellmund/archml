@@ -8,6 +8,6 @@ component TaskWorker {
 }
 
 component PriorityRouter {
-    requires TaskRequest
-    provides TaskRequest
+    requires TaskRequest as task_in
+    provides TaskRequest as task_out
 }
