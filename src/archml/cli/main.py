@@ -289,7 +289,6 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
 def _cmd_visualize(args: argparse.Namespace) -> int:
     """Handle the visualize subcommand."""
-    from archml.views.backend.diagram import render_diagram
     from archml.views.placement import compute_layout
     from archml.views.resolver import EntityNotFoundError, resolve_entity
     from archml.views.topology import build_viz_diagram
@@ -343,7 +342,15 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
     output_path = Path(args.output)
     viz_diagram = build_viz_diagram(entity)
     layout_plan = compute_layout(viz_diagram)
-    render_diagram(viz_diagram, layout_plan, output_path)
+
+    if output_path.suffix.lower() == ".png":
+        from archml.views.backend.png import render_png
+
+        render_png(viz_diagram, layout_plan, output_path)
+    else:
+        from archml.views.backend.diagram import render_diagram
+
+        render_diagram(viz_diagram, layout_plan, output_path)
 
     print(f"Diagram written to '{output_path}'.")
     return 0

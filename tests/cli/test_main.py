@@ -627,17 +627,35 @@ def test_sync_remote_reports_error_on_clone_failure(
     assert "Error" in captured.err
 
 
-def test_visualize_succeeds_with_mocked_renderer(
+def test_visualize_succeeds_with_mocked_svg_renderer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """visualize exits with code 0 and writes the diagram when entity is found."""
+    """visualize with .svg output calls the SVG renderer and exits with code 0."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text("component Worker {}\n")
+    out_file = tmp_path / "diagram.svg"
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), str(tmp_path)])
+    with patch("archml.views.backend.diagram.render_diagram") as mock_render, pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    mock_render.assert_called_once()
+    captured = capsys.readouterr()
+    assert "diagram.svg" in captured.out
+
+
+def test_visualize_succeeds_with_mocked_png_renderer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """visualize with .png output calls the PNG renderer and exits with code 0."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text("component Worker {}\n")
     out_file = tmp_path / "diagram.png"
     monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), str(tmp_path)])
-    with patch("archml.views.backend.diagram.render_diagram") as mock_render, pytest.raises(SystemExit) as exc_info:
+    with patch("archml.views.backend.png.render_png") as mock_render, pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
     mock_render.assert_called_once()

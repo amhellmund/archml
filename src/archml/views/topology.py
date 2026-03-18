@@ -10,8 +10,8 @@ any future renderer.
 
 The topology model captures:
 
-- **VizNode** — an opaque box (leaf component, system, external actor, or
-  interface terminal).
+- **VizNode** — an opaque box (leaf component, system, external actor,
+  interface terminal, or channel).
 - **VizBoundary** — a labelled visual container grouping child nodes and/or
   nested sub-boundaries.  Corresponds to a component or system whose internal
   structure is expanded at this zoom level.
@@ -19,7 +19,8 @@ The topology model captures:
   Every ``requires``/``provides`` declaration in the architecture model
   becomes a port.  Ports are the endpoints of edges.
 - **VizEdge** — a directed connection between two ports, derived from an
-  ArchML ``connect`` statement.
+  ArchML ``connect`` statement.  Connects through a channel produce two
+  edges: one leading into the channel and one leaving it.
 - **VizDiagram** — the assembled complete topology: root boundary, peripheral
   nodes (terminals + externals), and all edges.
 
@@ -40,7 +41,9 @@ from archml.model.entities import Component, ConnectDef, InterfaceRef, System, U
 # Public Interface
 # ###############
 
-NodeKind = Literal["component", "system", "user", "external_component", "external_system", "external_user", "terminal"]
+NodeKind = Literal[
+    "component", "system", "user", "external_component", "external_system", "external_user", "terminal", "channel"
+]
 """Semantic classification of a :class:`VizNode`."""
 
 BoundaryKind = Literal["component", "system"]
@@ -83,6 +86,8 @@ class VizNode:
     structure is not expanded in this diagram — it appears as an opaque box.
     A *terminal* represents one of the focus entity's own ``requires`` or
     ``provides`` interfaces, anchored at the diagram boundary.
+    A *channel* represents a named communication channel introduced by a
+    ``connect`` statement.
 
     Attributes:
         id: Diagram-unique stable identifier (e.g. ``"ECommerce__OrderService"``
@@ -93,7 +98,7 @@ class VizNode:
         kind: Semantic classification that determines default visual styling.
         entity_path: ``::``-delimited qualified path for navigation and
             deep-linking (e.g. ``"ECommerce::OrderService"``).  Empty string
-            for terminal nodes.
+            for terminal and channel nodes.
         description: Tooltip / hover text; ``None`` if absent.
         tags: Arbitrary labels inherited from the ArchML model, used for
             filtering and conditional styling.
@@ -149,18 +154,18 @@ class VizBoundary:
 class VizEdge:
     """A directed connection between two ports in the diagram.
 
-    Edges correspond to ArchML ``connect`` statements.  The direction follows
-    the ArchML convention: the *source* is the requiring side (initiator), the
-    *target* is the providing side (responder), and the arrow represents the
-    request direction.
+    Edges correspond to ArchML ``connect`` statements.  For connects that
+    route through a named channel, two edges are produced: one from the
+    source port to the channel's input port, and one from the channel's
+    output port to the destination port.
+
+    For direct connects (no channel), a single edge is produced.
 
     Attributes:
         id: Diagram-unique stable identifier derived from the port IDs
             (e.g. ``"edge.A.req.IFace--B.prov.IFace"``).
-        source_port_id: ID of the source :class:`VizPort` (a ``requires``
-            port).
-        target_port_id: ID of the target :class:`VizPort` (a ``provides``
-            port).
+        source_port_id: ID of the source :class:`VizPort`.
+        target_port_id: ID of the target :class:`VizPort`.
         label: Human-readable label shown on the edge
             (``"InterfaceName"`` or ``"InterfaceName@vN"``).
         interface_name: Base interface name without version suffix.
@@ -192,12 +197,15 @@ class VizDiagram:
     - The focus entity becomes the :attr:`root` :class:`VizBoundary`.
     - Its direct children are placed inside the root as :class:`VizNode`
       instances (opaque at this zoom level).
+    - Named channels referenced in ``connect`` statements appear as
+      :class:`VizNode` instances with ``kind="channel"`` inside the root.
     - The focus entity's own ``requires``/``provides`` interfaces appear as
       terminal :class:`VizNode` instances in :attr:`peripheral_nodes`.
     - External actors that appear as connection endpoints but are not children
       of the focus entity also appear in :attr:`peripheral_nodes`.
     - All ArchML ``connect`` statements within the focus entity become
-      :class:`VizEdge` entries in :attr:`edges`.
+      :class:`VizEdge` entries in :attr:`edges`.  Connects through a channel
+      produce two edges each (source→channel and channel→destination).
 
     Geometry (positions, sizes, edge routes) is not part of this model; it is
     computed by a separate layout step.
@@ -228,14 +236,19 @@ def build_viz_diagram(
 
     The *entity* becomes the root :class:`VizBoundary`.  Its direct children
     are placed inside the boundary as opaque :class:`VizNode` instances.
+    Named channels referenced in the entity's ``connect`` statements also
+    appear as child nodes with ``kind="channel"``.
 
     The entity's own ``requires``/``provides`` interfaces become *terminal*
     :class:`VizNode` instances in ``peripheral_nodes`` — one node per
     interface, positioned at the diagram boundary.
 
-    Each ``connect`` statement on the entity produces a :class:`VizEdge`
-    between the two wired ports.  One-sided connects (only a source or only
-    a destination) are skipped — they do not produce edges in the diagram.
+    Each ``connect`` statement on the entity produces :class:`VizEdge`
+    instances.  A connect through a named channel produces two edges (one
+    entering the channel, one leaving it); a direct connect produces one.
+    One-sided connects where only the source or only the destination is
+    specified produce a single edge to or from the channel node.
+    Duplicate edges (same source and target ports) are deduplicated.
 
     Args:
         entity: The focus component or system to visualize.
@@ -260,27 +273,6 @@ def build_viz_diagram(
             child_path = f"{entity_path}::{user.name}"
             child_node_map[user.name] = _make_child_node(user, child_path)
 
-    # --- Root boundary ---
-    root_ports = _make_ports(root_id, entity)
-    root = VizBoundary(
-        id=root_id,
-        label=entity.name,
-        title=entity.title,
-        kind="component" if isinstance(entity, Component) else "system",
-        entity_path=entity_path,
-        description=entity.description,
-        tags=list(entity.tags),
-        ports=root_ports,
-        children=list(child_node_map.values()),
-    )
-
-    # --- Peripheral nodes (terminal interface anchors at the diagram boundary) ---
-    peripheral_nodes: list[VizNode] = []
-    for ref in entity.requires:
-        peripheral_nodes.append(_make_terminal_node(ref, "requires"))
-    for ref in entity.provides:
-        peripheral_nodes.append(_make_terminal_node(ref, "provides"))
-
     # --- Sub-entity map for connect statement port lookup ---
     all_sub_entity_map: dict[str, Component | System | UserDef] = {}
     for comp in entity.components:
@@ -291,12 +283,40 @@ def build_viz_diagram(
         for user in entity.users:
             all_sub_entity_map[user.name] = user
 
-    # --- Edges (derived from connect statements) ---
+    # --- Channel nodes (from connect statements in this scope) ---
+    channel_node_map = _collect_channel_nodes(entity.connects, root_id, all_sub_entity_map)
+
+    # --- Root boundary ---
+    root_ports = _make_ports(root_id, entity)
+    all_children: list[VizNode | VizBoundary] = [*child_node_map.values(), *channel_node_map.values()]
+    root = VizBoundary(
+        id=root_id,
+        label=entity.name,
+        title=entity.title,
+        kind="component" if isinstance(entity, Component) else "system",
+        entity_path=entity_path,
+        description=entity.description,
+        tags=list(entity.tags),
+        ports=root_ports,
+        children=all_children,
+    )
+
+    # --- Peripheral nodes (terminal interface anchors at the diagram boundary) ---
+    peripheral_nodes: list[VizNode] = []
+    for ref in entity.requires:
+        peripheral_nodes.append(_make_terminal_node(ref, "requires"))
+    for ref in entity.provides:
+        peripheral_nodes.append(_make_terminal_node(ref, "provides"))
+
+    # --- Edges (derived from connect statements, deduplicated by port pair) ---
     edges: list[VizEdge] = []
+    seen_port_pairs: set[tuple[str, str]] = set()
     for conn in entity.connects:
-        edge = _build_edge_from_connect(conn, child_node_map, all_sub_entity_map)
-        if edge is not None:
-            edges.append(edge)
+        for edge in _build_edges_from_connect(conn, child_node_map, all_sub_entity_map, channel_node_map):
+            key = (edge.source_port_id, edge.target_port_id)
+            if key not in seen_port_pairs:
+                seen_port_pairs.add(key)
+                edges.append(edge)
 
     return VizDiagram(
         id=f"diagram.{root_id}",
@@ -311,8 +331,8 @@ def build_viz_diagram(
 def collect_all_ports(diagram: VizDiagram) -> dict[str, VizPort]:
     """Return a flat ``port_id → VizPort`` mapping for the entire diagram.
 
-    Traverses the root boundary (including any nested sub-boundaries), all
-    peripheral nodes, and the root boundary's own ports.
+    Traverses the root boundary (including any nested sub-boundaries and
+    channel nodes), all peripheral nodes, and the root boundary's own ports.
 
     Args:
         diagram: The diagram to collect ports from.
@@ -428,6 +448,86 @@ def _make_terminal_node(
     )
 
 
+def _collect_channel_nodes(
+    connects: list[ConnectDef],
+    root_id: str,
+    sub_entity_map: dict[str, Component | System | UserDef],
+) -> dict[str, VizNode]:
+    """Build :class:`VizNode` instances for all named channels in *connects*.
+
+    Each unique channel name in the connect statements becomes one channel
+    node placed inside the root boundary.  The channel's interface label is
+    inferred from the first resolvable src or dst port that mentions it.
+
+    Args:
+        connects: The ``connect`` statements of the focus entity.
+        root_id: ID prefix for channel node IDs (the root boundary ID).
+        sub_entity_map: Map of child entity name to entity model, used to
+            resolve port interface names.
+
+    Returns:
+        Map of channel name to the :class:`VizNode` representing it.
+    """
+    # First pass: collect channel names and try to resolve interface labels.
+    channel_interfaces: dict[str, str | None] = {}
+    for conn in connects:
+        if conn.channel is None:
+            continue
+        ch = conn.channel
+        if ch not in channel_interfaces:
+            channel_interfaces[ch] = None
+        if channel_interfaces[ch] is not None:
+            continue
+        # Try src port first.
+        if conn.src_entity and conn.src_port:
+            sub = sub_entity_map.get(conn.src_entity)
+            if sub:
+                result = _find_ref_by_port_name(sub, conn.src_port)
+                if result:
+                    _, ref = result
+                    channel_interfaces[ch] = _iref_label(ref)
+        # Fall back to dst port.
+        if channel_interfaces[ch] is None and conn.dst_entity and conn.dst_port:
+            sub = sub_entity_map.get(conn.dst_entity)
+            if sub:
+                result = _find_ref_by_port_name(sub, conn.dst_port)
+                if result:
+                    _, ref = result
+                    channel_interfaces[ch] = _iref_label(ref)
+
+    # Second pass: create VizNode for each channel.
+    channel_nodes: dict[str, VizNode] = {}
+    for ch_name, iface_label in channel_interfaces.items():
+        ch_id = f"{root_id}.channel.{ch_name}"
+        display_iface = iface_label or ch_name
+        ports = [
+            VizPort(
+                id=f"{ch_id}.in",
+                node_id=ch_id,
+                interface_name=display_iface,
+                interface_version=None,
+                direction="requires",
+            ),
+            VizPort(
+                id=f"{ch_id}.out",
+                node_id=ch_id,
+                interface_name=display_iface,
+                interface_version=None,
+                direction="provides",
+            ),
+        ]
+        channel_nodes[ch_name] = VizNode(
+            id=ch_id,
+            label=ch_name,
+            title=iface_label,
+            kind="channel",
+            entity_path="",
+            ports=ports,
+        )
+
+    return channel_nodes
+
+
 def _find_port_id(
     node: VizNode,
     direction: Literal["requires", "provides"],
@@ -462,17 +562,102 @@ def _find_ref_by_port_name(
     return None
 
 
-def _build_edge_from_connect(
+def _build_edges_from_connect(
+    conn: ConnectDef,
+    child_node_map: dict[str, VizNode],
+    sub_entity_map: dict[str, Component | System | UserDef],
+    channel_node_map: dict[str, VizNode],
+) -> list[VizEdge]:
+    """Build :class:`VizEdge` instances from a :class:`ConnectDef`.
+
+    For a direct connect (no channel), returns at most one edge.  For a
+    channel connect, returns up to two edges: one from the source to the
+    channel's input port and one from the channel's output port to the
+    destination.  One-sided connects produce a single edge to or from the
+    channel.
+
+    Returns an empty list when entity references cannot be resolved or both
+    sides of a channel connect are absent.
+    """
+    if conn.channel is None:
+        edge = _build_direct_edge(conn, child_node_map, sub_entity_map)
+        return [edge] if edge is not None else []
+
+    ch_node = channel_node_map.get(conn.channel)
+    if ch_node is None:
+        return []
+
+    ch_in_port = next((p for p in ch_node.ports if p.direction == "requires"), None)
+    ch_out_port = next((p for p in ch_node.ports if p.direction == "provides"), None)
+
+    edges: list[VizEdge] = []
+
+    # src entity → channel input
+    if conn.src_entity is not None and conn.src_port is not None and ch_in_port is not None:
+        src_sub = sub_entity_map.get(conn.src_entity)
+        src_node = child_node_map.get(conn.src_entity)
+        if src_sub is not None and src_node is not None:
+            src_result = _find_ref_by_port_name(src_sub, conn.src_port)
+            if src_result is not None:
+                src_dir, src_ref = src_result
+                src_port_id = _find_port_id(src_node, src_dir, src_ref)
+                if src_port_id is None:
+                    p = _make_port(src_node.id, src_dir, src_ref)
+                    src_node.ports.append(p)
+                    src_port_id = p.id
+                edges.append(
+                    VizEdge(
+                        id=f"edge.{src_port_id}--{ch_in_port.id}",
+                        source_port_id=src_port_id,
+                        target_port_id=ch_in_port.id,
+                        label=_iref_label(src_ref),
+                        interface_name=src_ref.name,
+                        interface_version=src_ref.version,
+                        protocol=conn.protocol,
+                        is_async=conn.is_async,
+                        description=conn.description,
+                    )
+                )
+
+    # channel output → dst entity
+    if conn.dst_entity is not None and conn.dst_port is not None and ch_out_port is not None:
+        dst_sub = sub_entity_map.get(conn.dst_entity)
+        dst_node = child_node_map.get(conn.dst_entity)
+        if dst_sub is not None and dst_node is not None:
+            dst_result = _find_ref_by_port_name(dst_sub, conn.dst_port)
+            if dst_result is not None:
+                dst_dir, dst_ref = dst_result
+                dst_port_id = _find_port_id(dst_node, dst_dir, dst_ref)
+                if dst_port_id is None:
+                    p = _make_port(dst_node.id, dst_dir, dst_ref)
+                    dst_node.ports.append(p)
+                    dst_port_id = p.id
+                edges.append(
+                    VizEdge(
+                        id=f"edge.{ch_out_port.id}--{dst_port_id}",
+                        source_port_id=ch_out_port.id,
+                        target_port_id=dst_port_id,
+                        label=_iref_label(dst_ref),
+                        interface_name=dst_ref.name,
+                        interface_version=dst_ref.version,
+                        protocol=conn.protocol,
+                        is_async=conn.is_async,
+                        description=conn.description,
+                    )
+                )
+
+    return edges
+
+
+def _build_direct_edge(
     conn: ConnectDef,
     child_node_map: dict[str, VizNode],
     sub_entity_map: dict[str, Component | System | UserDef],
 ) -> VizEdge | None:
-    """Attempt to build a :class:`VizEdge` from a :class:`ConnectDef`.
+    """Build a single :class:`VizEdge` for a direct (no-channel) connect.
 
-    Returns ``None`` for one-sided connects (no src or no dst) and for
-    connects whose entity references cannot be resolved.
+    Returns ``None`` when either side is unspecified or unresolvable.
     """
-    # One-sided connects don't produce edges.
     if conn.src_entity is None or conn.src_port is None:
         return None
     if conn.dst_entity is None or conn.dst_port is None:
@@ -509,7 +694,6 @@ def _build_edge_from_connect(
         dst_node.ports.append(p)
         dst_port_id = p.id
 
-    # Use src_ref for the edge label (both sides should carry the same interface).
     label = _iref_label(src_ref)
     return VizEdge(
         id=f"edge.{src_port_id}--{dst_port_id}",

@@ -17,14 +17,16 @@ explicit filled-polygon arrowhead at the target end.
 Text labels are clipped to their node bounding box via SVG ``<clipPath>``
 elements, so long labels never overflow the node rectangle.
 
-The visual vocabulary mirrors the colour scheme used by the original
-``diagrams``-based renderer:
+Color palette (modern, high-contrast):
 
-- Root boundary — light blue fill, bold-blue border, title label.
-- Internal child nodes — green (component) or blue (system).
-- External actor nodes — purple.
-- Terminal nodes — amber.
-- Edges — dark-grey lines with a filled arrowhead and a midpoint label.
+- Root boundary — slate-blue fill, bold border, title label.
+- Component — green tones.
+- System — violet tones.
+- User — amber tones.
+- Channel — teal tones (communication conduit).
+- External actors — slate-gray tones.
+- Terminal nodes — yellow tones.
+- Edges — dark navy lines with filled arrowheads.
 """
 
 from __future__ import annotations
@@ -73,33 +75,48 @@ def render_diagram(
 # Implementation
 # ################
 
-# --- Colour palette (matches original diagrams-based renderer) ---
-_FILL_COMPONENT = "#e8f4e8"
-_STROKE_COMPONENT = "#448844"
-_FILL_SYSTEM = "#ddeeff"
-_STROKE_SYSTEM = "#4466aa"
-_FILL_USER = "#fef3e2"
-_STROKE_USER = "#b36200"
-_FILL_EXTERNAL = "#f0e8f0"
-_STROKE_EXTERNAL = "#664488"
-_FILL_TERMINAL = "#fff8e1"
-_STROKE_TERMINAL = "#aa8833"
-_FILL_BOUNDARY = "#eef4ff"
-_STROKE_BOUNDARY = "#4466aa"
-_EDGE_COLOUR = "#444444"
-_TEXT_COLOUR = "#222222"
+# --- Modern color palette ---
+# Components (green family)
+_FILL_COMPONENT = "#f0fdf4"
+_STROKE_COMPONENT = "#16a34a"
+# Systems (violet family)
+_FILL_SYSTEM = "#f5f3ff"
+_STROKE_SYSTEM = "#7c3aed"
+# Users (amber family)
+_FILL_USER = "#fffbeb"
+_STROKE_USER = "#d97706"
+# Channels (teal family)
+_FILL_CHANNEL = "#f0fdfa"
+_STROKE_CHANNEL = "#0d9488"
+# External actors (slate-gray family)
+_FILL_EXTERNAL = "#f8fafc"
+_STROKE_EXTERNAL = "#475569"
+# Terminal interface nodes (yellow family)
+_FILL_TERMINAL = "#fefce8"
+_STROKE_TERMINAL = "#ca8a04"
+# Root boundary (slate-blue family)
+_FILL_BOUNDARY = "#eff6ff"
+_STROKE_BOUNDARY = "#2563eb"
+# Edges
+_EDGE_COLOUR = "#1e293b"
+_TEXT_COLOUR = "#1e293b"
+# Diagram background
+_FILL_BACKGROUND = "#ffffff"
 
-_FONT_FAMILY = "sans-serif"
+_FONT_FAMILY = "system-ui, -apple-system, sans-serif"
 _FONT_SIZE = 11
-_CORNER_RADIUS = 6
+_CORNER_RADIUS = 7
 _STROKE_WIDTH = 1.5
 _BOUNDARY_STROKE_WIDTH = 2.0
-_BOUNDARY_LABEL_OFFSET = 14.0  # y distance from boundary top to title baseline
+_BOUNDARY_LABEL_OFFSET = 15.0  # y distance from boundary top to title baseline
 _LABEL_PADDING = 6.0  # horizontal padding inside node for text clip region
 
+# Channel-specific style overrides
+_CHANNEL_STROKE_DASH = "5,3"  # dashed border to distinguish channels
+
 # Arrowhead geometry (layout units, before scaling).
-_ARROW_LEN = 10.0  # length of the arrowhead along the edge direction
-_ARROW_HALF_W = 4.0  # half-width of the arrowhead base
+_ARROW_LEN = 9.0
+_ARROW_HALF_W = 4.0
 
 
 def _node_colours(kind: NodeKind | None) -> tuple[str, str]:
@@ -110,8 +127,11 @@ def _node_colours(kind: NodeKind | None) -> tuple[str, str]:
         return _FILL_SYSTEM, _STROKE_SYSTEM
     if kind == "user":
         return _FILL_USER, _STROKE_USER
+    if kind == "channel":
+        return _FILL_CHANNEL, _STROKE_CHANNEL
     if kind in ("external_component", "external_system", "external_user"):
         return _FILL_EXTERNAL, _STROKE_EXTERNAL
+    # terminal and unknown
     return _FILL_TERMINAL, _STROKE_TERMINAL
 
 
@@ -138,6 +158,19 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
             "viewBox": f"0 0 {tw:.2f} {th:.2f}",
             "width": f"{tw:.2f}",
             "height": f"{th:.2f}",
+        },
+    )
+
+    # White background rectangle.
+    ET.SubElement(
+        svg,
+        "rect",
+        {
+            "x": "0",
+            "y": "0",
+            "width": f"{tw:.2f}",
+            "height": f"{th:.2f}",
+            "fill": _FILL_BACKGROUND,
         },
     )
 
@@ -232,21 +265,23 @@ def _render_node(
     """Draw a node rectangle with a centred, clipped label."""
     fill, stroke = _node_colours(kind)
     r = str(_CORNER_RADIUS)
-    ET.SubElement(
-        svg,
-        "rect",
-        {
-            "x": _f(nl.x, scale),
-            "y": _f(nl.y, scale),
-            "width": _f(nl.width, scale),
-            "height": _f(nl.height, scale),
-            "rx": r,
-            "ry": r,
-            "fill": fill,
-            "stroke": stroke,
-            "stroke-width": str(_STROKE_WIDTH),
-        },
-    )
+
+    rect_attrs: dict[str, str] = {
+        "x": _f(nl.x, scale),
+        "y": _f(nl.y, scale),
+        "width": _f(nl.width, scale),
+        "height": _f(nl.height, scale),
+        "rx": r,
+        "ry": r,
+        "fill": fill,
+        "stroke": stroke,
+        "stroke-width": str(_STROKE_WIDTH),
+    }
+    if kind == "channel":
+        rect_attrs["stroke-dasharray"] = _CHANNEL_STROKE_DASH
+
+    ET.SubElement(svg, "rect", rect_attrs)
+
     text = ET.SubElement(
         svg,
         "text",
@@ -308,9 +343,9 @@ def _render_edge(
     # Arrowhead: filled triangle (tip, left wing, right wing).
     lx = base_x - _ARROW_HALF_W * ndy
     ly = base_y + _ARROW_HALF_W * ndx
-    rx = base_x + _ARROW_HALF_W * ndy
-    ry = base_y - _ARROW_HALF_W * ndx
-    arrow_pts = " ".join(f"{x * scale:.2f},{y * scale:.2f}" for x, y in [(x2, y2), (lx, ly), (rx, ry)])
+    rx_pt = base_x + _ARROW_HALF_W * ndy
+    ry_pt = base_y - _ARROW_HALF_W * ndx
+    arrow_pts = " ".join(f"{x * scale:.2f},{y * scale:.2f}" for x, y in [(x2, y2), (lx, ly), (rx_pt, ry_pt)])
     ET.SubElement(svg, "polygon", {"points": arrow_pts, "fill": _EDGE_COLOUR})
 
     # Label at the midpoint of the edge.
