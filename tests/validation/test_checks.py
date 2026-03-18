@@ -6,10 +6,13 @@
 from archml.model.entities import (
     ArchFile,
     Component,
+    ConnectDef,
+    ExposeDef,
     InterfaceDef,
     InterfaceRef,
     System,
     TypeDef,
+    UserDef,
 )
 from archml.model.types import (
     FieldDef,
@@ -247,13 +250,23 @@ class TestInterfacePropagation:
 
     def test_system_provides_propagated_to_component(self) -> None:
         comp = Component(name="C", provides=[_iref("I")])
-        sys_ = System(name="S", provides=[_iref("I")], components=[comp])
+        sys_ = System(
+            name="S",
+            provides=[_iref("I")],
+            components=[comp],
+            exposes=[ExposeDef(entity="C", port="I")],
+        )
         arch = ArchFile(systems=[sys_])
         _assert_no_error(arch)
 
     def test_system_requires_propagated_to_component(self) -> None:
         comp = Component(name="C", requires=[_iref("I")])
-        sys_ = System(name="S", requires=[_iref("I")], components=[comp])
+        sys_ = System(
+            name="S",
+            requires=[_iref("I")],
+            components=[comp],
+            exposes=[ExposeDef(entity="C", port="I")],
+        )
         arch = ArchFile(systems=[sys_])
         _assert_no_error(arch)
 
@@ -275,7 +288,12 @@ class TestInterfacePropagation:
 
     def test_system_provides_propagated_to_subsystem(self) -> None:
         sub = System(name="Sub", provides=[_iref("I")])
-        outer = System(name="Outer", provides=[_iref("I")], systems=[sub])
+        outer = System(
+            name="Outer",
+            provides=[_iref("I")],
+            systems=[sub],
+            exposes=[ExposeDef(entity="Sub", port="I")],
+        )
         arch = ArchFile(systems=[outer])
         _assert_no_error(arch)
 
@@ -288,7 +306,11 @@ class TestInterfacePropagation:
 
     def test_system_no_interfaces_with_members_no_error(self) -> None:
         comp = Component(name="C", provides=[_iref("I")])
-        sys_ = System(name="S", components=[comp])
+        sys_ = System(
+            name="S",
+            components=[comp],
+            exposes=[ExposeDef(entity="C", port="I")],
+        )
         arch = ArchFile(systems=[sys_])
         # S has no requires/provides, so there is nothing to propagate — no error.
         _assert_no_error(arch)
@@ -297,13 +319,23 @@ class TestInterfacePropagation:
         # Two members; only one provides the interface — still valid.
         c1 = Component(name="C1", provides=[_iref("I")])
         c2 = Component(name="C2", requires=[_iref("I")])
-        sys_ = System(name="S", provides=[_iref("I")], components=[c1, c2])
+        sys_ = System(
+            name="S",
+            provides=[_iref("I")],
+            components=[c1, c2],
+            connects=[ConnectDef(src_entity="C1", src_port="I", channel="i", dst_entity="C2", dst_port="I")],
+        )
         arch = ArchFile(systems=[sys_])
         _assert_no_error(arch)
 
     def test_versioned_interface_exact_match_passes(self) -> None:
         comp = Component(name="C", provides=[_iref("I", "v2")])
-        sys_ = System(name="S", provides=[_iref("I", "v2")], components=[comp])
+        sys_ = System(
+            name="S",
+            provides=[_iref("I", "v2")],
+            components=[comp],
+            exposes=[ExposeDef(entity="C", port="I")],
+        )
         arch = ArchFile(systems=[sys_])
         _assert_no_error(arch)
 
@@ -351,7 +383,12 @@ class TestInterfacePropagation:
 
     def test_component_provides_propagated_to_subcomponent(self) -> None:
         sub = Component(name="Sub", provides=[_iref("I")])
-        outer = Component(name="Outer", provides=[_iref("I")], components=[sub])
+        outer = Component(
+            name="Outer",
+            provides=[_iref("I")],
+            components=[sub],
+            exposes=[ExposeDef(entity="Sub", port="I")],
+        )
         arch = ArchFile(components=[outer])
         _assert_no_error(arch)
 
@@ -385,6 +422,293 @@ class TestInterfacePropagation:
         # mid requires J but no child requires J → error for mid
         _assert_error(arch, "Component 'Mid'")
         _assert_error(arch, "requires interface 'J'")
+
+
+# ###############
+# Interface Propagation with Users
+# ###############
+
+
+class TestInterfacePropagationWithUsers:
+    """Interface propagation must consider user members alongside components/systems."""
+
+    def test_system_provides_satisfied_by_user(self) -> None:
+        user = UserDef(name="Client", provides=[_iref("I")])
+        sys_ = System(
+            name="S",
+            provides=[_iref("I")],
+            users=[user],
+            exposes=[ExposeDef(entity="Client", port="I")],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_no_error(arch)
+
+    def test_system_requires_satisfied_by_user(self) -> None:
+        user = UserDef(name="Client", requires=[_iref("I")])
+        sys_ = System(
+            name="S",
+            requires=[_iref("I")],
+            users=[user],
+            exposes=[ExposeDef(entity="Client", port="I")],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_no_error(arch)
+
+    def test_system_provides_not_satisfied_when_user_has_other_interface(self) -> None:
+        user = UserDef(name="Client", provides=[_iref("Other")])
+        sys_ = System(
+            name="S",
+            provides=[_iref("I")],
+            users=[user],
+            exposes=[ExposeDef(entity="Client", port="Other")],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_error(arch, "provides interface 'I'")
+        _assert_error(arch, "no member provides it")
+
+    def test_system_requires_satisfied_by_user_not_component(self) -> None:
+        # Only the user satisfies the system's requires — no component needed.
+        user = UserDef(name="Admin", requires=[_iref("AdminAPI")])
+        comp = Component(name="Service", provides=[_iref("AdminAPI")])
+        sys_ = System(
+            name="S",
+            requires=[_iref("AdminAPI")],
+            users=[user],
+            components=[comp],
+            connects=[ConnectDef(src_entity="Service", src_port="AdminAPI", dst_entity="Admin", dst_port="AdminAPI")],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_no_error(arch)
+
+
+# ###############
+# Unwired Ports
+# ###############
+
+
+class TestUnwiredPorts:
+    """Every sub-entity port must be wired by connect or promoted by expose."""
+
+    # ---- Leaf entities are exempt ----
+
+    def test_leaf_component_ports_not_checked(self) -> None:
+        arch = ArchFile(components=[Component(name="C", provides=[_iref("I")])])
+        _assert_no_error(arch)
+
+    def test_leaf_system_ports_not_checked(self) -> None:
+        arch = ArchFile(systems=[System(name="S", requires=[_iref("I")])])
+        _assert_no_error(arch)
+
+    def test_component_with_no_sub_components_no_error(self) -> None:
+        arch = ArchFile(components=[Component(name="C", provides=[_iref("I")])])
+        _assert_no_error(arch)
+
+    # ---- Component scope: sub-component ports must be wired ----
+
+    def test_sub_component_port_wired_by_connect_no_error(self) -> None:
+        sub_a = Component(name="A", provides=[_iref("I")])
+        sub_b = Component(name="B", requires=[_iref("I")])
+        outer = Component(
+            name="Outer",
+            components=[sub_a, sub_b],
+            connects=[ConnectDef(src_entity="A", src_port="I", channel="i", dst_entity="B", dst_port="I")],
+        )
+        arch = ArchFile(components=[outer])
+        _assert_no_error(arch)
+
+    def test_sub_component_port_promoted_by_expose_no_error(self) -> None:
+        sub = Component(name="Sub", provides=[_iref("I")])
+        outer = Component(
+            name="Outer",
+            components=[sub],
+            exposes=[ExposeDef(entity="Sub", port="I")],
+        )
+        arch = ArchFile(components=[outer])
+        _assert_no_error(arch)
+
+    def test_sub_component_port_not_wired_error(self) -> None:
+        sub = Component(name="Sub", provides=[_iref("I")])
+        outer = Component(name="Outer", components=[sub])
+        arch = ArchFile(components=[outer])
+        _assert_error(arch, "Component 'Outer'")
+        _assert_error(arch, "port 'Sub.I'")
+        _assert_error(arch, "neither wired by a connect nor exposed")
+
+    def test_sub_component_requires_port_not_wired_error(self) -> None:
+        sub = Component(name="Sub", requires=[_iref("I")])
+        outer = Component(name="Outer", components=[sub])
+        arch = ArchFile(components=[outer])
+        _assert_error(arch, "port 'Sub.I'")
+
+    def test_explicit_port_alias_must_be_used_in_connect(self) -> None:
+        # Port declared as `requires Foo as in_port` — the connect must
+        # reference `Sub.in_port`, not `Sub.Foo`.
+        sub = Component(name="Sub", requires=[InterfaceRef(name="Foo", port_name="in_port")])
+        outer = Component(
+            name="Outer",
+            components=[sub],
+            exposes=[ExposeDef(entity="Sub", port="in_port")],
+        )
+        arch = ArchFile(components=[outer])
+        _assert_no_error(arch)
+
+    def test_wrong_port_name_in_expose_still_unwired(self) -> None:
+        # expose Sub.Foo but the actual port is named `in_port` — mismatch.
+        sub = Component(name="Sub", requires=[InterfaceRef(name="Foo", port_name="in_port")])
+        outer = Component(
+            name="Outer",
+            components=[sub],
+            exposes=[ExposeDef(entity="Sub", port="Foo")],  # wrong port name
+        )
+        arch = ArchFile(components=[outer])
+        _assert_error(arch, "port 'Sub.in_port'")
+
+    def test_multiple_sub_component_ports_all_wired_no_error(self) -> None:
+        a = Component(name="A", provides=[_iref("X")], requires=[_iref("Y")])
+        b = Component(name="B", provides=[_iref("Y")])
+        outer = Component(
+            name="Outer",
+            components=[a, b],
+            connects=[ConnectDef(src_entity="B", src_port="Y", dst_entity="A", dst_port="Y")],
+            exposes=[ExposeDef(entity="A", port="X")],
+        )
+        arch = ArchFile(components=[outer])
+        _assert_no_error(arch)
+
+    def test_one_of_two_ports_unwired_is_error(self) -> None:
+        sub = Component(name="Sub", provides=[_iref("I")], requires=[_iref("J")])
+        outer = Component(
+            name="Outer",
+            components=[sub],
+            exposes=[ExposeDef(entity="Sub", port="I")],  # I wired, J not
+        )
+        arch = ArchFile(components=[outer])
+        _assert_error(arch, "port 'Sub.J'")
+
+    # ---- System scope: component/system/user ports must be wired ----
+
+    def test_system_component_port_wired_by_connect_no_error(self) -> None:
+        a = Component(name="A", provides=[_iref("I")])
+        b = Component(name="B", requires=[_iref("I")])
+        sys_ = System(
+            name="S",
+            components=[a, b],
+            connects=[ConnectDef(src_entity="A", src_port="I", channel="i", dst_entity="B", dst_port="I")],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_no_error(arch)
+
+    def test_system_component_port_not_wired_error(self) -> None:
+        comp = Component(name="C", provides=[_iref("I")])
+        sys_ = System(name="S", components=[comp])
+        arch = ArchFile(systems=[sys_])
+        _assert_error(arch, "System 'S'")
+        _assert_error(arch, "port 'C.I'")
+        _assert_error(arch, "neither wired by a connect nor exposed")
+
+    def test_system_sub_system_port_not_wired_error(self) -> None:
+        sub = System(name="Sub", provides=[_iref("I")])
+        outer = System(name="Outer", systems=[sub])
+        arch = ArchFile(systems=[outer])
+        _assert_error(arch, "System 'Outer'")
+        _assert_error(arch, "port 'Sub.I'")
+
+    def test_system_sub_system_port_exposed_no_error(self) -> None:
+        sub = System(name="Sub", provides=[_iref("I")])
+        outer = System(
+            name="Outer",
+            systems=[sub],
+            exposes=[ExposeDef(entity="Sub", port="I")],
+        )
+        arch = ArchFile(systems=[outer])
+        _assert_no_error(arch)
+
+    def test_system_user_port_not_wired_error(self) -> None:
+        user = UserDef(name="Client", provides=[_iref("OrderRequest")])
+        sys_ = System(name="S", users=[user])
+        arch = ArchFile(systems=[sys_])
+        _assert_error(arch, "System 'S'")
+        _assert_error(arch, "port 'Client.OrderRequest'")
+
+    def test_system_user_port_wired_by_connect_no_error(self) -> None:
+        user = UserDef(name="Client", provides=[_iref("OrderRequest")])
+        comp = Component(name="Service", requires=[_iref("OrderRequest")])
+        sys_ = System(
+            name="S",
+            users=[user],
+            components=[comp],
+            connects=[
+                ConnectDef(
+                    src_entity="Client",
+                    src_port="OrderRequest",
+                    channel="orders",
+                    dst_entity="Service",
+                    dst_port="OrderRequest",
+                )
+            ],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_no_error(arch)
+
+    def test_system_user_port_exposed_no_error(self) -> None:
+        user = UserDef(name="Client", provides=[_iref("OrderRequest")])
+        sys_ = System(
+            name="S",
+            users=[user],
+            exposes=[ExposeDef(entity="Client", port="OrderRequest")],
+        )
+        arch = ArchFile(systems=[sys_])
+        _assert_no_error(arch)
+
+    # ---- Qualified name used in error messages ----
+
+    def test_qualified_name_used_in_error(self) -> None:
+        sub = Component(name="Sub", provides=[_iref("I")])
+        outer = Component(name="Outer", qualified_name="ns::Outer", components=[sub])
+        arch = ArchFile(components=[outer])
+        _assert_error(arch, "Component 'ns::Outer'")
+
+    # ---- Recursive checking ----
+
+    def test_nested_component_checked_recursively(self) -> None:
+        inner = Component(name="Inner", provides=[_iref("I")])
+        mid = Component(
+            name="Mid",
+            components=[inner],
+            exposes=[ExposeDef(entity="Inner", port="I")],
+        )
+        outer = Component(
+            name="Outer",
+            components=[mid],
+            exposes=[ExposeDef(entity="Mid", port="I")],
+        )
+        arch = ArchFile(components=[outer])
+        _assert_no_error(arch)
+
+    def test_unwired_port_in_nested_scope_reported(self) -> None:
+        inner = Component(name="Inner", provides=[_iref("I")])
+        mid = Component(name="Mid", components=[inner])  # Inner.I not wired
+        outer = Component(
+            name="Outer",
+            components=[mid],
+        )
+        arch = ArchFile(components=[outer])
+        _assert_error(arch, "port 'Inner.I'")
+
+    def test_nested_system_checked_recursively(self) -> None:
+        comp = Component(name="C", provides=[_iref("I")])
+        inner_sys = System(
+            name="Inner",
+            components=[comp],
+            exposes=[ExposeDef(entity="C", port="I")],
+        )
+        outer_sys = System(
+            name="Outer",
+            systems=[inner_sys],
+            exposes=[ExposeDef(entity="Inner", port="I")],
+        )
+        arch = ArchFile(systems=[outer_sys])
+        _assert_no_error(arch)
 
 
 # ###############
