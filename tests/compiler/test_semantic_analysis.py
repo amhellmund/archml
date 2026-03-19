@@ -767,6 +767,23 @@ component Router {
 }
 """)
 
+    def test_expose_of_re_exposed_port_is_valid(self) -> None:
+        """A port promoted via expose is valid as a target of an outer expose."""
+        _assert_clean("""
+interface OrderRequest { field id: String }
+interface Simple { field val: Int }
+system Order {
+    component A {
+        component SubA1 { requires OrderRequest }
+        component SubA2 { provides Simple }
+        expose SubA1.OrderRequest
+        expose SubA2.Simple
+    }
+    expose A.OrderRequest
+    expose A.Simple
+}
+""")
+
     def test_direct_connect_no_channel(self) -> None:
         _assert_clean("""
 interface DataFeed { field payload: String }
@@ -1718,3 +1735,175 @@ connect Frontend -> $bus -> Backend
         assert conn.src_port == "API"
         assert conn.dst_entity == "Backend"
         assert conn.dst_port == "API"
+
+
+# ###############################################
+# Local interface definitions in components/systems
+# ###############################################
+
+
+class TestLocalInterfaceInComponent:
+    """Tests for interface definitions nested inside component bodies."""
+
+    def test_local_interface_parsed_and_no_errors(self) -> None:
+        """A locally defined interface is accepted and usable within the component."""
+        errors = _analyze("""
+component A {
+    interface AInternal {
+        field id: Int
+    }
+    component SubA1 {
+        provides AInternal
+    }
+    component SubA2 {
+        requires AInternal
+    }
+    connect SubA1 -> SubA2
+}
+""")
+        assert errors == []
+
+    def test_local_interface_not_visible_outside_component(self) -> None:
+        """A locally defined interface is not in scope outside its defining component."""
+        errors = _analyze("""
+component A {
+    interface AInternal {
+        field id: Int
+    }
+}
+component B {
+    requires AInternal
+}
+""")
+        assert any("unknown interface 'AInternal'" in e.message for e in errors)
+
+    def test_local_interface_qualified_name_assigned(self) -> None:
+        """Qualified names are assigned to local interfaces using the component path."""
+        src = """
+component A {
+    interface Inner {
+        field x: String
+    }
+}
+"""
+        af = parse(src)
+        analyze(af)
+        assert af.components[0].interfaces[0].qualified_name == "A::Inner"
+
+    def test_duplicate_local_interface_in_component(self) -> None:
+        """Duplicate local interface names within a component are reported."""
+        errors = _analyze("""
+component A {
+    interface Foo { field x: Int }
+    interface Foo { field y: String }
+}
+""")
+        assert any("Duplicate local interface name 'Foo'" in e.message for e in errors)
+
+    def test_local_interface_with_file_key(self) -> None:
+        """Qualified names include the file key prefix for local interfaces."""
+        src = """
+component A {
+    interface Inner { field x: Int }
+}
+"""
+        af = parse(src)
+        analyze(af, file_key="myapp/services")
+        assert af.components[0].interfaces[0].qualified_name == "myapp/services::A::Inner"
+
+    def test_local_interface_used_by_own_requires_provides(self) -> None:
+        """The parent component itself can use its own locally defined interface."""
+        errors = _analyze("""
+component A {
+    interface AOut { field result: String }
+    provides AOut
+}
+""")
+        assert errors == []
+
+
+class TestLocalInterfaceInSystem:
+    """Tests for interface definitions nested inside system bodies."""
+
+    def test_local_interface_in_system_no_errors(self) -> None:
+        """A locally defined interface in a system is accepted and usable by children."""
+        errors = _analyze("""
+system S {
+    interface SInternal { field val: Int }
+    component Producer { provides SInternal }
+    component Consumer { requires SInternal }
+    connect Producer -> Consumer
+}
+""")
+        assert errors == []
+
+    def test_local_interface_in_system_not_visible_outside(self) -> None:
+        """A locally defined interface in a system is not visible outside the system."""
+        errors = _analyze("""
+system S {
+    interface SInternal { field val: Int }
+}
+component C {
+    requires SInternal
+}
+""")
+        assert any("unknown interface 'SInternal'" in e.message for e in errors)
+
+    def test_local_interface_in_system_qualified_name(self) -> None:
+        """Qualified names are assigned to local interfaces using the system path."""
+        src = """
+system S {
+    interface Inner { field x: Int }
+}
+"""
+        af = parse(src)
+        analyze(af)
+        assert af.systems[0].interfaces[0].qualified_name == "S::Inner"
+
+    def test_duplicate_local_interface_in_system(self) -> None:
+        """Duplicate local interface names within a system are reported."""
+        errors = _analyze("""
+system S {
+    interface Dup { field x: Int }
+    interface Dup { field y: String }
+}
+""")
+        assert any("Duplicate local interface name 'Dup'" in e.message for e in errors)
+
+    def test_local_interface_inherited_by_nested_system(self) -> None:
+        """Local interface is in scope for a nested sub-system."""
+        errors = _analyze("""
+system Outer {
+    interface Shared { field v: String }
+    system Inner {
+        component X { provides Shared }
+        component Y { requires Shared }
+        connect X -> Y
+    }
+}
+""")
+        assert errors == []
+
+    def test_user_in_example_scenario(self) -> None:
+        """The original user-reported scenario compiles without errors."""
+        errors = _analyze("""
+interface OrderRequest { field order_id: Int }
+interface Simple { field val: String }
+
+component A {
+    interface AInternal { field id: Int }
+
+    component SubA1 {
+        requires OrderRequest
+        provides AInternal
+    }
+
+    component SubA2 {
+        requires AInternal
+        provides Simple
+    }
+
+    connect SubA1 -> SubA2
+}
+""")
+        assert errors == []

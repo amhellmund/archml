@@ -226,6 +226,14 @@ class _SemanticAnalyzer:
         errors: list[SemanticError] = []
         ctx = f"component '{comp.name}'"
 
+        # Check for duplicate local interface definitions.
+        errors.extend(
+            _check_duplicate_names(
+                [i.name for i in comp.interfaces],
+                "Duplicate local interface name '{}' in " + ctx,
+            )
+        )
+
         # Check for duplicate sub-component names.
         errors.extend(
             _check_duplicate_names(
@@ -234,14 +242,18 @@ class _SemanticAnalyzer:
             )
         )
 
+        # Merge locally-defined interfaces into scope for this component and its children.
+        merged_interface_names = all_interface_names | {i.name for i in comp.interfaces}
+        merged_interface_defs = {**local_interface_defs, **{(i.name, i.version): i for i in comp.interfaces}}
+
         # Check requires / provides interface references.
         for ref in comp.requires:
             errors.extend(
                 _check_interface_ref(
                     ctx,
                     ref,
-                    all_interface_names,
-                    local_interface_defs,
+                    merged_interface_names,
+                    merged_interface_defs,
                     imported_names,
                     "requires",
                 )
@@ -251,8 +263,8 @@ class _SemanticAnalyzer:
                 _check_interface_ref(
                     ctx,
                     ref,
-                    all_interface_names,
-                    local_interface_defs,
+                    merged_interface_names,
+                    merged_interface_defs,
                     imported_names,
                     "provides",
                 )
@@ -269,14 +281,14 @@ class _SemanticAnalyzer:
         for exp in comp.exposes:
             errors.extend(_check_expose(ctx, exp, child_entity_map))
 
-        # Recurse into sub-components.
+        # Recurse into sub-components, passing the merged scope.
         for sub in comp.components:
             errors.extend(
                 self._check_component(
                     sub,
                     all_type_names,
-                    all_interface_names,
-                    local_interface_defs,
+                    merged_interface_names,
+                    merged_interface_defs,
                     imported_names,
                 )
             )
@@ -293,6 +305,18 @@ class _SemanticAnalyzer:
     ) -> list[SemanticError]:
         errors: list[SemanticError] = []
         ctx = f"system '{system.name}'"
+
+        # Check for duplicate local interface definitions.
+        errors.extend(
+            _check_duplicate_names(
+                [i.name for i in system.interfaces],
+                "Duplicate local interface name '{}' in " + ctx,
+            )
+        )
+
+        # Merge locally-defined interfaces into scope for this system and its children.
+        merged_interface_names = all_interface_names | {i.name for i in system.interfaces}
+        merged_interface_defs = {**local_interface_defs, **{(i.name, i.version): i for i in system.interfaces}}
 
         # Check for duplicate component names within this system.
         errors.extend(
@@ -331,8 +355,8 @@ class _SemanticAnalyzer:
                 _check_interface_ref(
                     ctx,
                     ref,
-                    all_interface_names,
-                    local_interface_defs,
+                    merged_interface_names,
+                    merged_interface_defs,
                     imported_names,
                     "requires",
                 )
@@ -342,8 +366,8 @@ class _SemanticAnalyzer:
                 _check_interface_ref(
                     ctx,
                     ref,
-                    all_interface_names,
-                    local_interface_defs,
+                    merged_interface_names,
+                    merged_interface_defs,
                     imported_names,
                     "provides",
                 )
@@ -364,14 +388,14 @@ class _SemanticAnalyzer:
         for exp in system.exposes:
             errors.extend(_check_expose(ctx, exp, child_entity_map))
 
-        # Recurse into children.
+        # Recurse into children, passing the merged scope.
         for comp in system.components:
             errors.extend(
                 self._check_component(
                     comp,
                     all_type_names,
-                    all_interface_names,
-                    local_interface_defs,
+                    merged_interface_names,
+                    merged_interface_defs,
                     imported_names,
                 )
             )
@@ -380,8 +404,8 @@ class _SemanticAnalyzer:
                 self._check_system(
                     sub_sys,
                     all_type_names,
-                    all_interface_names,
-                    local_interface_defs,
+                    merged_interface_names,
+                    merged_interface_defs,
                     imported_names,
                 )
             )
@@ -389,8 +413,8 @@ class _SemanticAnalyzer:
             errors.extend(
                 _check_user(
                     user,
-                    all_interface_names,
-                    local_interface_defs,
+                    merged_interface_names,
+                    merged_interface_defs,
                     imported_names,
                 )
             )
@@ -449,6 +473,9 @@ def _assign_qualified_names(arch_file: ArchFile, *, file_key: str | None = None)
 def _assign_component_qualified_names(comp: Component, prefix: str | None) -> None:
     """Recursively set qualified names for a component and its sub-components."""
     comp.qualified_name = f"{prefix}::{comp.name}" if prefix else comp.name
+    for iface in comp.interfaces:
+        ver_str = f"@{iface.version}" if iface.version else ""
+        iface.qualified_name = f"{comp.qualified_name}::{iface.name}{ver_str}"
     for sub in comp.components:
         _assign_component_qualified_names(sub, prefix=comp.qualified_name)
 
@@ -461,6 +488,9 @@ def _assign_user_qualified_name(user: UserDef, prefix: str | None) -> None:
 def _assign_system_qualified_names(system: System, prefix: str | None) -> None:
     """Recursively set qualified names for a system and all its children."""
     system.qualified_name = f"{prefix}::{system.name}" if prefix else system.name
+    for iface in system.interfaces:
+        ver_str = f"@{iface.version}" if iface.version else ""
+        iface.qualified_name = f"{system.qualified_name}::{iface.name}{ver_str}"
     for comp in system.components:
         _assign_component_qualified_names(comp, prefix=system.qualified_name)
     for sub_sys in system.systems:
@@ -779,10 +809,8 @@ def _check_expose(
     entity = child_entity_map[exp.entity]
     if isinstance(entity, (Component, System)) and entity.is_stub:
         return []
-    direct_ports: set[str] = {_effective_port_name(r) for r in entity.requires} | {
-        _effective_port_name(r) for r in entity.provides
-    }
-    if exp.port not in direct_ports:
+    valid_ports = _valid_connect_port_names(entity)
+    if valid_ports is not None and exp.port not in valid_ports:
         return [SemanticError(f"{ctx}: expose references unknown port '{exp.port}' on '{exp.entity}'")]
     return []
 

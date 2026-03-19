@@ -180,20 +180,17 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
     if diagram.root.id in plan.boundaries:
         _render_boundary(svg, diagram.root.label, plan.boundaries[diagram.root.id], scale)
 
-    # Nested boundaries (expanded sub-systems/components) — rendered before nodes so they sit behind.
-    for child in diagram.root.children:
-        if isinstance(child, VizBoundary) and child.id in plan.boundaries:
-            _render_boundary(svg, child.label, plan.boundaries[child.id], scale, kind=child.kind)
+    # Nested boundaries (expanded sub-systems/components) — rendered outermost-first so
+    # inner boundaries appear on top.  Collect them in BFS order.
+    nested: list[VizBoundary] = []
+    _collect_nested_boundaries(diagram.root, nested)
+    for bnd in nested:
+        if bnd.id in plan.boundaries:
+            _render_boundary(svg, bnd.label, plan.boundaries[bnd.id], scale, kind=bnd.kind)
 
     # Build a metadata map: node_id → (label, title, kind) for all renderable nodes.
     node_meta: dict[str, tuple[str, str | None, NodeKind | None]] = {}
-    for child in diagram.root.children:
-        if isinstance(child, VizNode):
-            node_meta[child.id] = (child.label, child.title, child.kind)
-        elif isinstance(child, VizBoundary):
-            for inner in child.children:
-                if isinstance(inner, VizNode):
-                    node_meta[inner.id] = (inner.label, inner.title, inner.kind)
+    _collect_node_meta(diagram.root, node_meta)
     for node in diagram.peripheral_nodes:
         node_meta[node.id] = (node.label, node.title, node.kind)
 
@@ -211,6 +208,26 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
             _render_edge(svg, route.waypoints, edge.label, scale)
 
     return svg
+
+
+def _collect_nested_boundaries(boundary: VizBoundary, result: list[VizBoundary]) -> None:
+    """Append all nested VizBoundary children to *result* in BFS order (outermost first)."""
+    for child in boundary.children:
+        if isinstance(child, VizBoundary):
+            result.append(child)
+            _collect_nested_boundaries(child, result)
+
+
+def _collect_node_meta(
+    boundary: VizBoundary,
+    result: dict[str, tuple[str, str | None, NodeKind | None]],
+) -> None:
+    """Recursively collect node metadata from all leaf VizNodes in *boundary*."""
+    for child in boundary.children:
+        if isinstance(child, VizNode):
+            result[child.id] = (child.label, child.title, child.kind)
+        elif isinstance(child, VizBoundary):
+            _collect_node_meta(child, result)
 
 
 def _add_node_clip(defs: ET.Element, clip_id: str, nl: NodeLayout, scale: float) -> None:

@@ -32,6 +32,7 @@ and interactive, event-driven frontends.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -379,13 +380,14 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
 
     Non-external components and systems that have inner children (components,
     sub-systems, or users) are rendered as expanded :class:`VizBoundary`
-    instances so their internal structure is visible.  External entities and
-    leaf entities (no inner structure) are rendered as opaque :class:`VizNode`
+    instances so their internal structure is visible.  Expansion is recursive:
+    an expanded entity's children that themselves have sub-entities are also
+    expanded.  External entities and leaf entities are opaque :class:`VizNode`
     instances.
 
-    When a top-level ``connect`` targets a port on an expanded entity,
-    resolution proceeds through the entity's ``expose`` declarations: the
-    edge is routed to the actual inner component that exposed the port.
+    When a ``connect`` targets a port on an expanded entity, resolution follows
+    the entity's ``expose`` chain all the way to the leaf component that owns
+    the port, regardless of nesting depth.
 
     Use this to visualise the complete architecture in one diagram without
     selecting a specific entity.
@@ -400,11 +402,15 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
     """
     root_id = "all"
 
+    # expose_maps: entity_name → dict mapping exposed-port-name → (leaf_node, leaf_entity, leaf_port)
+    # Used to resolve ports on expanded entities through the full expose chain.
+    _ExposeMap = dict[str, tuple[VizNode, "Component | System | UserDef", str]]
+
     opaque_node_map: dict[str, VizNode] = {}
     all_sub_entity_map: dict[str, Component | System | UserDef] = {}
-    expanded_diagrams: dict[str, VizDiagram] = {}
-    expanded_inner_node_maps: dict[str, dict[str, VizNode]] = {}
-    expanded_inner_entity_maps: dict[str, dict[str, Component | System | UserDef]] = {}
+    expanded_boundary_map: dict[str, VizBoundary] = {}
+    expanded_expose_maps: dict[str, _ExposeMap] = {}
+    all_inner_edges: list[VizEdge] = []
     all_connects: list[ConnectDef] = []
 
     for arch_file in arch_files.values():
@@ -412,36 +418,20 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
             entity_path = comp.qualified_name or comp.name
             all_sub_entity_map[comp.name] = comp
             if _should_expand(comp):
-                inner_diag = build_viz_diagram(comp)
-                expanded_diagrams[comp.name] = inner_diag
-                expanded_inner_node_maps[comp.name] = {
-                    child.label: child
-                    for child in inner_diag.root.children
-                    if isinstance(child, VizNode) and child.kind != "channel"
-                }
-                expanded_inner_entity_maps[comp.name] = {c.name: c for c in comp.components}
+                bnd, inner_edges, expose_map = _build_recursive_boundary(comp, entity_path)
+                expanded_boundary_map[comp.name] = bnd
+                expanded_expose_maps[comp.name] = expose_map
+                all_inner_edges.extend(inner_edges)
             else:
                 opaque_node_map[comp.name] = _make_child_node(comp, entity_path)
         for sys in arch_file.systems:
             entity_path = sys.qualified_name or sys.name
             all_sub_entity_map[sys.name] = sys
             if _should_expand(sys):
-                inner_diag = build_viz_diagram(sys)
-                expanded_diagrams[sys.name] = inner_diag
-                inner_nodes: dict[str, VizNode] = {
-                    child.label: child
-                    for child in inner_diag.root.children
-                    if isinstance(child, VizNode) and child.kind != "channel"
-                }
-                expanded_inner_node_maps[sys.name] = inner_nodes
-                inner_ents: dict[str, Component | System | UserDef] = {}
-                for c in sys.components:
-                    inner_ents[c.name] = c
-                for s in sys.systems:
-                    inner_ents[s.name] = s
-                for u in sys.users:
-                    inner_ents[u.name] = u
-                expanded_inner_entity_maps[sys.name] = inner_ents
+                bnd, inner_edges, expose_map = _build_recursive_boundary(sys, entity_path)
+                expanded_boundary_map[sys.name] = bnd
+                expanded_expose_maps[sys.name] = expose_map
+                all_inner_edges.extend(inner_edges)
             else:
                 opaque_node_map[sys.name] = _make_child_node(sys, entity_path)
         for user in arch_file.users:
@@ -454,7 +444,7 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
 
     all_children: list[VizNode | VizBoundary] = [
         *opaque_node_map.values(),
-        *(d.root for d in expanded_diagrams.values()),
+        *expanded_boundary_map.values(),
         *channel_node_map.values(),
     ]
     root = VizBoundary(
@@ -469,23 +459,21 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
     edges: list[VizEdge] = []
     seen_port_pairs: set[tuple[str, str]] = set()
 
-    # Inner edges from each expanded entity's own connect statements.
-    for inner_diag in expanded_diagrams.values():
-        for edge in inner_diag.edges:
-            key = (edge.source_port_id, edge.target_port_id)
-            if key not in seen_port_pairs:
-                seen_port_pairs.add(key)
-                edges.append(edge)
+    # Inner edges collected during recursive boundary building.
+    for edge in all_inner_edges:
+        key = (edge.source_port_id, edge.target_port_id)
+        if key not in seen_port_pairs:
+            seen_port_pairs.add(key)
+            edges.append(edge)
 
-    # Top-level edges — resolve exposed ports on expanded entities to inner components.
+    # Top-level edges — resolve exposed ports through the full expose chain.
     for conn in all_connects:
         for edge in _build_edges_from_connect_expanded(
             conn,
             opaque_node_map,
             all_sub_entity_map,
             channel_node_map,
-            expanded_inner_node_maps,
-            expanded_inner_entity_maps,
+            expanded_expose_maps,
         ):
             key = (edge.source_port_id, edge.target_port_id)
             if key not in seen_port_pairs:
@@ -903,7 +891,7 @@ def _collect_boundary_ports(boundary: VizBoundary, result: dict[str, VizPort]) -
 
 
 def _should_expand(entity: Component | System | UserDef) -> bool:
-    """Return ``True`` if *entity* should be rendered as an expanded boundary in the all-diagram.
+    """Return ``True`` if *entity* should be rendered as an expanded boundary.
 
     Non-external components and systems that contain at least one direct child
     (component, sub-system, or user) are expanded so their internal structure
@@ -919,29 +907,215 @@ def _should_expand(entity: Component | System | UserDef) -> bool:
     return bool(entity.components) or bool(entity.systems) or bool(entity.users)
 
 
-def _resolve_exposed_port(
+# Type alias used locally: maps an exposed port name to the leaf VizNode,
+# leaf model entity, and the effective port name on that leaf entity.
+_ExposeMap = dict[str, tuple[VizNode, "Component | System | UserDef", str]]
+
+
+def _build_recursive_boundary(
     entity: Component | System,
-    port_name: str,
-    inner_node_map: dict[str, VizNode],
-    inner_entity_map: dict[str, Component | System | UserDef],
-) -> tuple[VizNode, Component | System | UserDef, str] | None:
-    """Resolve *port_name* on an expanded entity through its ``expose`` declarations.
+    entity_path: str,
+) -> tuple[VizBoundary, list[VizEdge], _ExposeMap]:
+    """Build a :class:`VizBoundary` for *entity*, recursively expanding children.
 
-    Iterates the entity's :attr:`~archml.model.entities.Component.exposes` list
-    and returns ``(inner_node, inner_entity, inner_port_name)`` for the first
-    matching declaration.  The effective exposed name is ``expose.as_name`` when
-    set, otherwise ``expose.port``.
+    Children that themselves have sub-entities are expanded into nested
+    :class:`VizBoundary` instances; leaf children become opaque
+    :class:`VizNode` instances.  Channel nodes are created for every named
+    channel referenced in the entity's ``connect`` statements.
 
-    Returns ``None`` when no ``expose`` declaration covers *port_name*.
+    Port and interface resolution follows ``expose`` chains at arbitrary depth
+    so that a connect statement referencing an exposed port on an expanded child
+    is correctly routed to the actual leaf component.
+
+    Returns:
+        A three-tuple ``(boundary, edges, expose_map)`` where
+
+        - *boundary* is the :class:`VizBoundary` for this entity.
+        - *edges* is the complete list of :class:`VizEdge` instances produced
+          inside this entity at all levels (recursively).
+        - *expose_map* maps every name exposed by *entity* (via its ``expose``
+          declarations) to the ``(leaf_node, leaf_entity, leaf_port)`` triple
+          needed by the parent to build edges that target this entity's ports.
     """
+    root_id = _make_id(entity_path)
+
+    child_entities: list[Component | System | UserDef] = list(entity.components)
+    if isinstance(entity, System):
+        child_entities += list(entity.systems) + list(entity.users)
+
+    sub_entity_map: dict[str, Component | System | UserDef] = {}
+    opaque_node_map: dict[str, VizNode] = {}
+    child_boundary_map: dict[str, VizBoundary] = {}
+    child_expose_maps: dict[str, _ExposeMap] = {}
+    all_edges: list[VizEdge] = []
+
+    for child in child_entities:
+        child_path = f"{entity_path}::{child.name}"
+        sub_entity_map[child.name] = child
+        if _should_expand(child):
+            child_bnd, child_edges, child_expose_map = _build_recursive_boundary(child, child_path)  # type: ignore[arg-type]
+            child_boundary_map[child.name] = child_bnd
+            child_expose_maps[child.name] = child_expose_map
+            all_edges.extend(child_edges)
+        else:
+            opaque_node_map[child.name] = _make_child_node(child, child_path)
+
+    # Channel nodes — use expose-chain-aware label resolution.
+    channel_node_map = _collect_channel_nodes_resolve(
+        entity.connects, root_id, sub_entity_map, opaque_node_map, child_expose_maps
+    )
+
+    all_children: list[VizNode | VizBoundary] = [
+        *opaque_node_map.values(),
+        *child_boundary_map.values(),
+        *channel_node_map.values(),
+    ]
+    boundary = VizBoundary(
+        id=root_id,
+        label=entity.name,
+        title=entity.title,
+        kind="component" if isinstance(entity, Component) else "system",
+        entity_path=entity_path,
+        description=entity.description,
+        tags=list(entity.tags),
+        ports=_make_ports(root_id, entity),
+        children=all_children,
+    )
+
+    # Edges from this entity's connect statements using expose-chain resolution.
+    seen: set[tuple[str, str]] = set()
+    for conn in entity.connects:
+        for edge in _build_edges_from_connect_resolve(
+            conn, opaque_node_map, sub_entity_map, channel_node_map, child_expose_maps
+        ):
+            key = (edge.source_port_id, edge.target_port_id)
+            if key not in seen:
+                seen.add(key)
+                all_edges.append(edge)
+
+    # Build the expose map for this entity's own exposed ports.
+    expose_map: _ExposeMap = {}
     for exp in entity.exposes:
-        effective_name: str = exp.as_name if exp.as_name else exp.port
-        if effective_name == port_name:
-            inner_node = inner_node_map.get(exp.entity)
-            inner_entity = inner_entity_map.get(exp.entity)
-            if inner_node is not None and inner_entity is not None:
-                return (inner_node, inner_entity, exp.port)
+        effective = exp.as_name if exp.as_name else exp.port
+        child_entity = sub_entity_map.get(exp.entity)
+        if child_entity is None:
+            continue
+        if exp.entity in child_expose_maps:
+            # Child is itself expanded — follow its expose map.
+            inner = child_expose_maps[exp.entity].get(exp.port)
+            if inner is not None:
+                expose_map[effective] = inner
+        else:
+            child_node = opaque_node_map.get(exp.entity)
+            if child_node is not None:
+                expose_map[effective] = (child_node, child_entity, exp.port)
+
+    return boundary, all_edges, expose_map
+
+
+def _resolve_iface_label(
+    entity_name: str,
+    port_name: str,
+    sub_entity_map: dict[str, Component | System | UserDef],
+    child_expose_maps: dict[str, _ExposeMap],
+) -> str | None:
+    """Return the interface label for *entity_name.port_name*, following expose chains."""
+    if entity_name in child_expose_maps:
+        result = child_expose_maps[entity_name].get(port_name)
+        if result is not None:
+            _, leaf_entity, leaf_port = result
+            ref_result = _find_ref_by_port_name(leaf_entity, leaf_port)
+            if ref_result is not None:
+                return _iref_label(ref_result[1])
+    else:
+        sub = sub_entity_map.get(entity_name)
+        if sub is not None:
+            ref_result = _find_ref_by_port_name(sub, port_name)
+            if ref_result is not None:
+                return _iref_label(ref_result[1])
     return None
+
+
+def _collect_channel_nodes_resolve(
+    connects: list[ConnectDef],
+    root_id: str,
+    sub_entity_map: dict[str, Component | System | UserDef],
+    opaque_node_map: dict[str, VizNode],
+    child_expose_maps: dict[str, _ExposeMap],
+) -> dict[str, VizNode]:
+    """Like :func:`_collect_channel_nodes` but resolves labels through expose chains."""
+    channel_interfaces: dict[str, str | None] = {}
+    for conn in connects:
+        if conn.channel is None:
+            continue
+        ch = conn.channel
+        if ch not in channel_interfaces:
+            channel_interfaces[ch] = None
+        if channel_interfaces[ch] is not None:
+            continue
+        if conn.src_entity and conn.src_port:
+            label = _resolve_iface_label(conn.src_entity, conn.src_port, sub_entity_map, child_expose_maps)
+            if label:
+                channel_interfaces[ch] = label
+        if channel_interfaces[ch] is None and conn.dst_entity and conn.dst_port:
+            label = _resolve_iface_label(conn.dst_entity, conn.dst_port, sub_entity_map, child_expose_maps)
+            if label:
+                channel_interfaces[ch] = label
+
+    channel_nodes: dict[str, VizNode] = {}
+    for ch_name, iface_label in channel_interfaces.items():
+        ch_id = f"{root_id}.channel.{ch_name}"
+        display_iface = iface_label or ch_name
+        ports = [
+            VizPort(
+                id=f"{ch_id}.in",
+                node_id=ch_id,
+                interface_name=display_iface,
+                interface_version=None,
+                direction="requires",
+            ),
+            VizPort(
+                id=f"{ch_id}.out",
+                node_id=ch_id,
+                interface_name=display_iface,
+                interface_version=None,
+                direction="provides",
+            ),
+        ]
+        channel_nodes[ch_name] = VizNode(
+            id=ch_id, label=ch_name, title=iface_label, kind="channel", entity_path="", ports=ports
+        )
+    return channel_nodes
+
+
+def _build_edges_from_connect_resolve(
+    conn: ConnectDef,
+    opaque_node_map: dict[str, VizNode],
+    sub_entity_map: dict[str, Component | System | UserDef],
+    channel_node_map: dict[str, VizNode],
+    child_expose_maps: dict[str, _ExposeMap],
+) -> list[VizEdge]:
+    """Build edges from a connect statement using expose-chain resolution.
+
+    Used inside :func:`_build_recursive_boundary` to build edges that may
+    reference exposed ports on expanded child entities.
+    """
+
+    def resolve_side(
+        entity_name: str | None, port_name: str | None
+    ) -> tuple[VizNode, Component | System | UserDef, str] | None:
+        if entity_name is None or port_name is None:
+            return None
+        if entity_name in child_expose_maps:
+            result = child_expose_maps[entity_name].get(port_name)
+            return result  # (leaf_node, leaf_entity, leaf_port) or None
+        node = opaque_node_map.get(entity_name)
+        entity = sub_entity_map.get(entity_name)
+        if node is not None and entity is not None:
+            return (node, entity, port_name)
+        return None
+
+    return _build_edges_for_connect(conn, channel_node_map, resolve_side)
 
 
 def _resolve_endpoint(
@@ -949,34 +1123,19 @@ def _resolve_endpoint(
     port_name: str,
     opaque_node_map: dict[str, VizNode],
     all_entity_map: dict[str, Component | System | UserDef],
-    expanded_inner_node_maps: dict[str, dict[str, VizNode]],
-    expanded_inner_entity_maps: dict[str, dict[str, Component | System | UserDef]],
+    expanded_expose_maps: dict[str, _ExposeMap],
 ) -> tuple[VizNode, Component | System | UserDef, str] | None:
-    """Resolve an ``entity.port`` reference to ``(VizNode, model entity, effective port name)``.
+    """Resolve an ``entity.port`` reference to ``(leaf_node, leaf_entity, leaf_port)``.
 
-    For expanded entities the resolution traces through ``expose`` declarations
-    to reach the inner component that owns the port.  For opaque entities the
-    entity's own :class:`~archml.views.topology.VizNode` is returned directly.
-
-    Returns ``None`` when resolution fails (unknown entity, no matching expose,
-    or inner entity not found).
+    For expanded entities the resolution uses the pre-computed expose map that
+    follows the full expose chain to the actual leaf component.  For opaque
+    entities the entity's own :class:`VizNode` is returned directly.
     """
+    if entity_name in expanded_expose_maps:
+        return expanded_expose_maps[entity_name].get(port_name)
     entity = all_entity_map.get(entity_name)
-    if entity is None:
-        return None
-
-    if entity_name in expanded_inner_node_maps:
-        if isinstance(entity, (Component, System)):
-            return _resolve_exposed_port(
-                entity,
-                port_name,
-                expanded_inner_node_maps[entity_name],
-                expanded_inner_entity_maps.get(entity_name, {}),
-            )
-        return None
-
     node = opaque_node_map.get(entity_name)
-    if node is not None:
+    if entity is not None and node is not None:
         return (node, entity, port_name)
     return None
 
@@ -986,28 +1145,37 @@ def _build_edges_from_connect_expanded(
     opaque_node_map: dict[str, VizNode],
     all_entity_map: dict[str, Component | System | UserDef],
     channel_node_map: dict[str, VizNode],
-    expanded_inner_node_maps: dict[str, dict[str, VizNode]],
-    expanded_inner_entity_maps: dict[str, dict[str, Component | System | UserDef]],
+    expanded_expose_maps: dict[str, _ExposeMap],
 ) -> list[VizEdge]:
-    """Build :class:`VizEdge` instances for the all-diagram, resolving exposed ports.
+    """Build edges for the all-diagram, resolving exposed ports through the full chain."""
 
-    Mirrors :func:`_build_edges_from_connect` but uses :func:`_resolve_endpoint`
-    for both src and dst lookups so that ports on expanded entities are traced
-    through ``expose`` declarations to their inner component nodes.
+    def resolve_side(
+        entity_name: str | None, port_name: str | None
+    ) -> tuple[VizNode, Component | System | UserDef, str] | None:
+        if entity_name is None or port_name is None:
+            return None
+        return _resolve_endpoint(entity_name, port_name, opaque_node_map, all_entity_map, expanded_expose_maps)
+
+    return _build_edges_for_connect(conn, channel_node_map, resolve_side)
+
+
+def _build_edges_for_connect(
+    conn: ConnectDef,
+    channel_node_map: dict[str, VizNode],
+    resolve_side: Callable[[str | None, str | None], tuple[VizNode, Component | System | UserDef, str] | None],
+) -> list[VizEdge]:
+    """Core edge-building logic shared between all connect resolution paths.
+
+    *resolve_side* is called with ``(entity_name, port_name)`` and must return
+    ``(leaf_node, leaf_entity, leaf_port)`` or ``None`` when resolution fails.
     """
-
-    def _ep(entity: str, port: str) -> tuple[VizNode, Component | System | UserDef, str] | None:
-        return _resolve_endpoint(
-            entity, port, opaque_node_map, all_entity_map, expanded_inner_node_maps, expanded_inner_entity_maps
-        )
-
     if conn.channel is None:
         if conn.src_entity is None or conn.src_port is None:
             return []
         if conn.dst_entity is None or conn.dst_port is None:
             return []
-        src = _ep(conn.src_entity, conn.src_port)
-        dst = _ep(conn.dst_entity, conn.dst_port)
+        src = resolve_side(conn.src_entity, conn.src_port)
+        dst = resolve_side(conn.dst_entity, conn.dst_port)
         if src is None or dst is None:
             return []
         src_node, src_sub, src_eff = src
@@ -1052,7 +1220,7 @@ def _build_edges_from_connect_expanded(
     edges: list[VizEdge] = []
 
     if conn.src_entity is not None and conn.src_port is not None and ch_in_port is not None:
-        src = _ep(conn.src_entity, conn.src_port)
+        src = resolve_side(conn.src_entity, conn.src_port)
         if src is not None:
             src_node, src_sub, src_eff = src
             src_result = _find_ref_by_port_name(src_sub, src_eff)
@@ -1078,7 +1246,7 @@ def _build_edges_from_connect_expanded(
                 )
 
     if conn.dst_entity is not None and conn.dst_port is not None and ch_out_port is not None:
-        dst = _ep(conn.dst_entity, conn.dst_port)
+        dst = resolve_side(conn.dst_entity, conn.dst_port)
         if dst is not None:
             dst_node, dst_sub, dst_eff = dst
             dst_result = _find_ref_by_port_name(dst_sub, dst_eff)
@@ -1102,5 +1270,4 @@ def _build_edges_from_connect_expanded(
                         description=conn.description,
                     )
                 )
-
     return edges

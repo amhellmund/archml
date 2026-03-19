@@ -252,15 +252,9 @@ def _draw_diagram(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> Image.
     font = _load_font(font_size)
     bold_font = _load_font(max(9, int(12 * scale)))
 
-    # Build node metadata map (direct VizNode children + inner nodes of VizBoundary children)
+    # Build node metadata map recursively from all leaf VizNodes
     node_meta: dict[str, tuple[str, str | None, NodeKind | None]] = {}
-    for child in diagram.root.children:
-        if isinstance(child, VizNode):
-            node_meta[child.id] = (child.label, child.title, child.kind)
-        elif isinstance(child, VizBoundary):
-            for inner in child.children:
-                if isinstance(inner, VizNode):
-                    node_meta[inner.id] = (inner.label, inner.title, inner.kind)
+    _collect_node_meta(diagram.root, node_meta)
     for node in diagram.peripheral_nodes:
         node_meta[node.id] = (node.label, node.title, node.kind)
 
@@ -271,10 +265,12 @@ def _draw_diagram(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> Image.
         bl = plan.boundaries[diagram.root.id]
         _draw_boundary(draw, diagram.root.label, bl, scale, bold_font)
 
-    # Draw nested boundaries (expanded sub-systems/components) behind their nodes
-    for child in diagram.root.children:
-        if isinstance(child, VizBoundary) and child.id in plan.boundaries:
-            _draw_boundary(draw, child.label, plan.boundaries[child.id], scale, bold_font, kind=child.kind)
+    # Draw nested boundaries outermost-first so inner ones appear on top
+    nested: list[VizBoundary] = []
+    _collect_nested_boundaries(diagram.root, nested)
+    for bnd in nested:
+        if bnd.id in plan.boundaries:
+            _draw_boundary(draw, bnd.label, plan.boundaries[bnd.id], scale, bold_font, kind=bnd.kind)
 
     # Draw all positioned nodes
     for node_id, nl in plan.nodes.items():
@@ -289,6 +285,26 @@ def _draw_diagram(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> Image.
             _draw_edge(draw, route.waypoints, edge.label, scale, edge_font)
 
     return img
+
+
+def _collect_nested_boundaries(boundary: VizBoundary, result: list[VizBoundary]) -> None:
+    """Append all nested VizBoundary children to *result* in BFS order (outermost first)."""
+    for child in boundary.children:
+        if isinstance(child, VizBoundary):
+            result.append(child)
+            _collect_nested_boundaries(child, result)
+
+
+def _collect_node_meta(
+    boundary: VizBoundary,
+    result: dict[str, tuple[str, str | None, NodeKind | None]],
+) -> None:
+    """Recursively collect node metadata from all leaf VizNodes in *boundary*."""
+    for child in boundary.children:
+        if isinstance(child, VizNode):
+            result[child.id] = (child.label, child.title, child.kind)
+        elif isinstance(child, VizBoundary):
+            _collect_node_meta(child, result)
 
 
 def _draw_boundary(

@@ -406,6 +406,8 @@ class _Parser:
                 comp.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 comp.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
+            elif self._check(TokenType.INTERFACE):
+                comp.interfaces.append(self._parse_interface())
             elif self._check(TokenType.COMPONENT):
                 comp.components.append(self._parse_component(is_external=False))
             elif self._check(TokenType.CONNECT):
@@ -454,6 +456,8 @@ class _Parser:
                 system.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 system.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
+            elif self._check(TokenType.INTERFACE):
+                system.interfaces.append(self._parse_interface())
             elif self._check(TokenType.COMPONENT):
                 system.components.append(self._parse_component(is_external=False))
             elif self._check(TokenType.SYSTEM):

@@ -586,6 +586,70 @@ def test_layer_gap_increases_boundary_width() -> None:
 
 
 # ###############
+# Text-aware node sizing
+# ###############
+
+
+def test_long_label_expands_node_width() -> None:
+    """A node with a long label produces a wider layout than the config minimum."""
+    short = _node("A")
+    long_label = "VeryLongComponentName"  # exceeds node_width=120 at default char_width
+    long_node = _node(long_label)
+    diagram_short = _simple_diagram([short])
+    diagram_long = _simple_diagram([long_node])
+    cfg = LayoutConfig()
+    plan_short = compute_layout(diagram_short, config=cfg)
+    plan_long = compute_layout(diagram_long, config=cfg)
+    assert plan_long.nodes[long_label].width > plan_short.nodes["A"].width
+
+
+def test_all_inner_nodes_get_same_width() -> None:
+    """All inner child nodes have a uniform width equal to the widest label's requirement."""
+    short = _node("A")
+    long_node = _node("VeryLongComponentName")
+    diagram = _simple_diagram([short, long_node])
+    plan = compute_layout(diagram)
+    assert plan.nodes["A"].width == plan.nodes["VeryLongComponentName"].width
+
+
+def test_long_peripheral_label_expands_peripheral_width() -> None:
+    """A peripheral node with a long label expands the peripheral zone width."""
+    inner = _node("A")
+    req = _port("ShortPeri", "requires", "X")
+    short_peri = _node("ShortPeri", [req])
+    diagram_short = _simple_diagram([inner], peripheral_nodes=[short_peri])
+
+    long_name = "VeryLongPeripheralLabel"
+    req2 = _port(long_name, "requires", "X")
+    long_peri = _node(long_name, [req2])
+    diagram_long = _simple_diagram([inner], peripheral_nodes=[long_peri])
+
+    plan_short = compute_layout(diagram_short)
+    plan_long = compute_layout(diagram_long)
+    assert plan_long.nodes[long_name].width > plan_short.nodes["ShortPeri"].width
+
+
+def test_node_width_is_at_least_config_minimum() -> None:
+    """A very short label never makes a node narrower than cfg.node_width."""
+    a = _node("A")
+    diagram = _simple_diagram([a])
+    cfg = LayoutConfig(node_width=200.0)
+    plan = compute_layout(diagram, config=cfg)
+    assert plan.nodes["A"].width == 200.0
+
+
+def test_peripheral_width_is_at_least_config_minimum() -> None:
+    """A very short peripheral label never drops below cfg.peripheral_node_width."""
+    inner = _node("A")
+    req = _port("P", "requires", "X")
+    p = _node("P", [req])
+    diagram = _simple_diagram([inner], peripheral_nodes=[p])
+    cfg = LayoutConfig(peripheral_node_width=300.0)
+    plan = compute_layout(diagram, config=cfg)
+    assert plan.nodes["P"].width == 300.0
+
+
+# ###############
 # Total diagram dimensions
 # ###############
 
