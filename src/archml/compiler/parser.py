@@ -503,11 +503,11 @@ class _Parser:
         if kind.type == TokenType.COMPONENT:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
-            system.components.append(Component(name=name_tok.value))
+            system.components.append(Component(name=name_tok.value, is_stub=True))
         elif kind.type == TokenType.SYSTEM:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
-            system.systems.append(System(name=name_tok.value))
+            system.systems.append(System(name=name_tok.value, is_stub=True))
         elif kind.type == TokenType.USER:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)

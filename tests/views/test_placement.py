@@ -760,3 +760,85 @@ def test_plan_diagram_id_matches_viz_diagram_id() -> None:
     diagram = build_viz_diagram(comp)
     plan = compute_layout(diagram)
     assert plan.diagram_id == diagram.id
+
+
+# ###############
+# Expanded boundary layout (all-diagram with nested boundaries)
+# ###############
+
+
+def test_expanded_boundary_child_produces_boundary_layout() -> None:
+    """An expanded VizBoundary child of the root gets a BoundaryLayout entry."""
+    from archml.model.entities import ArchFile
+    from archml.views.topology import build_viz_diagram_all
+
+    inner = Component(name="A", requires=[_iref("X")])
+    order = System(name="Order", components=[inner])
+    af = ArchFile(systems=[order])
+    diag = build_viz_diagram_all({"f": af})
+    plan = compute_layout(diag)
+    assert "Order" in plan.boundaries
+
+
+def test_expanded_boundary_inner_nodes_have_layout() -> None:
+    """Inner nodes of an expanded boundary appear in plan.nodes with positions."""
+    from archml.model.entities import ArchFile
+    from archml.views.topology import build_viz_diagram_all
+
+    inner = Component(name="A", requires=[_iref("X")])
+    order = System(name="Order", components=[inner])
+    af = ArchFile(systems=[order])
+    diag = build_viz_diagram_all({"f": af})
+    plan = compute_layout(diag)
+    assert any("Order__A" in nid for nid in plan.nodes)
+
+
+def test_expanded_boundary_bounding_box_encloses_inner_nodes() -> None:
+    """The boundary layout for an expanded entity fully encloses its inner nodes."""
+    from archml.model.entities import ArchFile
+    from archml.views.topology import build_viz_diagram_all
+
+    inner_a = Component(name="A", provides=[_iref("IFace")])
+    inner_b = Component(name="B", requires=[_iref("IFace")])
+    order = System(
+        name="Order",
+        components=[inner_a, inner_b],
+        connects=[ConnectDef(src_entity="A", src_port="IFace", channel="ch", dst_entity="B", dst_port="IFace")],
+    )
+    af = ArchFile(systems=[order])
+    diag = build_viz_diagram_all({"f": af})
+    plan = compute_layout(diag)
+    bnd_lay = plan.boundaries["Order"]
+    for nid, nl in plan.nodes.items():
+        if "Order__" in nid:
+            assert nl.x >= bnd_lay.x
+            assert nl.y >= bnd_lay.y
+            assert nl.x + nl.width <= bnd_lay.x + bnd_lay.width
+            assert nl.y + nl.height <= bnd_lay.y + bnd_lay.height
+
+
+def test_all_port_anchors_resolved_with_expanded_boundary() -> None:
+    """All ports of an all-diagram with expanded boundaries have anchors."""
+    from archml.model.entities import ArchFile, ExposeDef
+    from archml.views.topology import build_viz_diagram_all, collect_all_ports
+
+    comp_a = Component(name="A", requires=[_iref("OrderRequest")])
+    order = System(
+        name="Order",
+        components=[comp_a],
+        exposes=[ExposeDef(entity="A", port="OrderRequest")],
+    )
+    ingestor = Component(name="DataIngestor", provides=[_iref("OrderRequest")])
+    conn = ConnectDef(
+        src_entity="DataIngestor",
+        src_port="OrderRequest",
+        channel="ch",
+        dst_entity="Order",
+        dst_port="OrderRequest",
+    )
+    af = ArchFile(systems=[order], components=[ingestor], connects=[conn])
+    diag = build_viz_diagram_all({"f": af})
+    plan = compute_layout(diag)
+    all_ports = collect_all_ports(diag)
+    for port_id in all_ports:
+        assert port_id in plan.port_anchors, f"Missing anchor for port {port_id}"

@@ -338,6 +338,16 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
     Top-level ``connect`` statements from all files provide the edges and
     channel nodes.
 
+    Non-external components and systems that have inner children (components,
+    sub-systems, or users) are rendered as expanded :class:`VizBoundary`
+    instances so their internal structure is visible.  External entities and
+    leaf entities (no inner structure) are rendered as opaque :class:`VizNode`
+    instances.
+
+    When a top-level ``connect`` targets a port on an expanded entity,
+    resolution proceeds through the entity's ``expose`` declarations: the
+    edge is routed to the actual inner component that exposed the port.
+
     Use this to visualise the complete architecture in one diagram without
     selecting a specific entity.
 
@@ -351,28 +361,63 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
     """
     root_id = "all"
 
-    child_node_map: dict[str, VizNode] = {}
+    opaque_node_map: dict[str, VizNode] = {}
     all_sub_entity_map: dict[str, Component | System | UserDef] = {}
+    expanded_diagrams: dict[str, VizDiagram] = {}
+    expanded_inner_node_maps: dict[str, dict[str, VizNode]] = {}
+    expanded_inner_entity_maps: dict[str, dict[str, Component | System | UserDef]] = {}
     all_connects: list[ConnectDef] = []
 
     for arch_file in arch_files.values():
         for comp in arch_file.components:
             entity_path = comp.qualified_name or comp.name
-            child_node_map[comp.name] = _make_child_node(comp, entity_path)
             all_sub_entity_map[comp.name] = comp
+            if _should_expand(comp):
+                inner_diag = build_viz_diagram(comp)
+                expanded_diagrams[comp.name] = inner_diag
+                expanded_inner_node_maps[comp.name] = {
+                    child.label: child
+                    for child in inner_diag.root.children
+                    if isinstance(child, VizNode) and child.kind != "channel"
+                }
+                expanded_inner_entity_maps[comp.name] = {c.name: c for c in comp.components}
+            else:
+                opaque_node_map[comp.name] = _make_child_node(comp, entity_path)
         for sys in arch_file.systems:
             entity_path = sys.qualified_name or sys.name
-            child_node_map[sys.name] = _make_child_node(sys, entity_path)
             all_sub_entity_map[sys.name] = sys
+            if _should_expand(sys):
+                inner_diag = build_viz_diagram(sys)
+                expanded_diagrams[sys.name] = inner_diag
+                inner_nodes: dict[str, VizNode] = {
+                    child.label: child
+                    for child in inner_diag.root.children
+                    if isinstance(child, VizNode) and child.kind != "channel"
+                }
+                expanded_inner_node_maps[sys.name] = inner_nodes
+                inner_ents: dict[str, Component | System | UserDef] = {}
+                for c in sys.components:
+                    inner_ents[c.name] = c
+                for s in sys.systems:
+                    inner_ents[s.name] = s
+                for u in sys.users:
+                    inner_ents[u.name] = u
+                expanded_inner_entity_maps[sys.name] = inner_ents
+            else:
+                opaque_node_map[sys.name] = _make_child_node(sys, entity_path)
         for user in arch_file.users:
             entity_path = user.qualified_name or user.name
-            child_node_map[user.name] = _make_child_node(user, entity_path)
             all_sub_entity_map[user.name] = user
+            opaque_node_map[user.name] = _make_child_node(user, entity_path)
         all_connects.extend(arch_file.connects)
 
     channel_node_map = _collect_channel_nodes(all_connects, root_id, all_sub_entity_map)
 
-    all_children: list[VizNode | VizBoundary] = [*child_node_map.values(), *channel_node_map.values()]
+    all_children: list[VizNode | VizBoundary] = [
+        *opaque_node_map.values(),
+        *(d.root for d in expanded_diagrams.values()),
+        *channel_node_map.values(),
+    ]
     root = VizBoundary(
         id=root_id,
         label="Architecture",
@@ -384,8 +429,25 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
 
     edges: list[VizEdge] = []
     seen_port_pairs: set[tuple[str, str]] = set()
+
+    # Inner edges from each expanded entity's own connect statements.
+    for inner_diag in expanded_diagrams.values():
+        for edge in inner_diag.edges:
+            key = (edge.source_port_id, edge.target_port_id)
+            if key not in seen_port_pairs:
+                seen_port_pairs.add(key)
+                edges.append(edge)
+
+    # Top-level edges — resolve exposed ports on expanded entities to inner components.
     for conn in all_connects:
-        for edge in _build_edges_from_connect(conn, child_node_map, all_sub_entity_map, channel_node_map):
+        for edge in _build_edges_from_connect_expanded(
+            conn,
+            opaque_node_map,
+            all_sub_entity_map,
+            channel_node_map,
+            expanded_inner_node_maps,
+            expanded_inner_entity_maps,
+        ):
             key = (edge.source_port_id, edge.target_port_id)
             if key not in seen_port_pairs:
                 seen_port_pairs.add(key)
@@ -790,3 +852,207 @@ def _collect_boundary_ports(boundary: VizBoundary, result: dict[str, VizPort]) -
         else:
             for p in child.ports:
                 result[p.id] = p
+
+
+def _should_expand(entity: Component | System | UserDef) -> bool:
+    """Return ``True`` if *entity* should be rendered as an expanded boundary in the all-diagram.
+
+    Non-external components and systems that contain at least one direct child
+    (component, sub-system, or user) are expanded so their internal structure
+    is visible.  External entities and leaf entities (no inner children) are
+    rendered as opaque nodes.  :class:`~archml.model.entities.UserDef` nodes
+    are always leaf.
+    """
+    if isinstance(entity, UserDef) or entity.is_external:
+        return False
+    if isinstance(entity, Component):
+        return bool(entity.components)
+    # System
+    return bool(entity.components) or bool(entity.systems) or bool(entity.users)
+
+
+def _resolve_exposed_port(
+    entity: Component | System,
+    port_name: str,
+    inner_node_map: dict[str, VizNode],
+    inner_entity_map: dict[str, Component | System | UserDef],
+) -> tuple[VizNode, Component | System | UserDef, str] | None:
+    """Resolve *port_name* on an expanded entity through its ``expose`` declarations.
+
+    Iterates the entity's :attr:`~archml.model.entities.Component.exposes` list
+    and returns ``(inner_node, inner_entity, inner_port_name)`` for the first
+    matching declaration.  The effective exposed name is ``expose.as_name`` when
+    set, otherwise ``expose.port``.
+
+    Returns ``None`` when no ``expose`` declaration covers *port_name*.
+    """
+    for exp in entity.exposes:
+        effective_name: str = exp.as_name if exp.as_name else exp.port
+        if effective_name == port_name:
+            inner_node = inner_node_map.get(exp.entity)
+            inner_entity = inner_entity_map.get(exp.entity)
+            if inner_node is not None and inner_entity is not None:
+                return (inner_node, inner_entity, exp.port)
+    return None
+
+
+def _resolve_endpoint(
+    entity_name: str,
+    port_name: str,
+    opaque_node_map: dict[str, VizNode],
+    all_entity_map: dict[str, Component | System | UserDef],
+    expanded_inner_node_maps: dict[str, dict[str, VizNode]],
+    expanded_inner_entity_maps: dict[str, dict[str, Component | System | UserDef]],
+) -> tuple[VizNode, Component | System | UserDef, str] | None:
+    """Resolve an ``entity.port`` reference to ``(VizNode, model entity, effective port name)``.
+
+    For expanded entities the resolution traces through ``expose`` declarations
+    to reach the inner component that owns the port.  For opaque entities the
+    entity's own :class:`~archml.views.topology.VizNode` is returned directly.
+
+    Returns ``None`` when resolution fails (unknown entity, no matching expose,
+    or inner entity not found).
+    """
+    entity = all_entity_map.get(entity_name)
+    if entity is None:
+        return None
+
+    if entity_name in expanded_inner_node_maps:
+        if isinstance(entity, (Component, System)):
+            return _resolve_exposed_port(
+                entity,
+                port_name,
+                expanded_inner_node_maps[entity_name],
+                expanded_inner_entity_maps.get(entity_name, {}),
+            )
+        return None
+
+    node = opaque_node_map.get(entity_name)
+    if node is not None:
+        return (node, entity, port_name)
+    return None
+
+
+def _build_edges_from_connect_expanded(
+    conn: ConnectDef,
+    opaque_node_map: dict[str, VizNode],
+    all_entity_map: dict[str, Component | System | UserDef],
+    channel_node_map: dict[str, VizNode],
+    expanded_inner_node_maps: dict[str, dict[str, VizNode]],
+    expanded_inner_entity_maps: dict[str, dict[str, Component | System | UserDef]],
+) -> list[VizEdge]:
+    """Build :class:`VizEdge` instances for the all-diagram, resolving exposed ports.
+
+    Mirrors :func:`_build_edges_from_connect` but uses :func:`_resolve_endpoint`
+    for both src and dst lookups so that ports on expanded entities are traced
+    through ``expose`` declarations to their inner component nodes.
+    """
+
+    def _ep(entity: str, port: str) -> tuple[VizNode, Component | System | UserDef, str] | None:
+        return _resolve_endpoint(
+            entity, port, opaque_node_map, all_entity_map, expanded_inner_node_maps, expanded_inner_entity_maps
+        )
+
+    if conn.channel is None:
+        if conn.src_entity is None or conn.src_port is None:
+            return []
+        if conn.dst_entity is None or conn.dst_port is None:
+            return []
+        src = _ep(conn.src_entity, conn.src_port)
+        dst = _ep(conn.dst_entity, conn.dst_port)
+        if src is None or dst is None:
+            return []
+        src_node, src_sub, src_eff = src
+        dst_node, dst_sub, dst_eff = dst
+        src_result = _find_ref_by_port_name(src_sub, src_eff)
+        dst_result = _find_ref_by_port_name(dst_sub, dst_eff)
+        if src_result is None or dst_result is None:
+            return []
+        src_dir, src_ref = src_result
+        dst_dir, dst_ref = dst_result
+        src_port_id = _find_port_id(src_node, src_dir, src_ref)
+        if src_port_id is None:
+            p = _make_port(src_node.id, src_dir, src_ref)
+            src_node.ports.append(p)
+            src_port_id = p.id
+        dst_port_id = _find_port_id(dst_node, dst_dir, dst_ref)
+        if dst_port_id is None:
+            p = _make_port(dst_node.id, dst_dir, dst_ref)
+            dst_node.ports.append(p)
+            dst_port_id = p.id
+        return [
+            VizEdge(
+                id=f"edge.{src_port_id}--{dst_port_id}",
+                source_port_id=src_port_id,
+                target_port_id=dst_port_id,
+                label=_iref_label(src_ref),
+                interface_name=src_ref.name,
+                interface_version=src_ref.version,
+                protocol=conn.protocol,
+                is_async=conn.is_async,
+                description=conn.description,
+            )
+        ]
+
+    ch_node = channel_node_map.get(conn.channel)
+    if ch_node is None:
+        return []
+
+    ch_in_port = next((p for p in ch_node.ports if p.direction == "requires"), None)
+    ch_out_port = next((p for p in ch_node.ports if p.direction == "provides"), None)
+
+    edges: list[VizEdge] = []
+
+    if conn.src_entity is not None and conn.src_port is not None and ch_in_port is not None:
+        src = _ep(conn.src_entity, conn.src_port)
+        if src is not None:
+            src_node, src_sub, src_eff = src
+            src_result = _find_ref_by_port_name(src_sub, src_eff)
+            if src_result is not None:
+                src_dir, src_ref = src_result
+                src_port_id = _find_port_id(src_node, src_dir, src_ref)
+                if src_port_id is None:
+                    p = _make_port(src_node.id, src_dir, src_ref)
+                    src_node.ports.append(p)
+                    src_port_id = p.id
+                edges.append(
+                    VizEdge(
+                        id=f"edge.{src_port_id}--{ch_in_port.id}",
+                        source_port_id=src_port_id,
+                        target_port_id=ch_in_port.id,
+                        label=_iref_label(src_ref),
+                        interface_name=src_ref.name,
+                        interface_version=src_ref.version,
+                        protocol=conn.protocol,
+                        is_async=conn.is_async,
+                        description=conn.description,
+                    )
+                )
+
+    if conn.dst_entity is not None and conn.dst_port is not None and ch_out_port is not None:
+        dst = _ep(conn.dst_entity, conn.dst_port)
+        if dst is not None:
+            dst_node, dst_sub, dst_eff = dst
+            dst_result = _find_ref_by_port_name(dst_sub, dst_eff)
+            if dst_result is not None:
+                dst_dir, dst_ref = dst_result
+                dst_port_id = _find_port_id(dst_node, dst_dir, dst_ref)
+                if dst_port_id is None:
+                    p = _make_port(dst_node.id, dst_dir, dst_ref)
+                    dst_node.ports.append(p)
+                    dst_port_id = p.id
+                edges.append(
+                    VizEdge(
+                        id=f"edge.{ch_out_port.id}--{dst_port_id}",
+                        source_port_id=ch_out_port.id,
+                        target_port_id=dst_port_id,
+                        label=_iref_label(dst_ref),
+                        interface_name=dst_ref.name,
+                        interface_version=dst_ref.version,
+                        protocol=conn.protocol,
+                        is_async=conn.is_async,
+                        description=conn.description,
+                    )
+                )
+
+    return edges

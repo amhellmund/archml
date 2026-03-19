@@ -133,6 +133,7 @@ class Component(BaseModel):
     connects: list[ConnectDef] = _Field(default_factory=list)
     exposes: list[ExposeDef] = _Field(default_factory=list)
     is_external: bool = False
+    is_stub: bool = False
     qualified_name: str = ""
 
 
@@ -151,6 +152,7 @@ class System(BaseModel):
     connects: list[ConnectDef] = _Field(default_factory=list)
     exposes: list[ExposeDef] = _Field(default_factory=list)
     is_external: bool = False
+    is_stub: bool = False
     qualified_name: str = ""
 
 

@@ -32,7 +32,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from archml.views.placement import BoundaryLayout, LayoutPlan, NodeLayout
-from archml.views.topology import NodeKind, VizDiagram, VizNode
+from archml.views.topology import BoundaryKind, NodeKind, VizBoundary, VizDiagram, VizNode
 
 # ###############
 # Public Interface
@@ -252,11 +252,15 @@ def _draw_diagram(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> Image.
     font = _load_font(font_size)
     bold_font = _load_font(max(9, int(12 * scale)))
 
-    # Build node metadata map
+    # Build node metadata map (direct VizNode children + inner nodes of VizBoundary children)
     node_meta: dict[str, tuple[str, str | None, NodeKind | None]] = {}
     for child in diagram.root.children:
         if isinstance(child, VizNode):
             node_meta[child.id] = (child.label, child.title, child.kind)
+        elif isinstance(child, VizBoundary):
+            for inner in child.children:
+                if isinstance(inner, VizNode):
+                    node_meta[inner.id] = (inner.label, inner.title, inner.kind)
     for node in diagram.peripheral_nodes:
         node_meta[node.id] = (node.label, node.title, node.kind)
 
@@ -266,6 +270,11 @@ def _draw_diagram(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> Image.
     if diagram.root.id in plan.boundaries:
         bl = plan.boundaries[diagram.root.id]
         _draw_boundary(draw, diagram.root.label, bl, scale, bold_font)
+
+    # Draw nested boundaries (expanded sub-systems/components) behind their nodes
+    for child in diagram.root.children:
+        if isinstance(child, VizBoundary) and child.id in plan.boundaries:
+            _draw_boundary(draw, child.label, plan.boundaries[child.id], scale, bold_font, kind=child.kind)
 
     # Draw all positioned nodes
     for node_id, nl in plan.nodes.items():
@@ -288,19 +297,30 @@ def _draw_boundary(
     bl: BoundaryLayout,
     scale: float,
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    *,
+    kind: BoundaryKind | None = None,
 ) -> None:
-    """Draw the root boundary with a fill, border, and centered title."""
+    """Draw a boundary rectangle with a fill, border, and title label.
+
+    *kind* selects the colour palette: ``"component"`` uses green tones,
+    ``"system"`` uses violet tones.  ``None`` (the default, used for the root
+    boundary) uses the slate-blue palette.
+    """
+    if kind == "component":
+        fill, stroke = _RGB_COMPONENT, _RGB_COMPONENT_STROKE
+    elif kind == "system":
+        fill, stroke = _RGB_SYSTEM, _RGB_SYSTEM_STROKE
+    else:
+        fill, stroke = _RGB_BOUNDARY, _RGB_BOUNDARY_STROKE
     x0 = bl.x * scale
     y0 = bl.y * scale
     x1 = (bl.x + bl.width) * scale
     y1 = (bl.y + bl.height) * scale
-    _draw_rounded_rect(
-        draw, (x0, y0, x1, y1), _CORNER_RADIUS, _RGB_BOUNDARY, _RGB_BOUNDARY_STROKE, _BOUNDARY_STROKE_WIDTH
-    )
-    # Title label
+    _draw_rounded_rect(draw, (x0, y0, x1, y1), _CORNER_RADIUS, fill, stroke, _BOUNDARY_STROKE_WIDTH)
+    # Title label: 15 layout units below the boundary top edge (matches SVG _BOUNDARY_LABEL_OFFSET)
     tx = (x0 + x1) / 2
-    ty = y0 + 15 * scale / 2.0
-    draw.text((tx, ty), label, fill=_RGB_BOUNDARY_STROKE, font=font, anchor="mm")
+    ty = y0 + 15 * scale
+    draw.text((tx, ty), label, fill=stroke, font=font, anchor="mm")
 
 
 def _draw_node(
@@ -374,8 +394,3 @@ def _draw_edge(
     ry = base_y - hw * ndx
     draw.polygon([(x2, y2), (lx, ly), (rx, ry)], fill=_RGB_EDGE)
 
-    # Label at midpoint
-    mid = len(scaled) // 2
-    mx = (scaled[mid - 1][0] + scaled[mid][0]) / 2
-    my = (scaled[mid - 1][1] + scaled[mid][1]) / 2 - 5 * scale
-    draw.text((mx, my), label, fill=_RGB_EDGE, font=font, anchor="mb")

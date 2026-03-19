@@ -201,11 +201,6 @@ class _SemanticAnalyzer:
             )
 
         # 8. Check top-level connect statements.
-        top_child_names = (
-            {c.name for c in self._file.components}
-            | {s.name for s in self._file.systems}
-            | {u.name for u in self._file.users}
-        )
         top_child_entity_map: dict[str, Component | System | UserDef] = {
             **{c.name: c for c in self._file.components},
             **{s.name: s for s in self._file.systems},
@@ -213,7 +208,7 @@ class _SemanticAnalyzer:
         }
         for conn in self._file.connects:
             errors.extend(_resolve_simplified_connect(conn, top_child_entity_map, "top-level"))
-            errors.extend(_check_connect("top-level", conn, top_child_names))
+            errors.extend(_check_connect("top-level", conn, top_child_entity_map))
 
         # 9. Validate import entities against resolved source files.
         errors.extend(self._check_import_resolutions())
@@ -267,13 +262,12 @@ class _SemanticAnalyzer:
         errors.extend(_check_port_names(ctx, comp.requires, comp.provides))
 
         # Check connect / expose statements.
-        child_names = {c.name for c in comp.components}
         child_entity_map: dict[str, Component | System | UserDef] = {c.name: c for c in comp.components}
         for conn in comp.connects:
             errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx))
-            errors.extend(_check_connect(ctx, conn, child_names))
+            errors.extend(_check_connect(ctx, conn, child_entity_map))
         for exp in comp.exposes:
-            errors.extend(_check_expose(ctx, exp, child_names))
+            errors.extend(_check_expose(ctx, exp, child_entity_map))
 
         # Recurse into sub-components.
         for sub in comp.components:
@@ -359,7 +353,6 @@ class _SemanticAnalyzer:
         errors.extend(_check_port_names(ctx, system.requires, system.provides))
 
         # Check connect / expose statements.
-        child_names = comp_names | sys_names | user_names
         child_entity_map: dict[str, Component | System | UserDef] = {
             **{c.name: c for c in system.components},
             **{s.name: s for s in system.systems},
@@ -367,9 +360,9 @@ class _SemanticAnalyzer:
         }
         for conn in system.connects:
             errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx))
-            errors.extend(_check_connect(ctx, conn, child_names))
+            errors.extend(_check_connect(ctx, conn, child_entity_map))
         for exp in system.exposes:
-            errors.extend(_check_expose(ctx, exp, child_names))
+            errors.extend(_check_expose(ctx, exp, child_entity_map))
 
         # Recurse into children.
         for comp in system.components:
@@ -673,17 +666,46 @@ def _check_interface_ref(
     return errors
 
 
+def _valid_connect_port_names(entity: Component | System | UserDef) -> set[str] | None:
+    """Return the set of port names that may appear in a connect statement for *entity*.
+
+    Includes direct ``requires``/``provides`` port names and, for components
+    and systems, the effective name of each ``expose`` declaration (either
+    ``expose.as_name`` when set, otherwise ``expose.port``).
+
+    Returns ``None`` for stub entities (created by ``use component``/``use system``)
+    whose port definitions are not yet available during semantic analysis.
+    """
+    if isinstance(entity, (Component, System)) and entity.is_stub:
+        return None
+    names: set[str] = set()
+    for ref in entity.requires:
+        names.add(_effective_port_name(ref))
+    for ref in entity.provides:
+        names.add(_effective_port_name(ref))
+    if isinstance(entity, (Component, System)):
+        for exp in entity.exposes:
+            names.add(exp.as_name if exp.as_name else exp.port)
+    return names
+
+
 def _check_connect(
     ctx: str,
     conn: ConnectDef,
-    child_names: set[str],
+    child_entity_map: dict[str, Component | System | UserDef],
 ) -> list[SemanticError]:
-    """Check that entity references in a connect statement name direct children."""
+    """Check that entity and port references in a connect statement are valid."""
     errors: list[SemanticError] = []
-    if conn.src_entity is not None and conn.src_entity not in child_names:
-        errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{conn.src_entity}'"))
-    if conn.dst_entity is not None and conn.dst_entity not in child_names:
-        errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{conn.dst_entity}'"))
+    for side_entity, side_port in ((conn.src_entity, conn.src_port), (conn.dst_entity, conn.dst_port)):
+        if side_entity is None:
+            continue
+        if side_entity not in child_entity_map:
+            errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{side_entity}'"))
+            continue
+        if side_port is not None:
+            valid = _valid_connect_port_names(child_entity_map[side_entity])
+            if valid is not None and side_port not in valid:
+                errors.append(SemanticError(f"{ctx}: connect references unknown port '{side_port}' on '{side_entity}'"))
     return errors
 
 
@@ -749,11 +771,19 @@ def _resolve_simplified_connect(
 def _check_expose(
     ctx: str,
     exp: ExposeDef,
-    child_names: set[str],
+    child_entity_map: dict[str, Component | System | UserDef],
 ) -> list[SemanticError]:
-    """Check that the entity in an expose statement names a direct child."""
-    if exp.entity not in child_names:
+    """Check that the entity and port in an expose statement are valid."""
+    if exp.entity not in child_entity_map:
         return [SemanticError(f"{ctx}: expose references unknown child entity '{exp.entity}'")]
+    entity = child_entity_map[exp.entity]
+    if isinstance(entity, (Component, System)) and entity.is_stub:
+        return []
+    direct_ports: set[str] = {_effective_port_name(r) for r in entity.requires} | {
+        _effective_port_name(r) for r in entity.provides
+    }
+    if exp.port not in direct_ports:
+        return [SemanticError(f"{ctx}: expose references unknown port '{exp.port}' on '{exp.entity}'")]
     return []
 
 

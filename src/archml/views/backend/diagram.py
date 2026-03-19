@@ -36,7 +36,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from archml.views.placement import BoundaryLayout, LayoutPlan, NodeLayout
-from archml.views.topology import NodeKind, VizDiagram, VizNode
+from archml.views.topology import BoundaryKind, NodeKind, VizBoundary, VizDiagram, VizNode
 
 # ###############
 # Public Interface
@@ -180,11 +180,20 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
     if diagram.root.id in plan.boundaries:
         _render_boundary(svg, diagram.root.label, plan.boundaries[diagram.root.id], scale)
 
+    # Nested boundaries (expanded sub-systems/components) — rendered before nodes so they sit behind.
+    for child in diagram.root.children:
+        if isinstance(child, VizBoundary) and child.id in plan.boundaries:
+            _render_boundary(svg, child.label, plan.boundaries[child.id], scale, kind=child.kind)
+
     # Build a metadata map: node_id → (label, title, kind) for all renderable nodes.
     node_meta: dict[str, tuple[str, str | None, NodeKind | None]] = {}
     for child in diagram.root.children:
         if isinstance(child, VizNode):
             node_meta[child.id] = (child.label, child.title, child.kind)
+        elif isinstance(child, VizBoundary):
+            for inner in child.children:
+                if isinstance(inner, VizNode):
+                    node_meta[inner.id] = (inner.label, inner.title, inner.kind)
     for node in diagram.peripheral_nodes:
         node_meta[node.id] = (node.label, node.title, node.kind)
 
@@ -219,8 +228,26 @@ def _add_node_clip(defs: ET.Element, clip_id: str, nl: NodeLayout, scale: float)
     )
 
 
-def _render_boundary(svg: ET.Element, label: str, bl: BoundaryLayout, scale: float) -> None:
-    """Draw the root boundary rectangle with a title label."""
+def _render_boundary(
+    svg: ET.Element,
+    label: str,
+    bl: BoundaryLayout,
+    scale: float,
+    *,
+    kind: BoundaryKind | None = None,
+) -> None:
+    """Draw a boundary rectangle with a title label.
+
+    *kind* selects the colour palette: ``"component"`` uses green tones,
+    ``"system"`` uses violet tones.  ``None`` (the default, used for the root
+    boundary) uses the slate-blue palette.
+    """
+    if kind == "component":
+        fill, stroke = _FILL_COMPONENT, _STROKE_COMPONENT
+    elif kind == "system":
+        fill, stroke = _FILL_SYSTEM, _STROKE_SYSTEM
+    else:
+        fill, stroke = _FILL_BOUNDARY, _STROKE_BOUNDARY
     r = str(_CORNER_RADIUS)
     ET.SubElement(
         svg,
@@ -232,8 +259,8 @@ def _render_boundary(svg: ET.Element, label: str, bl: BoundaryLayout, scale: flo
             "height": _f(bl.height, scale),
             "rx": r,
             "ry": r,
-            "fill": _FILL_BOUNDARY,
-            "stroke": _STROKE_BOUNDARY,
+            "fill": fill,
+            "stroke": stroke,
             "stroke-width": str(_BOUNDARY_STROKE_WIDTH),
         },
     )
@@ -248,7 +275,7 @@ def _render_boundary(svg: ET.Element, label: str, bl: BoundaryLayout, scale: flo
             "font-family": _FONT_FAMILY,
             "font-size": str(int(_FONT_SIZE * scale * 1.1)),
             "font-weight": "bold",
-            "fill": _STROKE_BOUNDARY,
+            "fill": stroke,
         },
     )
     title.text = label
@@ -391,23 +418,6 @@ def _render_edge(
     arrow_pts = " ".join(f"{x * scale:.2f},{y * scale:.2f}" for x, y in [(x2, y2), (lx, ly), (rx_pt, ry_pt)])
     ET.SubElement(svg, "polygon", {"points": arrow_pts, "fill": _EDGE_COLOUR})
 
-    # Label at the midpoint of the edge.
-    mid = len(waypoints) // 2
-    mx = (waypoints[mid - 1][0] + waypoints[mid][0]) / 2 * scale
-    my = (waypoints[mid - 1][1] + waypoints[mid][1]) / 2 * scale - 4 * scale
-    text = ET.SubElement(
-        svg,
-        "text",
-        {
-            "x": f"{mx:.2f}",
-            "y": f"{my:.2f}",
-            "text-anchor": "middle",
-            "font-family": _FONT_FAMILY,
-            "font-size": str(int(_FONT_SIZE * scale * 0.9)),
-            "fill": _EDGE_COLOUR,
-        },
-    )
-    text.text = label
 
 
 def _write_svg(svg: ET.Element, output_path: Path) -> None:

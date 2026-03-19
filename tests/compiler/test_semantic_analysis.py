@@ -744,6 +744,29 @@ component Router {
 }
 """)
 
+    def test_expose_with_unknown_port(self) -> None:
+        """Exposing a port name that does not exist on the child entity is an error."""
+        _assert_error(
+            """
+interface Signal { field v: Bool }
+component Router {
+    component Input { provides Signal }
+    expose Input.Typo
+}
+""",
+            "expose references unknown port 'Typo' on 'Input'",
+        )
+
+    def test_expose_requires_port_is_valid(self) -> None:
+        """Exposing a requires port (not just provides) is valid."""
+        _assert_clean("""
+interface Signal { field value: Bool }
+component Router {
+    component Output { requires Signal }
+    expose Output.Signal
+}
+""")
+
     def test_direct_connect_no_channel(self) -> None:
         _assert_clean("""
 interface DataFeed { field payload: String }
@@ -1507,6 +1530,86 @@ component Sink { requires Data }
 
 connect Upstream.Data -> $pipe -> Sink.Data
 """)
+
+    def test_top_level_connect_unknown_src_port(self) -> None:
+        """A typo in the src port of a top-level connect is a semantic error."""
+        _assert_error(
+            """
+interface API { field endpoint: String }
+system Frontend { provides API }
+system Backend { requires API }
+
+connect Frontend.Typo -> $bus -> Backend.API
+""",
+            "connect references unknown port 'Typo' on 'Frontend'",
+        )
+
+    def test_top_level_connect_unknown_dst_port(self) -> None:
+        """A typo in the dst port of a top-level connect is a semantic error."""
+        _assert_error(
+            """
+interface API { field endpoint: String }
+system Frontend { provides API }
+system Backend { requires API }
+
+connect Frontend.API -> $bus -> Backend.Typo
+""",
+            "connect references unknown port 'Typo' on 'Backend'",
+        )
+
+    def test_top_level_connect_exposed_port_is_valid(self) -> None:
+        """A port that is exposed by a child system is valid in a top-level connect."""
+        _assert_clean("""
+interface OrderRequest { }
+interface OrderConfirmation { }
+interface Simple { }
+
+system Order {
+    component A { requires OrderRequest  provides Simple }
+    component B { requires Simple  provides OrderConfirmation }
+    connect A.Simple -> $ch -> B.Simple
+    expose A.OrderRequest
+    expose B.OrderConfirmation
+}
+external system Source { provides OrderRequest }
+external system Sink { requires OrderConfirmation }
+
+connect Source.OrderRequest -> $req -> Order.OrderRequest
+connect Order.OrderConfirmation -> $conf -> Sink.OrderConfirmation
+""")
+
+    def test_top_level_connect_typo_in_exposed_port_is_error(self) -> None:
+        """Typo in an exposed port name (as seen in user's archml file) is caught."""
+        _assert_error(
+            """
+interface OrderConfirmation { }
+interface Simple { }
+
+system Order {
+    component B { requires Simple  provides OrderConfirmation }
+    expose B.OrderConfirmation
+}
+external system Sink { requires OrderConfirmation }
+component Src { provides Simple }
+
+connect Order.OrderConfirmtion -> $conf -> Sink.OrderConfirmation
+""",
+            "connect references unknown port 'OrderConfirmtion' on 'Order'",
+        )
+
+    def test_inner_connect_unknown_port(self) -> None:
+        """Unknown port name in an inner connect (within a system) is an error."""
+        _assert_error(
+            """
+interface Data { field v: String }
+system S {
+    component A { provides Data }
+    component B { requires Data }
+    connect A.Typo -> B.Data
+}
+""",
+            "connect references unknown port 'Typo' on 'A'",
+        )
 
 
 # ###############

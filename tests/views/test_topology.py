@@ -3,7 +3,7 @@
 
 """Tests for the abstract visualization topology model and its builder."""
 
-from archml.model.entities import ArchFile, Component, ConnectDef, InterfaceRef, System, UserDef
+from archml.model.entities import ArchFile, Component, ConnectDef, ExposeDef, InterfaceRef, System, UserDef
 from archml.views.topology import (
     VizBoundary,
     VizNode,
@@ -919,3 +919,274 @@ class TestBuildVizDiagramAll:
         )
         diag = build_viz_diagram_all({"a": af1, "b": af2})
         assert len(diag.edges) == 2
+
+
+# ###############
+# build_viz_diagram_all — expose-aware expansion
+# ###############
+
+
+def _expose(entity: str, port: str, as_name: str | None = None) -> ExposeDef:
+    return ExposeDef(entity=entity, port=port, as_name=as_name)
+
+
+class TestBuildVizDiagramAllExpanded:
+    """Tests for expanded boundaries and expose-aware port resolution in build_viz_diagram_all."""
+
+    def test_non_external_system_with_children_is_expanded_as_boundary(self) -> None:
+        """A non-external System with inner components becomes a VizBoundary, not a VizNode."""
+        inner = Component(name="Inner", provides=[_iref("X")])
+        order = System(name="Order", components=[inner])
+        af = _arch_file(systems=[order])
+        diag = build_viz_diagram_all({"f": af})
+        boundary_labels = {c.label for c in diag.root.children if isinstance(c, VizBoundary)}
+        assert "Order" in boundary_labels
+
+    def test_external_system_with_children_stays_as_opaque_node(self) -> None:
+        """An external System is always rendered as an opaque VizNode, even with inner children."""
+        inner = Component(name="Inner", provides=[_iref("X")])
+        ext_sys = System(name="ExtSys", is_external=True, components=[inner])
+        af = _arch_file(systems=[ext_sys])
+        diag = build_viz_diagram_all({"f": af})
+        node_labels = {c.label for c in diag.root.children if isinstance(c, VizNode)}
+        assert "ExtSys" in node_labels
+        boundary_labels = {c.label for c in diag.root.children if isinstance(c, VizBoundary)}
+        assert "ExtSys" not in boundary_labels
+
+    def test_leaf_system_without_children_stays_as_opaque_node(self) -> None:
+        """A System with no inner structure stays as a VizNode in the all-diagram."""
+        leaf = System(name="Leaf", provides=[_iref("X")])
+        af = _arch_file(systems=[leaf])
+        diag = build_viz_diagram_all({"f": af})
+        node_labels = {c.label for c in diag.root.children if isinstance(c, VizNode)}
+        assert "Leaf" in node_labels
+
+    def test_user_def_stays_as_opaque_node(self) -> None:
+        """UserDef at the top level is never expanded."""
+        customer = UserDef(name="Customer")
+        af = _arch_file(users=[customer])
+        diag = build_viz_diagram_all({"f": af})
+        node_labels = {c.label for c in diag.root.children if isinstance(c, VizNode)}
+        assert "Customer" in node_labels
+
+    def test_expanded_boundary_contains_inner_child_nodes(self) -> None:
+        """Inner components of an expanded system appear as VizNode children of its boundary."""
+        comp_a = Component(name="A", requires=[_iref("OrderRequest")])
+        order = System(name="Order", components=[comp_a])
+        af = _arch_file(systems=[order])
+        diag = build_viz_diagram_all({"f": af})
+        order_boundary = next(c for c in diag.root.children if isinstance(c, VizBoundary) and c.label == "Order")
+        inner_labels = {c.label for c in order_boundary.children if isinstance(c, VizNode)}
+        assert "A" in inner_labels
+
+    def test_inner_connects_of_expanded_entity_appear_in_all_diagram(self) -> None:
+        """Connect statements inside an expanded system produce edges in the all-diagram."""
+        comp_a = Component(name="A", provides=[_iref("IFace")])
+        comp_b = Component(name="B", requires=[_iref("IFace")])
+        order = System(
+            name="Order",
+            components=[comp_a, comp_b],
+            connects=[
+                ConnectDef(src_entity="A", src_port="IFace", channel="inner_ch", dst_entity="B", dst_port="IFace")
+            ],
+        )
+        af = _arch_file(systems=[order])
+        diag = build_viz_diagram_all({"f": af})
+        # Two edges: A → inner_ch, inner_ch → B
+        assert len(diag.edges) == 2
+
+    def test_exposed_port_connect_routes_edge_to_inner_component(self) -> None:
+        """A top-level connect to Order.OrderRequest is resolved via expose to the inner component A."""
+        comp_a = Component(name="A", requires=[_iref("OrderRequest")])
+        order = System(
+            name="Order",
+            components=[comp_a],
+            exposes=[_expose("A", "OrderRequest")],
+        )
+        ingestor = Component(name="DataIngestor", provides=[_iref("OrderRequest")])
+        conn = ConnectDef(
+            src_entity="DataIngestor",
+            src_port="OrderRequest",
+            channel="order_ch",
+            dst_entity="Order",
+            dst_port="OrderRequest",
+        )
+        af = _arch_file(systems=[order], components=[ingestor], connects=[conn])
+        diag = build_viz_diagram_all({"f": af})
+        # Two edges: DataIngestor → channel, channel → A (inner component)
+        assert len(diag.edges) == 2
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+        # The target of the second edge should be A's port, not Order's.
+        edge_ch_to_dst = diag.edges[1]
+        dst_port = all_ports[edge_ch_to_dst.target_port_id]
+        assert "Order__A" in dst_port.node_id
+
+    def test_exposed_provides_port_routes_edge_from_inner_component(self) -> None:
+        """A top-level connect from Order.OrderConfirmation resolves via expose to inner component B."""
+        comp_b = Component(name="B", provides=[_iref("OrderConfirmation")])
+        order = System(
+            name="Order",
+            components=[comp_b],
+            exposes=[_expose("B", "OrderConfirmation")],
+        )
+        sink = Component(name="DataSink", requires=[_iref("OrderConfirmation")])
+        conn = ConnectDef(
+            src_entity="Order",
+            src_port="OrderConfirmation",
+            channel="conf_ch",
+            dst_entity="DataSink",
+            dst_port="OrderConfirmation",
+        )
+        af = _arch_file(systems=[order], components=[sink], connects=[conn])
+        diag = build_viz_diagram_all({"f": af})
+        assert len(diag.edges) == 2
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+        # The source of the first edge should be B's port.
+        edge_src_to_ch = diag.edges[0]
+        src_port = all_ports[edge_src_to_ch.source_port_id]
+        assert "Order__B" in src_port.node_id
+
+    def test_exposed_port_with_as_name_resolves_correctly(self) -> None:
+        """expose A.OrderRequest as ExposedPort is reachable via the alias in a top-level connect."""
+        comp_a = Component(name="A", requires=[_iref("OrderRequest")])
+        order = System(
+            name="Order",
+            components=[comp_a],
+            exposes=[_expose("A", "OrderRequest", as_name="ExposedPort")],
+        )
+        ingestor = Component(name="DataIngestor", provides=[_iref("OrderRequest")])
+        conn = ConnectDef(
+            src_entity="DataIngestor",
+            src_port="OrderRequest",
+            channel="ch",
+            dst_entity="Order",
+            dst_port="ExposedPort",
+        )
+        af = _arch_file(systems=[order], components=[ingestor], connects=[conn])
+        diag = build_viz_diagram_all({"f": af})
+        assert len(diag.edges) == 2
+        all_ports = collect_all_ports(diag)
+        edge_ch_to_dst = diag.edges[1]
+        dst_port = all_ports[edge_ch_to_dst.target_port_id]
+        assert "Order__A" in dst_port.node_id
+
+    def test_unexposed_port_on_expanded_system_produces_no_channel_to_dst_edge(self) -> None:
+        """When a port has no matching expose, the channel→dst edge is not produced.
+
+        The src→channel edge is still produced because DataIngestor (opaque) resolves.
+        """
+        comp_a = Component(name="A", requires=[_iref("OrderRequest")])
+        order = System(name="Order", components=[comp_a])  # no exposes
+        ingestor = Component(name="DataIngestor", provides=[_iref("OrderRequest")])
+        conn = ConnectDef(
+            src_entity="DataIngestor",
+            src_port="OrderRequest",
+            channel="ch",
+            dst_entity="Order",
+            dst_port="OrderRequest",
+        )
+        af = _arch_file(systems=[order], components=[ingestor], connects=[conn])
+        diag = build_viz_diagram_all({"f": af})
+        # Only the src→channel edge is produced; channel→Order fails (no expose).
+        assert len(diag.edges) == 1
+        assert "DataIngestor" in diag.edges[0].source_port_id
+
+    def test_all_ports_resolvable_with_expanded_entities(self) -> None:
+        """collect_all_ports covers all port IDs referenced by edges in the all-diagram."""
+        comp_a = Component(name="A", requires=[_iref("OrderRequest")])
+        order = System(
+            name="Order",
+            components=[comp_a],
+            exposes=[_expose("A", "OrderRequest")],
+        )
+        ingestor = Component(name="DataIngestor", provides=[_iref("OrderRequest")])
+        conn = ConnectDef(
+            src_entity="DataIngestor",
+            src_port="OrderRequest",
+            channel="ch",
+            dst_entity="Order",
+            dst_port="OrderRequest",
+        )
+        af = _arch_file(systems=[order], components=[ingestor], connects=[conn])
+        diag = build_viz_diagram_all({"f": af})
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports, f"missing src port {edge.source_port_id}"
+            assert edge.target_port_id in all_ports, f"missing dst port {edge.target_port_id}"
+
+    def test_full_pipeline_with_two_exposed_ports_and_inner_connect(self) -> None:
+        """Integration test matching the user's Order system example.
+
+        DataIngestor → $order_request → A (via Order.expose A.OrderRequest)
+        A → $mychannel → B (inner connect)
+        B → $order_confirmation → DataSink (via Order.expose B.OrderConfirmation)
+        """
+        comp_a = Component(name="A", requires=[_iref("OrderRequest")], provides=[_iref("Simple")])
+        comp_b = Component(name="B", requires=[_iref("Simple")], provides=[_iref("OrderConfirmation")])
+        order = System(
+            name="Order",
+            components=[comp_a, comp_b],
+            connects=[
+                ConnectDef(src_entity="A", src_port="Simple", channel="mychannel", dst_entity="B", dst_port="Simple")
+            ],
+            exposes=[_expose("A", "OrderRequest"), _expose("B", "OrderConfirmation")],
+        )
+        ingestor = System(name="DataIngestor", is_external=True, provides=[_iref("OrderRequest")])
+        sink = System(name="DataSink", is_external=True, requires=[_iref("OrderConfirmation")])
+        top_connects = [
+            ConnectDef(
+                src_entity="DataIngestor",
+                src_port="OrderRequest",
+                channel="order_request",
+                dst_entity="Order",
+                dst_port="OrderRequest",
+            ),
+            ConnectDef(
+                src_entity="Order",
+                src_port="OrderConfirmation",
+                channel="order_confirmation",
+                dst_entity="DataSink",
+                dst_port="OrderConfirmation",
+            ),
+        ]
+        af = _arch_file(systems=[order, ingestor, sink], connects=top_connects)
+        diag = build_viz_diagram_all({"f": af})
+
+        # Order is expanded; DataIngestor and DataSink are external opaque nodes.
+        child_labels = {c.label for c in diag.root.children}
+        assert "Order" in child_labels
+        assert "DataIngestor" in child_labels
+        assert "DataSink" in child_labels
+        order_boundary = next(c for c in diag.root.children if isinstance(c, VizBoundary) and c.label == "Order")
+        inner_labels = {c.label for c in order_boundary.children if isinstance(c, VizNode)}
+        assert "A" in inner_labels
+        assert "B" in inner_labels
+
+        # Inner connect A→mychannel→B: 2 edges.
+        # Top-level connects via expose: 4 edges (2 per channel connect).
+        # Total: 6 edges.
+        assert len(diag.edges) == 6
+
+        # All port IDs are resolvable.
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports, f"missing src port {edge.source_port_id}"
+            assert edge.target_port_id in all_ports, f"missing dst port {edge.target_port_id}"
+
+        # The edge from order_request channel to dst routes to A (not Order).
+        ch_to_a_edges = [e for e in diag.edges if "order_request" in e.source_port_id]
+        assert len(ch_to_a_edges) == 1
+        dst_port = all_ports[ch_to_a_edges[0].target_port_id]
+        assert "Order__A" in dst_port.node_id
+
+        # The edge from src to order_confirmation channel comes from B (not Order).
+        b_to_ch_edges = [e for e in diag.edges if "order_confirmation" in e.target_port_id]
+        assert len(b_to_ch_edges) == 1
+        src_port = all_ports[b_to_ch_edges[0].source_port_id]
+        assert "Order__B" in src_port.node_id
