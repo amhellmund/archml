@@ -200,7 +200,22 @@ class _SemanticAnalyzer:
                 )
             )
 
-        # 8. Validate import entities against resolved source files.
+        # 8. Check top-level connect statements.
+        top_child_names = (
+            {c.name for c in self._file.components}
+            | {s.name for s in self._file.systems}
+            | {u.name for u in self._file.users}
+        )
+        top_child_entity_map: dict[str, Component | System | UserDef] = {
+            **{c.name: c for c in self._file.components},
+            **{s.name: s for s in self._file.systems},
+            **{u.name: u for u in self._file.users},
+        }
+        for conn in self._file.connects:
+            errors.extend(_resolve_simplified_connect(conn, top_child_entity_map, "top-level"))
+            errors.extend(_check_connect("top-level", conn, top_child_names))
+
+        # 9. Validate import entities against resolved source files.
         errors.extend(self._check_import_resolutions())
 
         return errors
@@ -253,7 +268,9 @@ class _SemanticAnalyzer:
 
         # Check connect / expose statements.
         child_names = {c.name for c in comp.components}
+        child_entity_map: dict[str, Component | System | UserDef] = {c.name: c for c in comp.components}
         for conn in comp.connects:
+            errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx))
             errors.extend(_check_connect(ctx, conn, child_names))
         for exp in comp.exposes:
             errors.extend(_check_expose(ctx, exp, child_names))
@@ -343,7 +360,13 @@ class _SemanticAnalyzer:
 
         # Check connect / expose statements.
         child_names = comp_names | sys_names | user_names
+        child_entity_map: dict[str, Component | System | UserDef] = {
+            **{c.name: c for c in system.components},
+            **{s.name: s for s in system.systems},
+            **{u.name: u for u in system.users},
+        }
         for conn in system.connects:
+            errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx))
             errors.extend(_check_connect(ctx, conn, child_names))
         for exp in system.exposes:
             errors.extend(_check_expose(ctx, exp, child_names))
@@ -661,6 +684,65 @@ def _check_connect(
         errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{conn.src_entity}'"))
     if conn.dst_entity is not None and conn.dst_entity not in child_names:
         errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{conn.dst_entity}'"))
+    return errors
+
+
+def _infer_unique_port(
+    entity: Component | System | UserDef,
+    direction: str,
+    entity_name: str,
+    ctx: str,
+) -> tuple[str | None, list[SemanticError]]:
+    """Return the unique port name in *direction* ('provides' or 'requires') for *entity*.
+
+    Returns ``(port_name, [])`` when exactly one port exists, or
+    ``(None, [error])`` when zero or more than one port exists.
+    """
+    ports: list[InterfaceRef] = getattr(entity, direction)
+    if len(ports) == 1:
+        return _effective_port_name(ports[0]), []
+    if len(ports) == 0:
+        return None, [SemanticError(f"{ctx}: simplified connect: '{entity_name}' has no {direction} ports")]
+    return None, [
+        SemanticError(
+            f"{ctx}: simplified connect: '{entity_name}' has multiple {direction} ports;"
+            f" use '{entity_name}.port' form to disambiguate"
+        )
+    ]
+
+
+def _resolve_simplified_connect(
+    conn: ConnectDef,
+    child_entity_map: dict[str, Component | System | UserDef],
+    ctx: str,
+) -> list[SemanticError]:
+    """Resolve simplified connect forms in-place.
+
+    When a bare identifier (no dot) is used as a port reference and that
+    identifier names a direct child entity, it is the simplified form.
+    The unique ``provides`` port (for src) or ``requires`` port (for dst) is
+    inferred; ambiguous or missing ports produce a semantic error.
+    """
+    errors: list[SemanticError] = []
+
+    # Src side: (None, "EntityName") where EntityName is a child.
+    if conn.src_entity is None and conn.src_port is not None and conn.src_port in child_entity_map:
+        entity = child_entity_map[conn.src_port]
+        port, errs = _infer_unique_port(entity, "provides", conn.src_port, ctx)
+        errors.extend(errs)
+        if port is not None:
+            conn.src_entity = conn.src_port
+            conn.src_port = port
+
+    # Dst side: (None, "EntityName") where EntityName is a child.
+    if conn.dst_entity is None and conn.dst_port is not None and conn.dst_port in child_entity_map:
+        entity = child_entity_map[conn.dst_port]
+        port, errs = _infer_unique_port(entity, "requires", conn.dst_port, ctx)
+        errors.extend(errs)
+        if port is not None:
+            conn.dst_entity = conn.dst_port
+            conn.dst_port = port
+
     return errors
 
 

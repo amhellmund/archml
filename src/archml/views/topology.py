@@ -35,7 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from archml.model.entities import Component, ConnectDef, InterfaceRef, System, UserDef
+from archml.model.entities import ArchFile, Component, ConnectDef, InterfaceRef, System, UserDef
 
 # ###############
 # Public Interface
@@ -324,6 +324,78 @@ def build_viz_diagram(
         description=entity.description,
         root=root,
         peripheral_nodes=peripheral_nodes,
+        edges=edges,
+    )
+
+
+def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
+    """Build a :class:`VizDiagram` showing all top-level entities across *arch_files*.
+
+    Creates a synthetic root boundary labelled ``"Architecture"`` whose
+    children are every top-level :class:`~archml.model.entities.Component`,
+    :class:`~archml.model.entities.System`, and
+    :class:`~archml.model.entities.UserDef` found in any of the given files.
+    Top-level ``connect`` statements from all files provide the edges and
+    channel nodes.
+
+    Use this to visualise the complete architecture in one diagram without
+    selecting a specific entity.
+
+    Args:
+        arch_files: Mapping from canonical file key to compiled
+            :class:`~archml.model.entities.ArchFile`, as returned by
+            :func:`~archml.compiler.build.compile_files`.
+
+    Returns:
+        A :class:`VizDiagram` describing the full architecture topology.
+    """
+    root_id = "all"
+
+    child_node_map: dict[str, VizNode] = {}
+    all_sub_entity_map: dict[str, Component | System | UserDef] = {}
+    all_connects: list[ConnectDef] = []
+
+    for arch_file in arch_files.values():
+        for comp in arch_file.components:
+            entity_path = comp.qualified_name or comp.name
+            child_node_map[comp.name] = _make_child_node(comp, entity_path)
+            all_sub_entity_map[comp.name] = comp
+        for sys in arch_file.systems:
+            entity_path = sys.qualified_name or sys.name
+            child_node_map[sys.name] = _make_child_node(sys, entity_path)
+            all_sub_entity_map[sys.name] = sys
+        for user in arch_file.users:
+            entity_path = user.qualified_name or user.name
+            child_node_map[user.name] = _make_child_node(user, entity_path)
+            all_sub_entity_map[user.name] = user
+        all_connects.extend(arch_file.connects)
+
+    channel_node_map = _collect_channel_nodes(all_connects, root_id, all_sub_entity_map)
+
+    all_children: list[VizNode | VizBoundary] = [*child_node_map.values(), *channel_node_map.values()]
+    root = VizBoundary(
+        id=root_id,
+        label="Architecture",
+        title=None,
+        kind="system",
+        entity_path="",
+        children=all_children,
+    )
+
+    edges: list[VizEdge] = []
+    seen_port_pairs: set[tuple[str, str]] = set()
+    for conn in all_connects:
+        for edge in _build_edges_from_connect(conn, child_node_map, all_sub_entity_map, channel_node_map):
+            key = (edge.source_port_id, edge.target_port_id)
+            if key not in seen_port_pairs:
+                seen_port_pairs.add(key)
+                edges.append(edge)
+
+    return VizDiagram(
+        id="diagram.all",
+        title="Architecture",
+        description=None,
+        root=root,
         edges=edges,
     )
 

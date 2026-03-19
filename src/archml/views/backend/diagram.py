@@ -180,20 +180,20 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
     if diagram.root.id in plan.boundaries:
         _render_boundary(svg, diagram.root.label, plan.boundaries[diagram.root.id], scale)
 
-    # Build a metadata map: node_id → (label, kind) for all renderable nodes.
-    node_meta: dict[str, tuple[str, NodeKind | None]] = {}
+    # Build a metadata map: node_id → (label, title, kind) for all renderable nodes.
+    node_meta: dict[str, tuple[str, str | None, NodeKind | None]] = {}
     for child in diagram.root.children:
         if isinstance(child, VizNode):
-            node_meta[child.id] = (child.label, child.kind)
+            node_meta[child.id] = (child.label, child.title, child.kind)
     for node in diagram.peripheral_nodes:
-        node_meta[node.id] = (node.label, node.kind)
+        node_meta[node.id] = (node.label, node.title, node.kind)
 
     # Render all positioned nodes (clip paths added to <defs>).
     for node_id, nl in plan.nodes.items():
-        label, kind = node_meta.get(node_id, (node_id, None))
+        label, title, kind = node_meta.get(node_id, (node_id, None, None))
         clip_id = _make_clip_id(node_id)
         _add_node_clip(defs, clip_id, nl, scale)
-        _render_node(svg, label, nl, kind, scale, clip_id)
+        _render_node(svg, label, title, nl, kind, scale, clip_id)
 
     # Render edges with explicit arrowheads.
     for edge in diagram.edges:
@@ -257,12 +257,17 @@ def _render_boundary(svg: ET.Element, label: str, bl: BoundaryLayout, scale: flo
 def _render_node(
     svg: ET.Element,
     label: str,
+    title: str | None,
     nl: NodeLayout,
     kind: NodeKind | None,
     scale: float,
     clip_id: str,
 ) -> None:
-    """Draw a node rectangle with a centred, clipped label."""
+    """Draw a node rectangle with a centred, clipped label.
+
+    For channel nodes, renders two lines: the interface name (larger) above
+    centre and the channel name (smaller) below centre.
+    """
     fill, stroke = _node_colours(kind)
     r = str(_CORNER_RADIUS)
 
@@ -282,21 +287,59 @@ def _render_node(
 
     ET.SubElement(svg, "rect", rect_attrs)
 
-    text = ET.SubElement(
-        svg,
-        "text",
-        {
-            "x": _f(nl.x + nl.width / 2, scale),
-            "y": _f(nl.y + nl.height / 2, scale),
-            "text-anchor": "middle",
-            "dominant-baseline": "middle",
-            "font-family": _FONT_FAMILY,
-            "font-size": str(int(_FONT_SIZE * scale)),
-            "fill": _TEXT_COLOUR,
-            "clip-path": f"url(#{clip_id})",
-        },
-    )
-    text.text = label
+    cx = _f(nl.x + nl.width / 2, scale)
+    cy_mid = nl.y + nl.height / 2
+
+    if kind == "channel":
+        # Two-line layout: interface name (larger) above centre, channel name below.
+        iface_name = title if title is not None else label
+        line_gap = _FONT_SIZE * scale * 0.7
+        text_top = ET.SubElement(
+            svg,
+            "text",
+            {
+                "x": cx,
+                "y": _f(cy_mid - line_gap * 0.5, scale),
+                "text-anchor": "middle",
+                "dominant-baseline": "middle",
+                "font-family": _FONT_FAMILY,
+                "font-size": str(int(_FONT_SIZE * scale)),
+                "fill": _TEXT_COLOUR,
+                "clip-path": f"url(#{clip_id})",
+            },
+        )
+        text_top.text = iface_name
+        text_bot = ET.SubElement(
+            svg,
+            "text",
+            {
+                "x": cx,
+                "y": _f(cy_mid + line_gap * 0.9, scale),
+                "text-anchor": "middle",
+                "dominant-baseline": "middle",
+                "font-family": _FONT_FAMILY,
+                "font-size": str(int(_FONT_SIZE * scale * 0.75)),
+                "fill": _TEXT_COLOUR,
+                "clip-path": f"url(#{clip_id})",
+            },
+        )
+        text_bot.text = f"${label}"
+    else:
+        text = ET.SubElement(
+            svg,
+            "text",
+            {
+                "x": cx,
+                "y": _f(cy_mid, scale),
+                "text-anchor": "middle",
+                "dominant-baseline": "middle",
+                "font-family": _FONT_FAMILY,
+                "font-size": str(int(_FONT_SIZE * scale)),
+                "fill": _TEXT_COLOUR,
+                "clip-path": f"url(#{clip_id})",
+            },
+        )
+        text.text = label
 
 
 def _render_edge(

@@ -171,6 +171,7 @@ class ArchFile(BaseModel):
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)
     users: list[UserDef] = _Field(default_factory=list)
+    connects: list[ConnectDef] = _Field(default_factory=list)
 
 
 # Resolve forward references in self-referential models.

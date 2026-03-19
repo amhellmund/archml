@@ -2170,3 +2170,86 @@ class TestUserDeclarations:
     def test_external_invalid_keyword_after_raises(self) -> None:
         with pytest.raises(ParseError, match="Expected 'component', 'system', or 'user'"):
             _parse("external interface I {}")
+
+
+# ###############
+# Top-level connects
+# ###############
+
+
+class TestTopLevelConnect:
+    def test_top_level_connect_full_form(self) -> None:
+        """connect at file scope with full Entity.port notation is parsed."""
+        source = """\
+system Frontend {}
+system Backend {}
+
+connect Frontend.API -> $bus -> Backend.API
+"""
+        result = _parse(source)
+        assert len(result.connects) == 1
+        conn = result.connects[0]
+        assert conn.src_entity == "Frontend"
+        assert conn.src_port == "API"
+        assert conn.channel == "bus"
+        assert conn.dst_entity == "Backend"
+        assert conn.dst_port == "API"
+
+    def test_top_level_connect_with_attributes(self) -> None:
+        """Top-level connect statement supports annotation blocks."""
+        source = """\
+system A {}
+system B {}
+
+connect A.Data -> $pipe -> B.Data {
+    async = true
+    protocol = "grpc"
+}
+"""
+        result = _parse(source)
+        conn = result.connects[0]
+        assert conn.is_async is True
+        assert conn.protocol == "grpc"
+
+    def test_top_level_multiple_connects(self) -> None:
+        """Multiple top-level connect statements are all collected."""
+        source = """\
+system A {}
+system B {}
+system C {}
+
+connect A.Out -> $ab -> B.In
+connect B.Out -> $bc -> C.In
+"""
+        result = _parse(source)
+        assert len(result.connects) == 2
+        assert result.connects[0].channel == "ab"
+        assert result.connects[1].channel == "bc"
+
+    def test_top_level_connect_mixed_with_other_declarations(self) -> None:
+        """Top-level connect can appear between other top-level declarations."""
+        source = """\
+system A {}
+connect A.Out -> $ch -> B.In
+system B {}
+"""
+        result = _parse(source)
+        assert len(result.connects) == 1
+        assert len(result.systems) == 2
+
+    def test_top_level_connect_simplified_form(self) -> None:
+        """Simplified connect form (bare entity names) is parsed at top level."""
+        source = """\
+system A {}
+system B {}
+
+connect A -> $ch -> B
+"""
+        result = _parse(source)
+        conn = result.connects[0]
+        # src_entity is None, src_port holds the bare name until semantic resolution
+        assert conn.src_entity is None
+        assert conn.src_port == "A"
+        assert conn.channel == "ch"
+        assert conn.dst_entity is None
+        assert conn.dst_port == "B"

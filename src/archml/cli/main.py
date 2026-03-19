@@ -85,7 +85,7 @@ def main() -> None:
     )
     visualize_parser.add_argument(
         "entity",
-        help="Entity path to visualize (e.g. 'SystemA' or 'SystemA::ComponentB')",
+        help="Entity path (e.g. 'SystemA' or 'SystemA::ComponentB'), or 'all' to visualize every top-level entity",
     )
     visualize_parser.add_argument(
         "output",
@@ -291,7 +291,7 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
     """Handle the visualize subcommand."""
     from archml.views.placement import compute_layout
     from archml.views.resolver import EntityNotFoundError, resolve_entity
-    from archml.views.topology import build_viz_diagram
+    from archml.views.topology import build_viz_diagram, build_viz_diagram_all
     from archml.workspace.config import LocalPathImport
 
     directory = Path(args.directory).resolve()
@@ -333,14 +333,17 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    try:
-        entity = resolve_entity(compiled, args.entity)
-    except EntityNotFoundError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
-
     output_path = Path(args.output)
-    viz_diagram = build_viz_diagram(entity)
+
+    if args.entity == "all":
+        viz_diagram = build_viz_diagram_all(compiled)
+    else:
+        try:
+            entity = resolve_entity(compiled, args.entity)
+        except EntityNotFoundError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        viz_diagram = build_viz_diagram(entity)
     layout_plan = compute_layout(viz_diagram)
 
     if output_path.suffix.lower() == ".png":

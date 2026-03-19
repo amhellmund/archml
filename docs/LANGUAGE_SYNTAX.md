@@ -322,7 +322,12 @@ Port names must be unique within their entity. When two sub-entities have ports 
 
 A **channel** is a named conduit between ports. Channels are introduced implicitly by `connect` statements — there is no separate channel declaration. Channel names use the `$` prefix to distinguish them from port names.
 
-The `connect` statement has three forms:
+`connect` statements can appear inside a `component` or `system` body, **or at the top level of an `.archml` file** to wire high-level systems to each other.
+
+The `connect` statement supports two port reference styles:
+
+- **Full form** — `Entity.port_name`: explicit entity and port name.
+- **Simplified form** — `Entity`: bare entity name with automatic port inference. Valid when the entity has exactly one `provides` port (for the sender side) or exactly one `requires` port (for the receiver side). The tooling infers the port and reports an error if the port is ambiguous.
 
 ```
 // Full chain: introduces $channel and wires both ports in one statement
@@ -338,14 +343,18 @@ connect <src_port> -> <dst_port>
 
 `<src_port>` and `<dst_port>` are either:
 
-- `Entity.port_name` — a port on a named child entity
+- `Entity.port_name` — explicit port on a named child entity (full form)
+- `Entity` — child entity with a single unambiguous port (simplified form)
 - `port_name` — a port on the current scope's own boundary
 
-The arrow direction follows data flow: a `provides` port (producer) is always on the left; a `requires` port (consumer) is always on the right. The tooling validates that the interface types on both sides of a channel are compatible.
+The arrow direction follows data flow: a `provides` port (producer) is always on the left; a `requires` port (consumer) is always on the right.
 
 ```
-// Full chain — introduces $payment and wires both sides at once
+// Full chain — explicit Entity.port notation
 connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
+
+// Simplified form — port inferred automatically (each entity has one matching port)
+connect PaymentGateway -> $payment -> OrderService
 
 // Multi-step — build up a channel across two statements (same result)
 connect PaymentGateway.PaymentRequest -> $payment
@@ -353,6 +362,9 @@ connect $payment -> OrderService.PaymentRequest
 
 // Direct connection without a named channel
 connect Validator.ValidationResult -> Processor.ValidationResult
+
+// Top-level connect — wires two top-level systems across file scope
+connect Frontend.API -> $bus -> Backend.API
 ```
 
 Channel attributes (`protocol`, `async`, `description`) can be set in an optional block on the `connect` statement that introduces the channel:

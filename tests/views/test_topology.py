@@ -3,12 +3,13 @@
 
 """Tests for the abstract visualization topology model and its builder."""
 
-from archml.model.entities import Component, ConnectDef, InterfaceRef, System, UserDef
+from archml.model.entities import ArchFile, Component, ConnectDef, InterfaceRef, System, UserDef
 from archml.views.topology import (
     VizBoundary,
     VizNode,
     VizPort,
     build_viz_diagram,
+    build_viz_diagram_all,
     collect_all_ports,
 )
 
@@ -814,3 +815,107 @@ def test_user_connect_creates_edge() -> None:
     for edge in diag.edges:
         assert edge.source_port_id in all_ports
         assert edge.target_port_id in all_ports
+
+
+# ###############
+# build_viz_diagram_all
+# ###############
+
+
+def _arch_file(**kwargs: object) -> ArchFile:
+    """Build a minimal ArchFile with the given fields."""
+    defaults: dict[str, object] = {
+        "imports": [],
+        "enums": [],
+        "types": [],
+        "interfaces": [],
+        "components": [],
+        "systems": [],
+        "users": [],
+        "connects": [],
+    }
+    defaults.update(kwargs)
+    return ArchFile(**defaults)  # type: ignore[arg-type]
+
+
+class TestBuildVizDiagramAll:
+    def test_empty_files_produces_empty_diagram(self) -> None:
+        """An empty set of arch files produces a diagram with no children or edges."""
+        diag = build_viz_diagram_all({})
+        assert diag.root.label == "Architecture"
+        assert diag.root.children == []
+        assert diag.edges == []
+
+    def test_single_file_components_become_children(self) -> None:
+        """Top-level components from a single file appear as child nodes."""
+        af = _arch_file(components=[Component(name="Alpha"), Component(name="Beta")])
+        diag = build_viz_diagram_all({"f": af})
+        child_labels = [c.label for c in diag.root.children if isinstance(c, VizNode)]
+        assert "Alpha" in child_labels
+        assert "Beta" in child_labels
+
+    def test_systems_and_users_become_children(self) -> None:
+        """Top-level systems and users are included as child nodes."""
+        customer = UserDef(name="Customer")
+        af = _arch_file(
+            systems=[System(name="Backend")],
+            users=[customer],
+        )
+        diag = build_viz_diagram_all({"f": af})
+        child_labels = {c.label for c in diag.root.children if isinstance(c, VizNode)}
+        assert "Backend" in child_labels
+        assert "Customer" in child_labels
+
+    def test_multiple_files_all_entities_present(self) -> None:
+        """Entities from multiple files are merged into a single diagram."""
+        af1 = _arch_file(systems=[System(name="Frontend")])
+        af2 = _arch_file(systems=[System(name="Backend")])
+        diag = build_viz_diagram_all({"a": af1, "b": af2})
+        child_labels = {c.label for c in diag.root.children if isinstance(c, VizNode)}
+        assert "Frontend" in child_labels
+        assert "Backend" in child_labels
+
+    def test_top_level_connects_produce_edges_and_channel_nodes(self) -> None:
+        """Top-level connect statements wire entities and create channel nodes."""
+        frontend = System(name="Frontend", provides=[_iref("API")])
+        backend = System(name="Backend", requires=[_iref("API")])
+        conn = ConnectDef(
+            src_entity="Frontend",
+            src_port="API",
+            channel="bus",
+            dst_entity="Backend",
+            dst_port="API",
+        )
+        af = _arch_file(systems=[frontend, backend], connects=[conn])
+        diag = build_viz_diagram_all({"f": af})
+        # Two edges: Frontend → channel, channel → Backend.
+        assert len(diag.edges) == 2
+        # Channel node is a child.
+        channel_nodes = [c for c in diag.root.children if isinstance(c, VizNode) and c.kind == "channel"]
+        assert len(channel_nodes) == 1
+        assert channel_nodes[0].label == "bus"
+
+    def test_diagram_id_and_title(self) -> None:
+        """The all-diagram uses 'Architecture' as title."""
+        diag = build_viz_diagram_all({})
+        assert diag.id == "diagram.all"
+        assert diag.title == "Architecture"
+
+    def test_no_peripheral_nodes(self) -> None:
+        """The all-diagram has no peripheral terminal nodes (no owns interface)."""
+        af = _arch_file(components=[Component(name="X", provides=[_iref("Data")])])
+        diag = build_viz_diagram_all({"f": af})
+        assert diag.peripheral_nodes == []
+
+    def test_connects_across_files(self) -> None:
+        """Top-level connects in different files are all included."""
+        af1 = _arch_file(
+            systems=[System(name="A", provides=[_iref("Msg")])],
+            connects=[ConnectDef(src_entity="A", src_port="Msg", channel="ch1")],
+        )
+        af2 = _arch_file(
+            systems=[System(name="B", requires=[_iref("Msg")])],
+            connects=[ConnectDef(channel="ch1", dst_entity="B", dst_port="Msg")],
+        )
+        diag = build_viz_diagram_all({"a": af1, "b": af2})
+        assert len(diag.edges) == 2

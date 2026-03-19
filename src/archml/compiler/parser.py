@@ -214,6 +214,8 @@ class _Parser:
             result.systems.append(self._parse_system(is_external=False))
         elif tok.type == TokenType.USER:
             result.users.append(self._parse_user(is_external=False))
+        elif tok.type == TokenType.CONNECT:
+            result.connects.append(self._parse_connect())
         elif tok.type == TokenType.EXTERNAL:
             self._advance()  # consume 'external'
             inner = self._current()

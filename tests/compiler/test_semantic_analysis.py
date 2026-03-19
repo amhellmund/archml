@@ -1456,3 +1456,162 @@ system Sys {
 """,
             "Duplicate port name 'Sig' in component 'Worker'",
         )
+
+
+# ###############
+# Top-level connects
+# ###############
+
+
+class TestTopLevelConnect:
+    def test_valid_top_level_connect_full_form(self) -> None:
+        """connect at file scope with full Entity.port notation is valid."""
+        _assert_clean("""
+interface API { field endpoint: String }
+system Frontend { provides API }
+system Backend { requires API }
+
+connect Frontend.API -> $bus -> Backend.API
+""")
+
+    def test_top_level_connect_unknown_src_entity(self) -> None:
+        """Top-level connect referencing a missing src entity is an error."""
+        _assert_error(
+            """
+interface API { field endpoint: String }
+system Backend { requires API }
+
+connect Ghost.API -> $bus -> Backend.API
+""",
+            "connect references unknown child entity 'Ghost'",
+        )
+
+    def test_top_level_connect_unknown_dst_entity(self) -> None:
+        """Top-level connect referencing a missing dst entity is an error."""
+        _assert_error(
+            """
+interface API { field endpoint: String }
+system Frontend { provides API }
+
+connect Frontend.API -> $bus -> Ghost.API
+""",
+            "connect references unknown child entity 'Ghost'",
+        )
+
+    def test_top_level_connect_between_systems_and_components(self) -> None:
+        """Top-level connects can reference any top-level entity (system or component)."""
+        _assert_clean("""
+interface Data { field v: String }
+system Upstream { provides Data }
+component Sink { requires Data }
+
+connect Upstream.Data -> $pipe -> Sink.Data
+""")
+
+
+# ###############
+# Simplified connect form
+# ###############
+
+
+class TestSimplifiedConnect:
+    def test_simplified_connect_resolves_unique_ports(self) -> None:
+        """Simplified form A -> $ch -> B resolves to full form when ports are unique."""
+        source = """
+interface DataFeed { field payload: String }
+system Pipeline {
+    component Producer { provides DataFeed }
+    component Consumer { requires DataFeed }
+    connect Producer -> $feed -> Consumer
+}
+"""
+        file = parse(source)
+        errors = analyze(file)
+        assert errors == []
+        conn = file.systems[0].connects[0]
+        # Simplified form is resolved in-place during semantic analysis.
+        assert conn.src_entity == "Producer"
+        assert conn.src_port == "DataFeed"
+        assert conn.dst_entity == "Consumer"
+        assert conn.dst_port == "DataFeed"
+
+    def test_simplified_connect_one_sided_src(self) -> None:
+        """Simplified form A -> $ch resolves src port when unique."""
+        source = """
+interface Signal { field v: Bool }
+system S {
+    component Sender { provides Signal }
+    connect Sender -> $sig
+}
+"""
+        file = parse(source)
+        errors = analyze(file)
+        assert errors == []
+        conn = file.systems[0].connects[0]
+        assert conn.src_entity == "Sender"
+        assert conn.src_port == "Signal"
+        assert conn.dst_entity is None
+
+    def test_simplified_connect_one_sided_dst(self) -> None:
+        """Simplified form $ch -> B resolves dst port when unique."""
+        source = """
+interface Signal { field v: Bool }
+system S {
+    component Receiver { requires Signal }
+    connect $sig -> Receiver
+}
+"""
+        file = parse(source)
+        errors = analyze(file)
+        assert errors == []
+        conn = file.systems[0].connects[0]
+        assert conn.src_entity is None
+        assert conn.dst_entity == "Receiver"
+        assert conn.dst_port == "Signal"
+
+    def test_simplified_connect_ambiguous_src_port_error(self) -> None:
+        """Simplified form on an entity with multiple provides ports is an error."""
+        _assert_error(
+            """
+interface A { field v: String }
+interface B { field v: String }
+system S {
+    component Multi { provides A  provides B }
+    component Sink { requires A }
+    connect Multi -> $ch -> Sink
+}
+""",
+            "simplified connect: 'Multi' has multiple provides ports",
+        )
+
+    def test_simplified_connect_no_src_port_error(self) -> None:
+        """Simplified form on an entity with no provides ports is an error."""
+        _assert_error(
+            """
+interface A { field v: String }
+system S {
+    component NoOut {}
+    component Sink { requires A }
+    connect NoOut -> $ch -> Sink
+}
+""",
+            "simplified connect: 'NoOut' has no provides ports",
+        )
+
+    def test_simplified_connect_top_level_resolution(self) -> None:
+        """Simplified form resolves correctly at the top-level file scope."""
+        source = """
+interface API { field endpoint: String }
+system Frontend { provides API }
+system Backend { requires API }
+
+connect Frontend -> $bus -> Backend
+"""
+        file = parse(source)
+        errors = analyze(file)
+        assert errors == []
+        conn = file.connects[0]
+        assert conn.src_entity == "Frontend"
+        assert conn.src_port == "API"
+        assert conn.dst_entity == "Backend"
+        assert conn.dst_port == "API"
