@@ -393,4 +393,3 @@ def _draw_edge(
     rx = base_x + hw * ndy
     ry = base_y - hw * ndx
     draw.polygon([(x2, y2), (lx, ly), (rx, ry)], fill=_RGB_EDGE)
-

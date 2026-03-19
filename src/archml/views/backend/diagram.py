@@ -419,7 +419,6 @@ def _render_edge(
     ET.SubElement(svg, "polygon", {"points": arrow_pts, "fill": _EDGE_COLOUR})
 
 
-
 def _write_svg(svg: ET.Element, output_path: Path) -> None:
     """Write *svg* to *output_path* as a UTF-8 SVG file with XML declaration."""
     ET.indent(svg, space="  ")

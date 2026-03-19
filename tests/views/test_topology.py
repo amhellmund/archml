@@ -312,15 +312,21 @@ def test_terminal_node_has_one_port() -> None:
     assert len(terminal.ports) == 1
 
 
-def test_terminal_port_direction_matches_interface_direction() -> None:
-    """A requires terminal has a requires port; a provides terminal has a provides port."""
+def test_terminal_port_direction_faces_boundary() -> None:
+    """Terminal port direction is the opposite of the interface direction so the anchor faces the boundary.
+
+    A ``requires`` terminal sits to the left and acts as an external provider:
+    its port direction is ``"provides"`` (anchored to the right edge, closest to the boundary).
+    A ``provides`` terminal sits to the right and acts as an external consumer:
+    its port direction is ``"requires"`` (anchored to the left edge, closest to the boundary).
+    """
     comp = Component(name="C", requires=[_iref("In")], provides=[_iref("Out")])
     diag = build_viz_diagram(comp)
     by_id = {n.id: n for n in diag.peripheral_nodes}
     req_terminal = by_id["terminal.req.In"]
     prov_terminal = by_id["terminal.prov.Out"]
-    assert req_terminal.ports[0].direction == "requires"
-    assert prov_terminal.ports[0].direction == "provides"
+    assert req_terminal.ports[0].direction == "provides"
+    assert prov_terminal.ports[0].direction == "requires"
 
 
 def test_versioned_terminal_label_includes_version() -> None:
@@ -597,6 +603,69 @@ def test_one_provider_multiple_requirers_creates_n_edges() -> None:
     diag = build_viz_diagram(parent)
     # C→ch (deduplicated), ch→A, ch→B = 3 edges.
     assert len(diag.edges) == 3
+
+
+# ###############
+# Terminal boundary edges
+# ###############
+
+
+def test_leaf_component_terminal_edges_produced() -> None:
+    """A leaf component with requires/provides produces edges connecting terminals to boundary."""
+    comp = Component(name="B", requires=[_iref("Simple")], provides=[_iref("OrderConfirmation")])
+    diag = build_viz_diagram(comp)
+    # One edge per interface: terminal.req→boundary.req and boundary.prov→terminal.prov.
+    assert len(diag.edges) == 2
+
+
+def test_leaf_component_requires_terminal_edge_direction() -> None:
+    """The requires terminal is the source and the root boundary port is the target."""
+    comp = Component(name="B", requires=[_iref("Simple")])
+    diag = build_viz_diagram(comp)
+    assert len(diag.edges) == 1
+    edge = diag.edges[0]
+    assert edge.source_port_id == "terminal.req.Simple.port"
+    assert edge.target_port_id == "B.req.Simple"
+
+
+def test_leaf_component_provides_terminal_edge_direction() -> None:
+    """The root boundary port is the source and the provides terminal is the target."""
+    comp = Component(name="B", provides=[_iref("OrderConfirmation")])
+    diag = build_viz_diagram(comp)
+    assert len(diag.edges) == 1
+    edge = diag.edges[0]
+    assert edge.source_port_id == "B.prov.OrderConfirmation"
+    assert edge.target_port_id == "terminal.prov.OrderConfirmation.port"
+
+
+def test_terminal_boundary_edge_ports_are_resolvable() -> None:
+    """All edge port IDs from terminal-boundary edges appear in collect_all_ports."""
+    comp = Component(name="B", requires=[_iref("Simple")], provides=[_iref("OrderConfirmation")])
+    diag = build_viz_diagram(comp)
+    all_ports = collect_all_ports(diag)
+    for edge in diag.edges:
+        assert edge.source_port_id in all_ports, f"Missing source port {edge.source_port_id}"
+        assert edge.target_port_id in all_ports, f"Missing target port {edge.target_port_id}"
+
+
+def test_system_with_internal_connects_also_has_terminal_edges() -> None:
+    """A system with own interfaces AND internal connects gets terminal edges on top of connect edges."""
+    a = Component(name="A", provides=[_iref("IFace")])
+    b = Component(name="B", requires=[_iref("IFace")])
+    sys = System(
+        name="S",
+        requires=[_iref("In")],
+        provides=[_iref("Out")],
+        connects=[_connect("A", "IFace", "B", "IFace", channel="ch")],
+        components=[a, b],
+    )
+    diag = build_viz_diagram(sys)
+    # 2 connect edges + 2 terminal edges (In and Out).
+    assert len(diag.edges) == 4
+    all_ports = collect_all_ports(diag)
+    for edge in diag.edges:
+        assert edge.source_port_id in all_ports
+        assert edge.target_port_id in all_ports
 
 
 # ###############

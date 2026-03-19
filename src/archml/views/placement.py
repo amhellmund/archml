@@ -290,7 +290,13 @@ class _Layouter:
         inner_w = num_layers * cfg.node_width + max(0, num_layers - 1) * cfg.layer_gap
         inner_h = max_per_layer * cfg.node_height + max(0, max_per_layer - 1) * cfg.node_gap
         boundary_w = inner_w + 2 * cfg.boundary_padding
-        boundary_h = inner_h + 2 * cfg.boundary_padding + cfg.boundary_title_reserve + nested_upward_ext + cfg.boundary_bottom_extra_padding
+        boundary_h = (
+            inner_h
+            + 2 * cfg.boundary_padding
+            + cfg.boundary_title_reserve
+            + nested_upward_ext
+            + cfg.boundary_bottom_extra_padding
+        )
 
         left_h = _stack_height(len(peripheral_left), cfg.peripheral_node_height, cfg.node_gap)
         right_h = _stack_height(len(peripheral_right), cfg.peripheral_node_height, cfg.node_gap)
@@ -312,7 +318,13 @@ class _Layouter:
         for layer_idx, layer_node_ids in enumerate(ordered_layers):
             col_x = boundary_x + cfg.boundary_padding + layer_idx * (cfg.node_width + cfg.layer_gap)
             col_h = _stack_height(len(layer_node_ids), cfg.node_height, cfg.node_gap)
-            col_start_y = boundary_y + cfg.boundary_padding + cfg.boundary_title_reserve + nested_upward_ext + (inner_h - col_h) / 2.0
+            col_start_y = (
+                boundary_y
+                + cfg.boundary_padding
+                + cfg.boundary_title_reserve
+                + nested_upward_ext
+                + (inner_h - col_h) / 2.0
+            )
             for row, node_id in enumerate(layer_node_ids):
                 node_layouts[node_id] = NodeLayout(
                     node_id=node_id,
@@ -368,7 +380,10 @@ class _Layouter:
                 x=bnd_min_x - half_pad,
                 y=bnd_min_y - half_pad - cfg.boundary_title_reserve,
                 width=(bnd_max_x - bnd_min_x) + cfg.boundary_padding,
-                height=(bnd_max_y - bnd_min_y) + cfg.boundary_padding + cfg.boundary_title_reserve + cfg.boundary_bottom_extra_padding,
+                height=(bnd_max_y - bnd_min_y)
+                + cfg.boundary_padding
+                + cfg.boundary_title_reserve
+                + cfg.boundary_bottom_extra_padding,
             )
 
         # --- Step 8: port anchors ---

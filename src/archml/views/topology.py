@@ -318,6 +318,45 @@ def build_viz_diagram(
                 seen_port_pairs.add(key)
                 edges.append(edge)
 
+    # --- Terminal boundary edges ---
+    # Connect each terminal node to the root boundary's matching port so that
+    # arrows are drawn even when the focus entity has no internal connect statements
+    # (e.g. a leaf component whose connections are defined at the parent level).
+    for ref in entity.requires:
+        terminal_id = f"terminal.req.{_iref_label(ref)}"
+        terminal_port_id = f"{terminal_id}.port"
+        root_port_id = _port_id(root_id, "requires", ref)
+        key = (terminal_port_id, root_port_id)
+        if key not in seen_port_pairs:
+            seen_port_pairs.add(key)
+            edges.append(
+                VizEdge(
+                    id=f"edge.{terminal_port_id}--{root_port_id}",
+                    source_port_id=terminal_port_id,
+                    target_port_id=root_port_id,
+                    label=_iref_label(ref),
+                    interface_name=ref.name,
+                    interface_version=ref.version,
+                )
+            )
+    for ref in entity.provides:
+        terminal_id = f"terminal.prov.{_iref_label(ref)}"
+        terminal_port_id = f"{terminal_id}.port"
+        root_port_id = _port_id(root_id, "provides", ref)
+        key = (root_port_id, terminal_port_id)
+        if key not in seen_port_pairs:
+            seen_port_pairs.add(key)
+            edges.append(
+                VizEdge(
+                    id=f"edge.{root_port_id}--{terminal_port_id}",
+                    source_port_id=root_port_id,
+                    target_port_id=terminal_port_id,
+                    label=_iref_label(ref),
+                    interface_name=ref.name,
+                    interface_version=ref.version,
+                )
+            )
+
     return VizDiagram(
         id=f"diagram.{root_id}",
         title=entity.title or entity.name,
@@ -558,19 +597,28 @@ def _make_terminal_node(
     """Create a terminal :class:`VizNode` for the focus entity's own interface port.
 
     A terminal node anchors the focus entity's external interface boundary
-    visually: ``requires`` terminals appear on the input side of the diagram,
-    ``provides`` terminals on the output side.  Each terminal carries exactly
-    one port mirroring the interface direction.
+    visually: ``requires`` terminals appear on the input (left) side of the
+    diagram, ``provides`` terminals on the output (right) side.
+
+    The terminal's port direction is the **opposite** of the interface direction
+    so that the port anchor faces the boundary (i.e. the connection point is
+    on the side closest to the root boundary):
+
+    - A ``requires`` terminal sits to the *left* and acts as an external
+      provider → its port is ``"provides"`` (anchored to the right edge).
+    - A ``provides`` terminal sits to the *right* and acts as an external
+      consumer → its port is ``"requires"`` (anchored to the left edge).
     """
     label = _iref_label(ref)
     dir_tag = "req" if direction == "requires" else "prov"
     node_id = f"terminal.{dir_tag}.{label}"
+    port_direction: Literal["requires", "provides"] = "provides" if direction == "requires" else "requires"
     port = VizPort(
         id=f"{node_id}.port",
         node_id=node_id,
         interface_name=ref.name,
         interface_version=ref.version,
-        direction=direction,
+        direction=port_direction,
     )
     return VizNode(
         id=node_id,
