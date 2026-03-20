@@ -9,11 +9,11 @@ via the Pillow library.
 
 The visual vocabulary and color palette match the SVG backend:
 
-- Root boundary — slate-blue fill with a bold border and title label.
-- Component — green tones.
-- System — violet tones.
+- Root boundary — no box drawn (top-level architecture is not framed).
+- Component — orange tones.
+- System — blue tones.
 - User — amber tones.
-- Channel — teal tones with a dashed border (communication conduit).
+- Channel / interface — red tones with a dashed border.
 - External actors — slate-gray tones.
 - Terminal nodes — yellow tones.
 - Edges — dark navy polylines with filled arrowhead triangles.
@@ -78,14 +78,17 @@ def render_png(
 # ################
 
 # --- Color palette (RGB tuples, matches SVG backend) ---
-_RGB_COMPONENT = (240, 253, 244)
-_RGB_COMPONENT_STROKE = (22, 163, 74)
-_RGB_SYSTEM = (245, 243, 255)
-_RGB_SYSTEM_STROKE = (124, 58, 237)
+# Components (orange family)
+_RGB_COMPONENT = (255, 247, 237)
+_RGB_COMPONENT_STROKE = (234, 88, 12)
+# Systems (blue family)
+_RGB_SYSTEM = (239, 246, 255)
+_RGB_SYSTEM_STROKE = (37, 99, 235)
 _RGB_USER = (255, 251, 235)
 _RGB_USER_STROKE = (217, 119, 6)
-_RGB_CHANNEL = (240, 253, 250)
-_RGB_CHANNEL_STROKE = (13, 148, 136)
+# Channels / interfaces (red family, dashed border)
+_RGB_CHANNEL = (254, 242, 242)
+_RGB_CHANNEL_STROKE = (220, 38, 38)
 _RGB_EXTERNAL = (248, 250, 252)
 _RGB_EXTERNAL_STROKE = (71, 85, 105)
 _RGB_TERMINAL = (254, 252, 232)
@@ -105,6 +108,10 @@ _ARROW_HALF_W = 4.5
 _BOUNDARY_LABEL_FONT_RATIO = 1.15  # boundary label is slightly larger than node labels
 _EDGE_LABEL_FONT_RATIO = 0.85
 
+# Channel / interface node layout — must match LayoutConfig defaults.
+_CHANNEL_LINE_GAP = 8.0  # explicit gap (layout units) between the two text lines
+_CHANNEL_LABEL_FONT_RATIO = 0.9  # channel-label font size relative to interface-name font size
+
 
 def _node_colours(kind: NodeKind | None) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
     """Return ``(fill_rgb, stroke_rgb)`` for a node kind."""
@@ -114,34 +121,78 @@ def _node_colours(kind: NodeKind | None) -> tuple[tuple[int, int, int], tuple[in
         return _RGB_SYSTEM, _RGB_SYSTEM_STROKE
     if kind == "user":
         return _RGB_USER, _RGB_USER_STROKE
-    if kind == "channel":
+    if kind in ("channel", "interface"):
         return _RGB_CHANNEL, _RGB_CHANNEL_STROKE
     if kind in ("external_component", "external_system", "external_user"):
         return _RGB_EXTERNAL, _RGB_EXTERNAL_STROKE
     return _RGB_TERMINAL, _RGB_TERMINAL_STROKE
 
 
-def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """Load a TrueType font at *size* points, falling back to the PIL default."""
+def _load_font(
+    size: int,
+    *,
+    bold: bool = False,
+    italic: bool = False,
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Load a TrueType font at *size* points, falling back to the PIL default.
+
+    Args:
+        size: Font size in points.
+        bold: Request a bold typeface variant.
+        italic: Request an italic/oblique typeface variant.
+    """
     candidates: list[str] = []
     if sys.platform.startswith("linux"):
-        candidates = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
-        ]
+        if bold and italic:
+            candidates = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSansBoldOblique.ttf",
+                "/usr/share/fonts/truetype/ubuntu/Ubuntu-BI.ttf",
+            ]
+        elif bold:
+            candidates = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+                "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+            ]
+        elif italic:
+            candidates = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSansOblique.ttf",
+                "/usr/share/fonts/truetype/ubuntu/Ubuntu-RI.ttf",
+            ]
+        else:
+            candidates = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+                "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+            ]
     elif sys.platform == "darwin":
-        candidates = [
-            "/System/Library/Fonts/Helvetica.ttc",
-            "/Library/Fonts/Arial.ttf",
-            "/System/Library/Fonts/SFNSText.ttf",
-        ]
+        if bold and italic:
+            candidates = ["/Library/Fonts/Arial Bold Italic.ttf", "/Library/Fonts/Helvetica Bold Oblique.ttf"]
+        elif bold:
+            candidates = ["/Library/Fonts/Arial Bold.ttf", "/System/Library/Fonts/Helvetica.ttc"]
+        elif italic:
+            candidates = ["/Library/Fonts/Arial Italic.ttf", "/Library/Fonts/Helvetica Oblique.ttf"]
+        else:
+            candidates = [
+                "/System/Library/Fonts/Helvetica.ttc",
+                "/Library/Fonts/Arial.ttf",
+                "/System/Library/Fonts/SFNSText.ttf",
+            ]
     elif sys.platform == "win32":
-        candidates = [
-            "C:/Windows/Fonts/segoeui.ttf",
-            "C:/Windows/Fonts/arial.ttf",
-        ]
+        if bold and italic:
+            candidates = ["C:/Windows/Fonts/arialbi.ttf", "C:/Windows/Fonts/segoeuiz.ttf"]
+        elif bold:
+            candidates = ["C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/segoeuib.ttf"]
+        elif italic:
+            candidates = ["C:/Windows/Fonts/ariali.ttf", "C:/Windows/Fonts/segoeuii.ttf"]
+        else:
+            candidates = ["C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf"]
 
     for path in candidates:
         if Path(path).exists():
@@ -187,12 +238,17 @@ def _draw_dashed_rounded_rect(
     colour: tuple[int, int, int],
     width: int,
 ) -> None:
-    """Draw a dashed rounded-rectangle outline by sampling points along the perimeter."""
-    # Build the perimeter as a sequence of (x, y) points.
-    pts = _rounded_rect_perimeter(x0, y0, x1, y1, radius, steps_per_corner=12)
-    # Draw dashes along the perimeter.
-    dash_on = 10
-    dash_off = 5
+    """Draw a dashed rounded-rectangle outline by sampling points along the perimeter.
+
+    Straight edges are sampled at 2 px intervals so the point-count-based
+    dash algorithm produces uniform dashes on every side (not just on arcs).
+    ``dash_on=6`` and ``dash_off=3`` points yield roughly 12 px on / 6 px off
+    in the supersampled image, which halves to ~6 px on / 3 px off in the
+    final output — visually close to SVG's ``stroke-dasharray="5,3"``.
+    """
+    pts = _rounded_rect_perimeter(x0, y0, x1, y1, radius, steps_per_corner=12, sample_step=2.0)
+    dash_on = 6
+    dash_off = 3
     total = len(pts)
     i = 0
     while i < total:
@@ -205,31 +261,47 @@ def _draw_dashed_rounded_rect(
 
 
 def _rounded_rect_perimeter(
-    x0: float, y0: float, x1: float, y1: float, radius: int, steps_per_corner: int = 12
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    radius: int,
+    steps_per_corner: int = 12,
+    sample_step: float = 0.0,
 ) -> list[tuple[float, float]]:
-    """Return a list of (x, y) points tracing the rounded rectangle perimeter."""
-    pts: list[tuple[float, float]] = []
+    """Return a list of (x, y) points tracing the rounded rectangle perimeter.
+
+    When *sample_step* > 0, straight edges are densely sampled at that pixel
+    interval so that point-count-based dashing produces uniform dash lengths
+    on every side.  When *sample_step* is 0 (default), each straight edge is
+    represented by its two endpoints only (suitable for solid outlines).
+    """
     r = float(radius)
+
+    def _seg(ax: float, ay: float, bx: float, by: float) -> list[tuple[float, float]]:
+        if sample_step <= 0:
+            return [(ax, ay), (bx, by)]
+        length = math.hypot(bx - ax, by - ay)
+        n = max(2, int(length / sample_step) + 1)
+        return [(ax + (bx - ax) * i / (n - 1), ay + (by - ay) * i / (n - 1)) for i in range(n)]
+
+    pts: list[tuple[float, float]] = []
     # Top edge (left to right)
-    pts += [(x0 + r, y0), (x1 - r, y0)]
+    pts += _seg(x0 + r, y0, x1 - r, y0)
     # Top-right corner
-    cx, cy = x1 - r, y0 + r
-    pts += _arc_pts(cx, cy, r, -math.pi / 2, 0, steps_per_corner)
+    pts += _arc_pts(x1 - r, y0 + r, r, -math.pi / 2, 0, steps_per_corner)
     # Right edge (top to bottom)
-    pts += [(x1, y0 + r), (x1, y1 - r)]
+    pts += _seg(x1, y0 + r, x1, y1 - r)
     # Bottom-right corner
-    cx, cy = x1 - r, y1 - r
-    pts += _arc_pts(cx, cy, r, 0, math.pi / 2, steps_per_corner)
+    pts += _arc_pts(x1 - r, y1 - r, r, 0, math.pi / 2, steps_per_corner)
     # Bottom edge (right to left)
-    pts += [(x1 - r, y1), (x0 + r, y1)]
+    pts += _seg(x1 - r, y1, x0 + r, y1)
     # Bottom-left corner
-    cx, cy = x0 + r, y1 - r
-    pts += _arc_pts(cx, cy, r, math.pi / 2, math.pi, steps_per_corner)
+    pts += _arc_pts(x0 + r, y1 - r, r, math.pi / 2, math.pi, steps_per_corner)
     # Left edge (bottom to top)
-    pts += [(x0, y1 - r), (x0, y0 + r)]
+    pts += _seg(x0, y1 - r, x0, y0 + r)
     # Top-left corner
-    cx, cy = x0 + r, y0 + r
-    pts += _arc_pts(cx, cy, r, math.pi, 3 * math.pi / 2, steps_per_corner)
+    pts += _arc_pts(x0 + r, y0 + r, r, math.pi, 3 * math.pi / 2, steps_per_corner)
     return pts
 
 
@@ -248,9 +320,12 @@ def _draw_diagram(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> Image.
     img = Image.new("RGB", (w, h), _RGB_BACKGROUND)
     draw = ImageDraw.Draw(img)
 
-    font_size = max(8, int(11 * scale))
+    font_size = max(10, int(15 * scale))
     font = _load_font(font_size)
-    bold_font = _load_font(max(9, int(12 * scale)))
+    bold_font = _load_font(max(11, int(16 * scale)), bold=True)
+    node_bold_font = _load_font(font_size, bold=True)
+    channel_label_font_size = max(7, int(font_size * _CHANNEL_LABEL_FONT_RATIO))
+    channel_label_font = _load_font(channel_label_font_size, italic=True)
 
     # Build node metadata map recursively from all leaf VizNodes
     node_meta: dict[str, tuple[str, str | None, NodeKind | None]] = {}
@@ -258,12 +333,12 @@ def _draw_diagram(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> Image.
     for node in diagram.peripheral_nodes:
         node_meta[node.id] = (node.label, node.title, node.kind)
 
-    small_font = _load_font(max(7, int(9 * scale)))
-
-    # Draw root boundary
-    if diagram.root.id in plan.boundaries:
-        bl = plan.boundaries[diagram.root.id]
-        _draw_boundary(draw, diagram.root.label, bl, scale, bold_font)
+    # Root boundary — draw a box for real entities; skip only the synthetic
+    # "all" diagram whose root has id "all".
+    if diagram.root.id != "all":
+        root_bl = plan.boundaries.get(diagram.root.id)
+        if root_bl is not None:
+            _draw_boundary(draw, diagram.root.label, root_bl, scale, bold_font, kind=diagram.root.kind)
 
     # Draw nested boundaries outermost-first so inner ones appear on top
     nested: list[VizBoundary] = []
@@ -275,7 +350,7 @@ def _draw_diagram(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> Image.
     # Draw all positioned nodes
     for node_id, nl in plan.nodes.items():
         label, title, kind = node_meta.get(node_id, (node_id, None, None))
-        _draw_node(draw, label, title, nl, kind, scale, font, small_font)
+        _draw_node(draw, label, title, nl, kind, scale, font, node_bold_font, channel_label_font)
 
     # Draw edges
     edge_font = _load_font(max(7, int(10 * scale * _EDGE_LABEL_FONT_RATIO)))
@@ -318,9 +393,9 @@ def _draw_boundary(
 ) -> None:
     """Draw a boundary rectangle with a fill, border, and title label.
 
-    *kind* selects the colour palette: ``"component"`` uses green tones,
-    ``"system"`` uses violet tones.  ``None`` (the default, used for the root
-    boundary) uses the slate-blue palette.
+    *kind* selects the colour palette: ``"component"`` uses orange tones,
+    ``"system"`` uses blue tones.  ``None`` (the default) falls back to the
+    blue boundary palette.
     """
     if kind == "component":
         fill, stroke = _RGB_COMPONENT, _RGB_COMPONENT_STROKE
@@ -333,9 +408,9 @@ def _draw_boundary(
     x1 = (bl.x + bl.width) * scale
     y1 = (bl.y + bl.height) * scale
     _draw_rounded_rect(draw, (x0, y0, x1, y1), _CORNER_RADIUS, fill, stroke, _BOUNDARY_STROKE_WIDTH)
-    # Title label: 15 layout units below the boundary top edge (matches SVG _BOUNDARY_LABEL_OFFSET)
+    # Title label: 18 layout units below the boundary top edge (matches SVG _BOUNDARY_LABEL_OFFSET)
     tx = (x0 + x1) / 2
-    ty = y0 + 15 * scale
+    ty = y0 + 21 * scale
     draw.text((tx, ty), label, fill=stroke, font=font, anchor="mm")
 
 
@@ -347,29 +422,39 @@ def _draw_node(
     kind: NodeKind | None,
     scale: float,
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    small_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    bold_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    channel_label_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
 ) -> None:
     """Draw a node rectangle with a centred label.
 
-    For channel nodes, renders two lines: the interface name (larger, *title*
-    or *label*) above centre and the channel name (smaller, ``$label``) below.
+    For channel nodes, renders two lines: the bold interface name above and
+    the smaller italic channel label below, separated by ``_CHANNEL_LINE_GAP``.
+    For ``component`` and ``system`` nodes the label is drawn in bold.
     """
     fill, stroke = _node_colours(kind)
     x0 = nl.x * scale
     y0 = nl.y * scale
     x1 = (nl.x + nl.width) * scale
     y1 = (nl.y + nl.height) * scale
-    dashed = kind == "channel"
+    dashed = kind in ("channel", "interface")
     _draw_rounded_rect(draw, (x0, y0, x1, y1), _CORNER_RADIUS, fill, stroke, _NODE_STROKE_WIDTH, dashed=dashed)
     tx = (x0 + x1) / 2
-    ty = (y0 + y1) / 2
+    # cy_mid in layout units; compute pixel positions using the same formula as SVG.
+    cy_mid = nl.y + nl.height / 2
     if kind == "channel":
         iface_name = title if title is not None else label
-        line_gap = 6 * scale
-        draw.text((tx, ty - line_gap * 0.5), iface_name, fill=_RGB_TEXT, font=font, anchor="mm")
-        draw.text((tx, ty + line_gap * 0.9), f"${label}", fill=_RGB_TEXT, font=small_font, anchor="mm")
+        # Mirror the SVG two-line block-centering formula (all values in layout units).
+        fs = 15.0
+        fs_small = fs * _CHANNEL_LABEL_FONT_RATIO
+        gap = _CHANNEL_LINE_GAP
+        line1_y = (cy_mid - (fs_small + gap) / 2) * scale
+        line2_y = (cy_mid + (fs + gap) / 2) * scale
+        draw.text((tx, line1_y), iface_name, fill=_RGB_TEXT, font=bold_font, anchor="mm")
+        draw.text((tx, line2_y), f"${label}", fill=_RGB_TEXT, font=channel_label_font, anchor="mm")
+    elif kind in ("component", "system", "interface"):
+        draw.text((tx, cy_mid * scale), label, fill=_RGB_TEXT, font=bold_font, anchor="mm")
     else:
-        draw.text((tx, ty), label, fill=_RGB_TEXT, font=font, anchor="mm")
+        draw.text((tx, cy_mid * scale), label, fill=_RGB_TEXT, font=font, anchor="mm")
 
 
 def _draw_edge(

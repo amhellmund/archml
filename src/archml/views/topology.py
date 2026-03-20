@@ -43,7 +43,15 @@ from archml.model.entities import ArchFile, Component, ConnectDef, InterfaceRef,
 # ###############
 
 NodeKind = Literal[
-    "component", "system", "user", "external_component", "external_system", "external_user", "terminal", "channel"
+    "component",
+    "system",
+    "user",
+    "external_component",
+    "external_system",
+    "external_user",
+    "terminal",
+    "channel",
+    "interface",
 ]
 """Semantic classification of a :class:`VizNode`."""
 
@@ -289,6 +297,7 @@ def build_viz_diagram(
 
     # --- Root boundary ---
     root_ports = _make_ports(root_id, entity)
+
     all_children: list[VizNode | VizBoundary] = [*child_node_map.values(), *channel_node_map.values()]
     root = VizBoundary(
         id=root_id,
@@ -308,6 +317,23 @@ def build_viz_diagram(
         peripheral_nodes.append(_make_terminal_node(ref, "requires"))
     for ref in entity.provides:
         peripheral_nodes.append(_make_terminal_node(ref, "provides"))
+    # Expose-based terminals: create a terminal for each exposed port so that
+    # the boundary's external interface is visible even when the entity has no
+    # direct requires/provides declarations (e.g. Order::A uses only expose).
+    _seen_expose_terminal_ids: set[str] = set()
+    for _exp in entity.exposes:
+        _child_ent = all_sub_entity_map.get(_exp.entity)
+        if _child_ent is None:
+            continue
+        _port_res = _find_ref_by_port_name(_child_ent, _exp.port)
+        if _port_res is None:
+            continue
+        _exp_dir, _exp_ref = _port_res
+        _dir_tag = "req" if _exp_dir == "requires" else "prov"
+        _term_id = f"terminal.{_dir_tag}.{_iref_label(_exp_ref)}"
+        if _term_id not in _seen_expose_terminal_ids:
+            _seen_expose_terminal_ids.add(_term_id)
+            peripheral_nodes.append(_make_terminal_node(_exp_ref, _exp_dir, kind="interface"))
 
     # --- Edges (derived from connect statements, deduplicated by port pair) ---
     edges: list[VizEdge] = []
@@ -357,6 +383,54 @@ def build_viz_diagram(
                     interface_version=ref.version,
                 )
             )
+    # Expose-based terminal edges: connect each expose terminal directly to the
+    # child node's port so the connection visibly reaches the subcomponent.
+    for _exp in entity.exposes:
+        _child_ent = all_sub_entity_map.get(_exp.entity)
+        _child_node = child_node_map.get(_exp.entity)
+        if _child_ent is None or _child_node is None:
+            continue
+        _port_res = _find_ref_by_port_name(_child_ent, _exp.port)
+        if _port_res is None:
+            continue
+        _exp_dir, _exp_ref = _port_res
+        _child_port_id = _find_port_id(_child_node, _exp_dir, _exp_ref)
+        if _child_port_id is None:
+            _p = _make_port(_child_node.id, _exp_dir, _exp_ref)
+            _child_node.ports.append(_p)
+            _child_port_id = _p.id
+        if _exp_dir == "requires":
+            _term_id = f"terminal.req.{_iref_label(_exp_ref)}"
+            _term_port_id = f"{_term_id}.port"
+            _ekey: tuple[str, str] = (_term_port_id, _child_port_id)
+            if _ekey not in seen_port_pairs:
+                seen_port_pairs.add(_ekey)
+                edges.append(
+                    VizEdge(
+                        id=f"edge.{_term_port_id}--{_child_port_id}",
+                        source_port_id=_term_port_id,
+                        target_port_id=_child_port_id,
+                        label=_iref_label(_exp_ref),
+                        interface_name=_exp_ref.name,
+                        interface_version=_exp_ref.version,
+                    )
+                )
+        else:
+            _term_id = f"terminal.prov.{_iref_label(_exp_ref)}"
+            _term_port_id = f"{_term_id}.port"
+            _ekey = (_child_port_id, _term_port_id)
+            if _ekey not in seen_port_pairs:
+                seen_port_pairs.add(_ekey)
+                edges.append(
+                    VizEdge(
+                        id=f"edge.{_child_port_id}--{_term_port_id}",
+                        source_port_id=_child_port_id,
+                        target_port_id=_term_port_id,
+                        label=_iref_label(_exp_ref),
+                        interface_name=_exp_ref.name,
+                        interface_version=_exp_ref.version,
+                    )
+                )
 
     return VizDiagram(
         id=f"diagram.{root_id}",
@@ -581,6 +655,8 @@ def _make_child_node(entity: Component | System | UserDef, entity_path: str) -> 
 def _make_terminal_node(
     ref: InterfaceRef,
     direction: Literal["requires", "provides"],
+    *,
+    kind: NodeKind = "terminal",
 ) -> VizNode:
     """Create a terminal :class:`VizNode` for the focus entity's own interface port.
 
@@ -596,6 +672,11 @@ def _make_terminal_node(
       provider → its port is ``"provides"`` (anchored to the right edge).
     - A ``provides`` terminal sits to the *right* and acts as an external
       consumer → its port is ``"requires"`` (anchored to the left edge).
+
+    *kind* defaults to ``"terminal"`` for direct requires/provides interfaces.
+    Use ``"interface"`` for expose-based peripherals, which renders the node
+    with the channel visual style (dashed border) but only a single interface
+    name line — no channel name is known.
     """
     label = _iref_label(ref)
     dir_tag = "req" if direction == "requires" else "prov"
@@ -612,7 +693,7 @@ def _make_terminal_node(
         id=node_id,
         label=label,
         title=None,
-        kind="terminal",
+        kind=kind,
         entity_path="",
         ports=[port],
     )

@@ -17,13 +17,13 @@ explicit filled-polygon arrowhead at the target end.
 Text labels are clipped to their node bounding box via SVG ``<clipPath>``
 elements, so long labels never overflow the node rectangle.
 
-Color palette (modern, high-contrast):
+Color palette:
 
-- Root boundary — slate-blue fill, bold border, title label.
-- Component — green tones.
-- System — violet tones.
+- Root boundary — no box drawn (top-level architecture is not framed).
+- Component — orange tones.
+- System — blue tones.
 - User — amber tones.
-- Channel — teal tones (communication conduit).
+- Channel / interface — red tones, dashed border.
 - External actors — slate-gray tones.
 - Terminal nodes — yellow tones.
 - Edges — dark navy lines with filled arrowheads.
@@ -75,19 +75,19 @@ def render_diagram(
 # Implementation
 # ################
 
-# --- Modern color palette ---
-# Components (green family)
-_FILL_COMPONENT = "#f0fdf4"
-_STROKE_COMPONENT = "#16a34a"
-# Systems (violet family)
-_FILL_SYSTEM = "#f5f3ff"
-_STROKE_SYSTEM = "#7c3aed"
+# --- Color palette ---
+# Components (orange family)
+_FILL_COMPONENT = "#fff7ed"
+_STROKE_COMPONENT = "#ea580c"
+# Systems (blue family)
+_FILL_SYSTEM = "#eff6ff"
+_STROKE_SYSTEM = "#2563eb"
 # Users (amber family)
 _FILL_USER = "#fffbeb"
 _STROKE_USER = "#d97706"
-# Channels (teal family)
-_FILL_CHANNEL = "#f0fdfa"
-_STROKE_CHANNEL = "#0d9488"
+# Channels / interfaces (red family, dashed border)
+_FILL_CHANNEL = "#fef2f2"
+_STROKE_CHANNEL = "#dc2626"
 # External actors (slate-gray family)
 _FILL_EXTERNAL = "#f8fafc"
 _STROKE_EXTERNAL = "#475569"
@@ -104,15 +104,17 @@ _TEXT_COLOUR = "#1e293b"
 _FILL_BACKGROUND = "#ffffff"
 
 _FONT_FAMILY = "system-ui, -apple-system, sans-serif"
-_FONT_SIZE = 11
+_FONT_SIZE = 15
 _CORNER_RADIUS = 7
 _STROKE_WIDTH = 1.5
 _BOUNDARY_STROKE_WIDTH = 2.0
-_BOUNDARY_LABEL_OFFSET = 15.0  # y distance from boundary top to title baseline
+_BOUNDARY_LABEL_OFFSET = 21.0  # y distance from boundary top to title baseline
 _LABEL_PADDING = 6.0  # horizontal padding inside node for text clip region
 
-# Channel-specific style overrides
-_CHANNEL_STROKE_DASH = "5,3"  # dashed border to distinguish channels
+# Channel / interface node layout — must match LayoutConfig defaults.
+_CHANNEL_STROKE_DASH = "5,3"
+_CHANNEL_LINE_GAP = 8.0  # explicit gap (layout units) between the two text lines
+_CHANNEL_LABEL_FONT_RATIO = 0.9  # channel-label font size relative to interface-name font size
 
 # Arrowhead geometry (layout units, before scaling).
 _ARROW_LEN = 9.0
@@ -127,7 +129,7 @@ def _node_colours(kind: NodeKind | None) -> tuple[str, str]:
         return _FILL_SYSTEM, _STROKE_SYSTEM
     if kind == "user":
         return _FILL_USER, _STROKE_USER
-    if kind == "channel":
+    if kind in ("channel", "interface"):
         return _FILL_CHANNEL, _STROKE_CHANNEL
     if kind in ("external_component", "external_system", "external_user"):
         return _FILL_EXTERNAL, _STROKE_EXTERNAL
@@ -176,9 +178,12 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
 
     defs = ET.SubElement(svg, "defs")
 
-    # Root boundary
-    if diagram.root.id in plan.boundaries:
-        _render_boundary(svg, diagram.root.label, plan.boundaries[diagram.root.id], scale)
+    # Root boundary — draw a box for real entities; skip only the synthetic
+    # "all" diagram whose root is labelled "Architecture" and has id "all".
+    if diagram.root.id != "all":
+        root_bl = plan.boundaries.get(diagram.root.id)
+        if root_bl is not None:
+            _render_boundary(svg, diagram.root.label, root_bl, scale, kind=diagram.root.kind)
 
     # Nested boundaries (expanded sub-systems/components) — rendered outermost-first so
     # inner boundaries appear on top.  Collect them in BFS order.
@@ -255,9 +260,9 @@ def _render_boundary(
 ) -> None:
     """Draw a boundary rectangle with a title label.
 
-    *kind* selects the colour palette: ``"component"`` uses green tones,
-    ``"system"`` uses violet tones.  ``None`` (the default, used for the root
-    boundary) uses the slate-blue palette.
+    *kind* selects the colour palette: ``"component"`` uses orange tones,
+    ``"system"`` uses blue tones.  ``None`` (the default) falls back to the
+    blue boundary palette.
     """
     if kind == "component":
         fill, stroke = _FILL_COMPONENT, _STROKE_COMPONENT
@@ -326,7 +331,7 @@ def _render_node(
         "stroke": stroke,
         "stroke-width": str(_STROKE_WIDTH),
     }
-    if kind == "channel":
+    if kind in ("channel", "interface"):
         rect_attrs["stroke-dasharray"] = _CHANNEL_STROKE_DASH
 
     ET.SubElement(svg, "rect", rect_attrs)
@@ -335,19 +340,27 @@ def _render_node(
     cy_mid = nl.y + nl.height / 2
 
     if kind == "channel":
-        # Two-line layout: interface name (larger) above centre, channel name below.
+        # Two-line layout: bold interface name above, smaller italic channel label below,
+        # separated by an explicit gap.  Both lines are centred as a block around cy_mid.
         iface_name = title if title is not None else label
-        line_gap = _FONT_SIZE * scale * 0.7
+        fs = _FONT_SIZE
+        fs_small = _FONT_SIZE * _CHANNEL_LABEL_FONT_RATIO
+        gap = _CHANNEL_LINE_GAP
+        # Centre the content block (line1 + gap + line2) around cy_mid.
+        # With dominant-baseline="middle" the y coordinate is the visual line centre.
+        line1_y = cy_mid - (fs_small + gap) / 2
+        line2_y = cy_mid + (fs + gap) / 2
         text_top = ET.SubElement(
             svg,
             "text",
             {
                 "x": cx,
-                "y": _f(cy_mid - line_gap * 0.5, scale),
+                "y": _f(line1_y, scale),
                 "text-anchor": "middle",
                 "dominant-baseline": "middle",
                 "font-family": _FONT_FAMILY,
-                "font-size": str(int(_FONT_SIZE * scale)),
+                "font-size": str(int(fs * scale)),
+                "font-weight": "bold",
                 "fill": _TEXT_COLOUR,
                 "clip-path": f"url(#{clip_id})",
             },
@@ -358,31 +371,31 @@ def _render_node(
             "text",
             {
                 "x": cx,
-                "y": _f(cy_mid + line_gap * 0.9, scale),
+                "y": _f(line2_y, scale),
                 "text-anchor": "middle",
                 "dominant-baseline": "middle",
                 "font-family": _FONT_FAMILY,
-                "font-size": str(int(_FONT_SIZE * scale * 0.75)),
+                "font-size": str(int(fs_small * scale)),
+                "font-style": "italic",
                 "fill": _TEXT_COLOUR,
                 "clip-path": f"url(#{clip_id})",
             },
         )
         text_bot.text = f"${label}"
     else:
-        text = ET.SubElement(
-            svg,
-            "text",
-            {
-                "x": cx,
-                "y": _f(cy_mid, scale),
-                "text-anchor": "middle",
-                "dominant-baseline": "middle",
-                "font-family": _FONT_FAMILY,
-                "font-size": str(int(_FONT_SIZE * scale)),
-                "fill": _TEXT_COLOUR,
-                "clip-path": f"url(#{clip_id})",
-            },
-        )
+        text_attrs: dict[str, str] = {
+            "x": cx,
+            "y": _f(cy_mid, scale),
+            "text-anchor": "middle",
+            "dominant-baseline": "middle",
+            "font-family": _FONT_FAMILY,
+            "font-size": str(int(_FONT_SIZE * scale)),
+            "fill": _TEXT_COLOUR,
+            "clip-path": f"url(#{clip_id})",
+        }
+        if kind in ("component", "system", "interface"):
+            text_attrs["font-weight"] = "bold"
+        text = ET.SubElement(svg, "text", text_attrs)
         text.text = label
 
 

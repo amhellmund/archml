@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from archml.model.entities import Component, ConnectDef, InterfaceRef, System
+from archml.model.entities import Component, ConnectDef, ExposeDef, InterfaceRef, System
 from archml.views.backend.diagram import render_diagram
 from archml.views.placement import compute_layout
 from archml.views.topology import build_viz_diagram
@@ -28,6 +28,10 @@ def _connect(src_entity: str, src_port: str, dst_entity: str, dst_port: str, cha
     return ConnectDef(
         src_entity=src_entity, src_port=src_port, channel=channel, dst_entity=dst_entity, dst_port=dst_port
     )
+
+
+def _expose(entity: str, port: str, as_name: str | None = None) -> ExposeDef:
+    return ExposeDef(entity=entity, port=port, as_name=as_name)
 
 
 def _render_and_parse(entity: Component | System, tmp_path: Path, **kwargs: object) -> ET.Element:
@@ -136,17 +140,21 @@ def test_render_scale_enlarges_svg_dimensions(tmp_path: Path) -> None:
 
 
 def test_render_boundary_label_present(tmp_path: Path) -> None:
-    """The root entity name appears as text in the SVG."""
+    """The root boundary box is drawn with its label and child node labels also appear."""
     comp = Component(name="OrderService", components=[Component(name="Processor")])
     root = _render_and_parse(comp, tmp_path)
-    assert "OrderService" in _text_content(root)
+    texts = _text_content(root)
+    assert "OrderService" in texts
+    assert "Processor" in texts
 
 
 def test_render_boundary_label_for_system(tmp_path: Path) -> None:
-    """System name appears as text in the SVG boundary."""
+    """System root boundary is drawn; both the system name and child labels appear."""
     sys = System(name="ECommerce", components=[Component(name="Worker")])
     root = _render_and_parse(sys, tmp_path)
-    assert "ECommerce" in _text_content(root)
+    texts = _text_content(root)
+    assert "ECommerce" in texts
+    assert "Worker" in texts
 
 
 # ###############
@@ -314,7 +322,84 @@ def test_render_ecommerce_system(tmp_path: Path) -> None:
     )
     root = _render_and_parse(sys, tmp_path)
     texts = _text_content(root)
+    # Root entity boundary is drawn — "ECommerce" label appears alongside children.
     assert "ECommerce" in texts
     assert "OrderService" in texts
     assert "PaymentService" in texts
     assert "PaymentRequest" in texts
+
+
+# ###############
+# Root boundary box
+# ###############
+
+
+def test_render_root_boundary_box_present_for_component(tmp_path: Path) -> None:
+    """When visualising a specific component, its boundary rect is drawn."""
+    comp = Component(name="Worker", components=[Component(name="Task")])
+    root = _render_and_parse(comp, tmp_path)
+    # At least 3 rects: background + root boundary + child node.
+    rects = list(root.iter(f"{{{_SVG_NS}}}rect"))
+    assert len(rects) >= 3
+
+
+def test_render_root_boundary_box_present_for_system(tmp_path: Path) -> None:
+    """When visualising a specific system, its boundary rect is drawn."""
+    sys = System(name="MySystem", components=[Component(name="A")])
+    root = _render_and_parse(sys, tmp_path)
+    texts = _text_content(root)
+    assert "MySystem" in texts
+
+
+# ###############
+# Expose-based terminals
+# ###############
+
+
+def test_render_expose_requires_terminal_present(tmp_path: Path) -> None:
+    """Expose of a child requires port creates a terminal label outside the boundary."""
+    sub = Component(name="Sub", requires=[_iref("DataFeed")])
+    comp = Component(
+        name="Parent",
+        components=[sub],
+        exposes=[_expose("Sub", "DataFeed")],
+    )
+    root = _render_and_parse(comp, tmp_path)
+    assert "DataFeed" in _text_content(root)
+
+
+def test_render_expose_provides_terminal_present(tmp_path: Path) -> None:
+    """Expose of a child provides port creates a terminal label outside the boundary."""
+    sub = Component(name="Sub", provides=[_iref("Result")])
+    comp = Component(
+        name="Parent",
+        components=[sub],
+        exposes=[_expose("Sub", "Result")],
+    )
+    root = _render_and_parse(comp, tmp_path)
+    assert "Result" in _text_content(root)
+
+
+def test_render_expose_terminals_produce_peripheral_nodes(tmp_path: Path) -> None:
+    """Exposed ports produce peripheral nodes that cause edges to be drawn."""
+    sub1 = Component(name="SubA1", requires=[_iref("OrderRequest")], provides=[_iref("AInternal")])
+    sub2 = Component(name="SubA2", requires=[_iref("AInternal")], provides=[_iref("Simple")])
+    comp = Component(
+        name="A",
+        components=[sub1, sub2],
+        connects=[_connect("SubA1", "AInternal", "SubA2", "AInternal", channel="internal_a")],
+        exposes=[_expose("SubA1", "OrderRequest"), _expose("SubA2", "Simple")],
+    )
+    root = _render_and_parse(comp, tmp_path)
+    texts = _text_content(root)
+    # Root boundary label present.
+    assert "A" in texts
+    # Child nodes present.
+    assert "SubA1" in texts
+    assert "SubA2" in texts
+    # Expose-based terminal labels present.
+    assert "OrderRequest" in texts
+    assert "Simple" in texts
+    # At least one edge (polyline) drawn.
+    polylines = list(root.iter(f"{{{_SVG_NS}}}polyline"))
+    assert len(polylines) >= 1

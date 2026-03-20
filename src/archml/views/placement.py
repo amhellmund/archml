@@ -64,7 +64,10 @@ class LayoutConfig:
             width is ``max(node_width, label_text_width + text_h_padding)``
             computed uniformly across all inner nodes so that the longest label
             always fits.
-        node_height: Height of every internal child node.
+        node_height: Minimum height of every internal child node.  For channel
+            nodes the effective height is also bounded below by
+            ``_min_channel_node_height(config)`` so that both text lines and the
+            explicit gap fit comfortably.
         layer_gap: Horizontal gap between adjacent node columns inside the
             root boundary.
         node_gap: Vertical gap between nodes stacked in the same column.
@@ -72,11 +75,6 @@ class LayoutConfig:
             boundary edge.
         boundary_padding: Padding between the root boundary edge and the
             nearest child node on each side.
-        boundary_bottom_extra_padding: Additional padding added below the
-            innermost content at every nesting level.  Applied on top of the
-            symmetric ``boundary_padding`` so that the bottom of each box
-            breathes a little more than the top.  Outer boundaries grow by the
-            same amount to contain inner ones.
         peripheral_node_width: Minimum width of terminal and external peripheral
             nodes.  Expanded the same way as ``node_width``.
         peripheral_node_height: Height of terminal and external peripheral nodes.
@@ -84,22 +82,40 @@ class LayoutConfig:
             the default rendering scale (11 pt font at scale 1 ≈ 6.6 lu/char;
             the default 7.0 adds a small safety margin).  Used to compute
             minimum node widths that accommodate label text.
+        bold_char_width_factor: Multiplier applied to ``approx_char_width`` when
+            estimating the width of bold text.  Bold glyphs are typically ~10 %
+            wider than their regular counterparts.
         text_h_padding: Total horizontal padding (both sides) added on top of
             the text-width estimate when sizing node boxes.
+        font_size: Base font size in layout units (≈ px at scale 1.0).  Used to
+            compute the minimum height of nodes that contain multi-line text.
+        node_v_padding: Total vertical padding (top + bottom) inside a node box.
+            Ensures text never touches the top or bottom border.
+        channel_line_gap: Explicit gap in layout units inserted between the
+            interface name line and the channel-name line inside channel nodes.
+            Must match the ``_CHANNEL_LINE_GAP`` constant used by each renderer.
+        channel_label_font_ratio: Font-size ratio of the channel label relative
+            to the interface name.  Must match the renderer constant
+            ``_CHANNEL_LABEL_FONT_RATIO``.
     """
 
     node_width: float = 120.0
-    node_height: float = 60.0
+    node_height: float = 80.0
     layer_gap: float = 80.0
     node_gap: float = 40.0
     peripheral_gap: float = 80.0
     boundary_padding: float = 40.0
-    boundary_title_reserve: float = 25.0
+    boundary_title_reserve: float = 35.0
     boundary_bottom_extra_padding: float = 15.0
     peripheral_node_width: float = 100.0
-    peripheral_node_height: float = 50.0
-    approx_char_width: float = 7.0
-    text_h_padding: float = 16.0
+    peripheral_node_height: float = 68.0
+    approx_char_width: float = 9.5
+    bold_char_width_factor: float = 1.1
+    text_h_padding: float = 24.0
+    font_size: float = 15.0
+    node_v_padding: float = 28.0
+    channel_line_gap: float = 8.0
+    channel_label_font_ratio: float = 0.9
 
 
 @dataclass
@@ -312,18 +328,17 @@ class _Layouter:
         # Each nesting level adds a top extension of (half_pad + boundary_title_reserve)
         # because the inner boundary's top edge protrudes above its leaf nodes.
         # Multiply by the maximum nesting depth so all titles clear the outer title.
+        # Each nesting level also adds a downward extension of half_pad below leaf nodes,
+        # so the same depth factor is applied symmetrically at the bottom.
         nesting_depth = _max_boundary_depth(diagram.root)
         nested_upward_ext = nesting_depth * (half_pad + cfg.boundary_title_reserve)
+        nested_downward_ext = nesting_depth * half_pad
 
         inner_w = num_layers * node_w + max(0, num_layers - 1) * cfg.layer_gap
         inner_h = max_per_layer * node_h + max(0, max_per_layer - 1) * cfg.node_gap
         boundary_w = inner_w + 2 * cfg.boundary_padding
         boundary_h = (
-            inner_h
-            + 2 * cfg.boundary_padding
-            + cfg.boundary_title_reserve
-            + nested_upward_ext
-            + cfg.boundary_bottom_extra_padding
+            inner_h + 2 * cfg.boundary_padding + cfg.boundary_title_reserve + nested_upward_ext + nested_downward_ext
         )
 
         left_h = _stack_height(len(peripheral_left), peri_h, cfg.node_gap)
@@ -415,11 +430,8 @@ class _Layouter:
                 boundary_id=bnd.id,
                 x=bnd_min_x - half_pad,
                 y=bnd_min_y - half_pad - cfg.boundary_title_reserve,
-                width=(bnd_max_x - bnd_min_x) + cfg.boundary_padding,
-                height=(bnd_max_y - bnd_min_y)
-                + cfg.boundary_padding
-                + cfg.boundary_title_reserve
-                + cfg.boundary_bottom_extra_padding,
+                width=(bnd_max_x - bnd_min_x) + 2 * half_pad,
+                height=(bnd_max_y - bnd_min_y) + 2 * half_pad + cfg.boundary_title_reserve,
             )
 
         # --- Step 9: port anchors ---
@@ -701,31 +713,63 @@ def _barycenter_sort(
 # -------- text-aware sizing helpers --------
 
 
-def _required_text_width(text: str, cfg: LayoutConfig) -> float:
-    """Estimated minimum box width needed to display *text* without clipping."""
-    return len(text) * cfg.approx_char_width + cfg.text_h_padding
+def _required_text_width(text: str, cfg: LayoutConfig, *, bold: bool = False, font_ratio: float = 1.0) -> float:
+    """Estimated minimum box width needed to display *text* without clipping.
+
+    Args:
+        text: The string to be rendered.
+        cfg: Layout configuration supplying character-width estimates.
+        bold: When ``True``, ``cfg.bold_char_width_factor`` is applied to
+            account for the wider glyphs of bold typefaces.
+        font_ratio: Additional scale factor applied to the character-width
+            estimate.  Use ``cfg.channel_label_font_ratio`` when sizing for
+            the smaller channel-label line so the estimate matches the actual
+            rendered font size.
+    """
+    char_w = cfg.approx_char_width * (cfg.bold_char_width_factor if bold else 1.0) * font_ratio
+    return len(text) * char_w + cfg.text_h_padding
+
+
+def _min_channel_node_height(cfg: LayoutConfig) -> float:
+    """Minimum node height needed to fit two lines of text with an explicit gap.
+
+    Accounts for the bold interface-name line, the explicit
+    ``cfg.channel_line_gap``, the smaller channel-label line, and the total
+    vertical padding ``cfg.node_v_padding``.
+    """
+    line1_h = cfg.font_size
+    line2_h = cfg.font_size * cfg.channel_label_font_ratio
+    return line1_h + cfg.channel_line_gap + line2_h + cfg.node_v_padding
 
 
 def _effective_inner_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple[float, float]:
     """Return ``(width, height)`` for inner child nodes.
 
-    The width is ``max(cfg.node_width, max_required_text_width)`` computed
-    uniformly across all nodes so that every label fits.  Channel nodes use
-    the longer of their interface-name line and their ``$channel_name`` line.
-    Height is always ``cfg.node_height``.
+    Width is ``max(cfg.node_width, max_required_text_width)`` computed
+    uniformly so every label fits.  Bold text (used for ``component`` and
+    ``system`` node labels and for the interface-name line of ``channel``
+    nodes) is estimated using ``cfg.bold_char_width_factor``.
+
+    Height is ``max(cfg.node_height, _min_channel_node_height(cfg))`` when
+    any channel node is present; otherwise ``cfg.node_height``.  This
+    ensures both text lines and the explicit gap fit without clipping.
     """
     w = cfg.node_width
+    h = cfg.node_height
     for node in nodes:
         if node.kind == "channel":
             iface = node.title if node.title else node.label
             needed = max(
-                _required_text_width(iface, cfg),
-                _required_text_width(f"${node.label}", cfg),
+                _required_text_width(iface, cfg, bold=True),
+                _required_text_width(f"${node.label}", cfg, font_ratio=cfg.channel_label_font_ratio),
             )
+            h = max(h, _min_channel_node_height(cfg))
+        elif node.kind in ("component", "system"):
+            needed = _required_text_width(node.label, cfg, bold=True)
         else:
             needed = _required_text_width(node.label, cfg)
         w = max(w, needed)
-    return w, cfg.node_height
+    return w, h
 
 
 def _effective_peripheral_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple[float, float]:
