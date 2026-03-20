@@ -1907,3 +1907,86 @@ component A {
 }
 """)
         assert errors == []
+
+
+# ###############
+# Artifact Semantics
+# ###############
+
+
+class TestArtifactSemantics:
+    def test_artifact_is_valid_top_level_declaration(self) -> None:
+        _assert_clean("artifact Report {}")
+
+    def test_artifact_name_usable_as_field_type_in_type(self) -> None:
+        _assert_clean("""\
+artifact Report {}
+type Order {
+    field report: Report
+}
+""")
+
+    def test_artifact_name_usable_as_field_type_in_interface(self) -> None:
+        _assert_clean("""\
+artifact Bundle {}
+interface DeployRequest {
+    field bundle: Bundle
+}
+""")
+
+    def test_artifact_name_usable_inside_optional(self) -> None:
+        _assert_clean("""\
+artifact Report {}
+type Order {
+    field report: Optional<Report>
+}
+""")
+
+    def test_artifact_name_usable_inside_list(self) -> None:
+        _assert_clean("""\
+artifact Report {}
+type Batch {
+    field reports: List<Report>
+}
+""")
+
+    def test_duplicate_artifact_name_is_an_error(self) -> None:
+        _assert_error(
+            "artifact Dup {}\nartifact Dup {}",
+            "Duplicate artifact name 'Dup'",
+        )
+
+    def test_artifact_name_clashing_with_type_name_is_an_error(self) -> None:
+        _assert_error(
+            "type Clash {}\nartifact Clash {}",
+            "defined as both an artifact and an enum or type",
+        )
+
+    def test_artifact_name_clashing_with_enum_name_is_an_error(self) -> None:
+        _assert_error(
+            "enum Clash {\n    VAL\n}\nartifact Clash {}",
+            "defined as both an artifact and an enum or type",
+        )
+
+    def test_imported_artifact_name_is_valid_field_type(self) -> None:
+        from archml.model.entities import ArchFile, ArtifactDef
+
+        resolved = {"artifacts": ArchFile(artifacts=[ArtifactDef(name="Bundle")])}
+        _assert_clean(
+            """\
+from artifacts import Bundle
+interface DeployRequest {
+    field bundle: Bundle
+}
+""",
+            resolved_imports=resolved,
+        )
+
+    def test_artifact_included_in_top_level_names_for_import_validation(self) -> None:
+        from archml.model.entities import ArchFile, ArtifactDef
+
+        resolved = {"artifacts": ArchFile(artifacts=[ArtifactDef(name="Report")])}
+        _assert_clean(
+            "from artifacts import Report",
+            resolved_imports=resolved,
+        )

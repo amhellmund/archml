@@ -36,24 +36,31 @@ Single-quoted strings may not contain a literal newline character but support th
 
 `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 
-### File and Directory
+### Artifacts
 
-`File` and `Directory` represent filesystem entities exchanged between components (configuration files, data exports, logs, etc.).
-
-A `File` field specifies a `filetype` and an optional free-text `schema` describing the expected content:
+The `artifact` keyword defines an abstract, named data artifact — a file, directory, stream, blob, or any other data shape exchanged between components. The concrete implementation (which filesystem type, storage backend, etc.) is specified in the deployment architecture. Artifacts can be used as field types within `type` and `interface` definitions.
 
 ```
-field app_config: File {
-    filetype = "YAML"
-    schema = "Top-level keys: server, database, logging."
+artifact MonthlyReport {
+    title = "Monthly Sales Report"
+    description = "PDF summary of monthly sales figures per region."
+    spec = "Single-page PDF, A4, landscape. Header contains logo and date range."
+    ref_url = "https://internal.wiki/report-format"
 }
 ```
 
-A `Directory` field specifies a `schema` describing the expected layout:
+| Attribute     | Required | Description                                                      |
+| ------------- | -------- | ---------------------------------------------------------------- |
+| `title`       | no       | Human-readable display name.                                     |
+| `description` | no       | Purpose and context of the artifact.                             |
+| `spec`        | no       | Free-text description of the expected content, shape, or format. |
+| `ref_url`     | no       | URL to an external specification or reference document.          |
+
+Once defined, an artifact is referenced by name as a field type in any `type` or `interface`:
 
 ```
-field artifact: Directory {
-    schema = "Contains manifests/*.yaml, config/app.yaml, config/secrets.env, scripts/deploy.sh"
+interface ReportOutput {
+    field report: MonthlyReport
 }
 ```
 
@@ -626,11 +633,13 @@ interface ValidationResult {
     field valid: Bool
 }
 
+artifact MonthlyReport {
+    title = "Monthly Sales Report"
+    spec = "Monthly sales summary PDF."
+}
+
 interface ReportOutput {
-    field report: File {
-        filetype = "PDF"
-        schema = "Monthly sales summary report."
-    }
+    field report: MonthlyReport
 }
 
 // file: components/order_service.archml
@@ -733,9 +742,11 @@ system ECommerce {
 | `interface`     | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc.                                    |
 | `type`          | Reusable data structure (used within interfaces).                                                                  |
 | `enum`          | Constrained set of named values.                                                                                   |
+| `artifact`      | Abstract data artifact (file, directory, blob, etc.) whose concrete form is given in the deployment architecture.  |
 | `field`         | Named, typed data element. Supports `description` and `schema` annotations.                                        |
-| `filetype`      | Annotation on a `File` field specifying its format.                                                                |
-| `schema`        | Free-text annotation describing expected content or format.                                                        |
+| `schema`        | Free-text annotation on a `field` describing expected content or format.                                           |
+| `spec`          | Free-text annotation on an `artifact` describing its expected content, shape, or format.                           |
+| `ref_url`       | Optional URL on an `artifact` pointing to an external specification.                                               |
 | `requires`      | Declares a port that consumes an interface (listed before `provides`).                                             |
 | `provides`      | Declares a port that exposes an interface.                                                                         |
 | `as`            | Assigns an explicit name to a port (`requires PaymentRequest as pay_in`).                                          |

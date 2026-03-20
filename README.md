@@ -139,6 +139,7 @@ Large architectures split naturally across files. A `from ... import` statement 
 | `user`                             | Human actor (role or persona) that interacts with the system                      |
 | `interface`                        | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
 | `type`                             | Reusable data structure (used within interfaces)                                  |
+| `artifact`                         | Abstract data artifact (file, directory, blob, etc.) used as a field type         |
 | `enum`                             | Constrained set of named values                                                   |
 | `field`                            | Named, typed data element with optional `description` and `schema`                |
 | `requires` / `provides`            | Declare a port that consumes or exposes an interface                              |
@@ -153,7 +154,6 @@ Large architectures split naturally across files. A `from ... import` statement 
 
 Primitive types: `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
-Filesystem types: `File` (with `filetype`, `schema`), `Directory` (with `schema`)
 
 Multi-line descriptions use triple-quoted strings:
 

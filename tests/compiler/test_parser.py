@@ -8,6 +8,7 @@ import pytest
 from archml.compiler.parser import ParseError, parse
 from archml.model.entities import (
     ArchFile,
+    ArtifactDef,
     ConnectDef,
     ExposeDef,
 )
@@ -2186,3 +2187,99 @@ connect A -> $ch -> B
         assert conn.channel == "ch"
         assert conn.dst_entity is None
         assert conn.dst_port == "B"
+
+
+# ###############
+# Artifact Declarations
+# ###############
+
+
+class TestArtifactDeclarations:
+    def test_minimal_artifact(self) -> None:
+        result = _parse("artifact ReportPDF {}")
+        assert len(result.artifacts) == 1
+        a = result.artifacts[0]
+        assert isinstance(a, ArtifactDef)
+        assert a.name == "ReportPDF"
+        assert a.title is None
+        assert a.description is None
+        assert a.spec is None
+        assert a.ref_url is None
+
+    def test_artifact_with_all_attributes(self) -> None:
+        source = """\
+artifact DeployBundle {
+    title = "Deployment Bundle"
+    description = "Kubernetes manifests for production rollout."
+    spec = "Contains manifests/*.yaml, config/app.yaml"
+    ref_url = "https://example.com/deploy-spec"
+}"""
+        result = _parse(source)
+        a = result.artifacts[0]
+        assert a.name == "DeployBundle"
+        assert a.title == "Deployment Bundle"
+        assert a.description == "Kubernetes manifests for production rollout."
+        assert a.spec == "Contains manifests/*.yaml, config/app.yaml"
+        assert a.ref_url == "https://example.com/deploy-spec"
+
+    def test_artifact_with_title_only(self) -> None:
+        source = 'artifact Report {\n    title = "My Report"\n}'
+        result = _parse(source)
+        assert result.artifacts[0].title == "My Report"
+        assert result.artifacts[0].spec is None
+
+    def test_artifact_with_spec_only(self) -> None:
+        source = 'artifact Config {\n    spec = "YAML file with server and database keys."\n}'
+        result = _parse(source)
+        assert result.artifacts[0].spec == "YAML file with server and database keys."
+
+    def test_artifact_line_number(self) -> None:
+        source = "\n\nartifact Report {}"
+        result = _parse(source)
+        assert result.artifacts[0].line == 3
+
+    def test_multiple_artifacts(self) -> None:
+        source = "artifact A {}\nartifact B {}"
+        result = _parse(source)
+        assert len(result.artifacts) == 2
+        assert result.artifacts[0].name == "A"
+        assert result.artifacts[1].name == "B"
+
+    def test_artifact_used_as_named_field_type(self) -> None:
+        source = """\
+artifact Report {}
+type Order {
+    field report: Report
+}"""
+        result = _parse(source)
+        assert len(result.artifacts) == 1
+        assert isinstance(result.types[0].fields[0].type, NamedTypeRef)
+        assert result.types[0].fields[0].type.name == "Report"
+
+    def test_artifact_used_as_field_type_in_interface(self) -> None:
+        source = """\
+artifact Bundle {}
+interface DeployRequest {
+    field bundle: Bundle
+}"""
+        result = _parse(source)
+        assert isinstance(result.interfaces[0].fields[0].type, NamedTypeRef)
+        assert result.interfaces[0].fields[0].type.name == "Bundle"
+
+    def test_artifact_mixed_with_other_declarations(self) -> None:
+        source = """\
+type Order {}
+artifact Report {}
+interface Foo {}"""
+        result = _parse(source)
+        assert len(result.types) == 1
+        assert len(result.artifacts) == 1
+        assert len(result.interfaces) == 1
+
+    def test_artifact_body_rejects_field_keyword(self) -> None:
+        with pytest.raises(ParseError, match="Unexpected token"):
+            _parse("artifact Bad { field x: String }")
+
+    def test_artifact_body_rejects_unknown_token(self) -> None:
+        with pytest.raises(ParseError, match="Unexpected token"):
+            _parse("artifact Bad { tags = [] }")

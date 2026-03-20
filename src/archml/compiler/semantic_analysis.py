@@ -144,6 +144,7 @@ class _SemanticAnalyzer:
         local_type_names: set[str] = (
             {e.name for e in self._file.enums}
             | {t.name for t in self._file.types}
+            | {a.name for a in self._file.artifacts}
             | {i.name for i in self._file.interfaces}
         )
         local_interface_defs: dict[tuple[str, str | None], InterfaceDef] = {
@@ -585,6 +586,7 @@ def _collect_all_top_level_names(arch_file: ArchFile) -> set[str]:
     names: set[str] = set()
     names.update(e.name for e in arch_file.enums)
     names.update(t.name for t in arch_file.types)
+    names.update(a.name for a in arch_file.artifacts)
     names.update(i.name for i in arch_file.interfaces)
     names.update(c.name for c in arch_file.components)
     names.update(s.name for s in arch_file.systems)
@@ -654,6 +656,13 @@ def _check_top_level_duplicates(arch_file: ArchFile, filename: str | None = None
             filename,
         )
     )
+    errors.extend(
+        _check_duplicate_name_lines(
+            [(a.name, a.line) for a in arch_file.artifacts],
+            "Duplicate artifact name '{}'",
+            filename,
+        )
+    )
 
     # Interfaces are keyed by (name, version) — two interfaces with the same
     # name but different versions are legal.
@@ -697,12 +706,20 @@ def _check_top_level_duplicates(arch_file: ArchFile, filename: str | None = None
         )
     )
 
-    # An enum and a type with the same name create ambiguity for field type
-    # references.
+    # Enums, types, and artifacts sharing a name create ambiguity for field
+    # type references.
     enum_names = {e.name for e in arch_file.enums}
     type_names = {t.name for t in arch_file.types}
+    artifact_names = {a.name for a in arch_file.artifacts}
     for name in sorted(enum_names & type_names):
         errors.append(SemanticError(message=f"Name '{name}' is defined as both an enum and a type", filename=filename))
+    for name in sorted((enum_names | type_names) & artifact_names):
+        errors.append(
+            SemanticError(
+                message=f"Name '{name}' is defined as both an artifact and an enum or type",
+                filename=filename,
+            )
+        )
 
     return errors
 

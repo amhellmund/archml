@@ -28,6 +28,9 @@ class TokenType(enum.Enum):
     ENUM = "enum"
     FIELD = "field"
     SCHEMA = "schema"
+    ARTIFACT = "artifact"
+    SPEC = "spec"
+    REF_URL = "ref_url"
     REQUIRES = "requires"
     PROVIDES = "provides"
     AS = "as"
@@ -137,6 +140,9 @@ _KEYWORDS: dict[str, TokenType] = {
     "enum": TokenType.ENUM,
     "field": TokenType.FIELD,
     "schema": TokenType.SCHEMA,
+    "artifact": TokenType.ARTIFACT,
+    "spec": TokenType.SPEC,
+    "ref_url": TokenType.REF_URL,
     "requires": TokenType.REQUIRES,
     "provides": TokenType.PROVIDES,
     "as": TokenType.AS,

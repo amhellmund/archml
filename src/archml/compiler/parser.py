@@ -9,6 +9,7 @@ Converts a token stream produced by the scanner into an ArchFile semantic model.
 from archml.compiler.scanner import Token, TokenType, tokenize
 from archml.model.entities import (
     ArchFile,
+    ArtifactDef,
     Component,
     ConnectDef,
     EnumDef,
@@ -99,6 +100,9 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.DESCRIPTION,
         TokenType.TRUE,
         TokenType.FALSE,
+        TokenType.ARTIFACT,
+        TokenType.SPEC,
+        TokenType.REF_URL,
     }
 )
 
@@ -210,6 +214,8 @@ class _Parser:
             result.enums.append(self._parse_enum())
         elif tok.type == TokenType.TYPE:
             result.types.append(self._parse_type_def())
+        elif tok.type == TokenType.ARTIFACT:
+            result.artifacts.append(self._parse_artifact_def())
         elif tok.type == TokenType.INTERFACE:
             result.interfaces.append(self._parse_interface())
         elif tok.type == TokenType.COMPONENT:
@@ -359,6 +365,36 @@ class _Parser:
                 )
         self._expect(TokenType.RBRACE)
         return type_def
+
+    # ------------------------------------------------------------------
+    # Artifact declarations
+    # ------------------------------------------------------------------
+
+    def _parse_artifact_def(self) -> ArtifactDef:
+        """Parse: artifact <Name> { [title=..] [description=..] [spec=..] [ref_url=..] }"""
+        self._expect(TokenType.ARTIFACT)
+        name_tok = self._expect(TokenType.IDENTIFIER)
+        self._expect(TokenType.LBRACE)
+        artifact = ArtifactDef(name=name_tok.value, line=name_tok.line)
+        while not self._check(TokenType.RBRACE, TokenType.EOF):
+            if self._check(TokenType.TITLE):
+                artifact.title = self._parse_string_attr(TokenType.TITLE)
+            elif self._check(TokenType.DESCRIPTION):
+                artifact.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            elif self._check(TokenType.SPEC):
+                artifact.spec = self._parse_string_attr(TokenType.SPEC)
+            elif self._check(TokenType.REF_URL):
+                artifact.ref_url = self._parse_string_attr(TokenType.REF_URL)
+            else:
+                tok = self._current()
+                raise ParseError(
+                    f"Unexpected token {tok.value!r} in artifact body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
+        self._expect(TokenType.RBRACE)
+        return artifact
 
     # ------------------------------------------------------------------
     # Interface declarations

@@ -64,6 +64,22 @@ class InterfaceDef(BaseModel):
     line: int = 0
 
 
+class ArtifactDef(BaseModel):
+    """An abstract data artifact definition.
+
+    Describes a named, abstract data artifact (file, directory, blob, stream,
+    etc.) whose concrete implementation is given in the deployment architecture.
+    Artifacts can be used as field types within types and interfaces.
+    """
+
+    name: str
+    title: str | None = None
+    description: str | None = None
+    spec: str | None = None
+    ref_url: str | None = None
+    line: int = 0
+
+
 class ConnectDef(BaseModel):
     """A ``connect`` statement wiring ports, optionally via a named channel.
 
@@ -181,6 +197,7 @@ class ArchFile(BaseModel):
     imports: list[ImportDeclaration] = _Field(default_factory=list)
     enums: list[EnumDef] = _Field(default_factory=list)
     types: list[TypeDef] = _Field(default_factory=list)
+    artifacts: list[ArtifactDef] = _Field(default_factory=list)
     interfaces: list[InterfaceDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)
