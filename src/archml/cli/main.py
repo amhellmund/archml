@@ -97,6 +97,18 @@ def main() -> None:
         default=".",
         help="Directory containing the ArchML workspace (default: current directory)",
     )
+    visualize_parser.add_argument(
+        "--depth",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Maximum nesting depth to expand. "
+            "For a single entity: 0 = root only, 1 = direct children, etc. "
+            "For 'all': 0 = top-level entities as opaque boxes, 1 = expanded one level, etc. "
+            "Omit for full depth (default)."
+        ),
+    )
 
     # sync-remote subcommand
     sync_remote_parser = subparsers.add_parser(
@@ -335,15 +347,17 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
 
     output_path = Path(args.output)
 
+    depth: int | None = args.depth
+
     if args.entity == "all":
-        viz_diagram = build_viz_diagram_all(compiled)
+        viz_diagram = build_viz_diagram_all(compiled, depth=depth)
     else:
         try:
             entity = resolve_entity(compiled, args.entity)
         except EntityNotFoundError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
-        viz_diagram = build_viz_diagram(entity)
+        viz_diagram = build_viz_diagram(entity, depth=depth)
     layout_plan = compute_layout(viz_diagram)
 
     if output_path.suffix.lower() == ".png":

@@ -9,28 +9,34 @@ element in a :class:`~archml.views.topology.VizDiagram`.
 
 Algorithm overview
 ------------------
-The algorithm operates in four phases, mirroring the classical Sugiyama
-framework used by Graphviz *dot*:
+The algorithm operates recursively, one boundary level at a time:
 
-1. **Layer assignment** — Internal child nodes are partitioned into horizontal
-   columns using the *longest-path* algorithm.  Nodes that only initiate
-   requests (edge sources, i.e. nodes whose ``requires`` ports appear as edge
-   source ports) are placed in the leftmost column; nodes that only respond
-   (edge sinks) are placed in the rightmost column.
+1. **Recursive content sizing** — For each :class:`VizBoundary` in the tree,
+   compute the layout of its *direct* children first (bottom-up).  Direct
+   children are either opaque :class:`VizNode` instances or nested
+   :class:`VizBoundary` instances whose size is already known from the
+   recursive step.  This ensures each boundary is treated as a single,
+   correctly-sized unit in its parent's layout.
 
-2. **Crossing minimisation** — Nodes within each column are ordered to reduce
+2. **Layer assignment** — Direct child nodes are partitioned into horizontal
+   columns using the *longest-path* algorithm applied only to the edges that
+   connect children at this level (not cross-boundary edges from deeper
+   levels).
+
+3. **Crossing minimisation** — Nodes within each column are ordered to reduce
    the number of edge crossings using the *barycenter heuristic* with multiple
    alternating forward and backward sweep passes.
 
-3. **Peripheral placement** — Nodes outside the root boundary (terminal nodes
+4. **Peripheral placement** — Nodes outside the root boundary (terminal nodes
    and external actors) are classified as *left* or *right* peripherals based
    on their role in the edge graph, and stacked vertically beside the boundary.
 
-4. **Coordinate assignment** — Abstract float coordinates are assigned to every
-   node and boundary.  Port anchors follow the ArchML convention: ``requires``
-   ports are anchored to the **left edge** of their node (incoming connections),
-   ``provides`` ports to the **right edge** (outgoing connections).  Edge routes
-   are straight lines between the port anchors.
+5. **Coordinate assignment** — Relative positions within each boundary are
+   computed, then converted to absolute coordinates top-down.  Port anchors
+   follow the ArchML convention: ``requires`` ports are anchored to the
+   **left edge** of their node (incoming connections), ``provides`` ports to
+   the **right edge** (outgoing connections).  Edge routes are straight lines
+   between the port anchors.
 
 Output
 ------
@@ -73,8 +79,12 @@ class LayoutConfig:
         node_gap: Vertical gap between nodes stacked in the same column.
         peripheral_gap: Horizontal gap between peripheral nodes and the root
             boundary edge.
-        boundary_padding: Padding between the root boundary edge and the
-            nearest child node on each side.
+        boundary_padding: Padding between a boundary edge and its nearest
+            child node on each side.
+        boundary_title_reserve: Vertical space reserved at the top of every
+            boundary box for the title label.
+        boundary_bottom_extra_padding: Additional vertical padding at the
+            bottom of a boundary box (used by some renderers).
         peripheral_node_width: Minimum width of terminal and external peripheral
             nodes.  Expanded the same way as ``node_width``.
         peripheral_node_height: Height of terminal and external peripheral nodes.
@@ -97,6 +107,10 @@ class LayoutConfig:
         channel_label_font_ratio: Font-size ratio of the channel label relative
             to the interface name.  Must match the renderer constant
             ``_CHANNEL_LABEL_FONT_RATIO``.
+        diagram_margin: Uniform whitespace added around the entire diagram on
+            all four sides (layout units).  Prevents box strokes from being
+            clipped at the SVG/PNG canvas edge when there are no peripheral
+            nodes on a given side.
     """
 
     node_width: float = 120.0
@@ -116,6 +130,7 @@ class LayoutConfig:
     node_v_padding: float = 28.0
     channel_line_gap: float = 8.0
     channel_label_font_ratio: float = 0.9
+    diagram_margin: float = 4.0
 
 
 @dataclass
@@ -206,8 +221,7 @@ class LayoutPlan:
         nodes: Mapping from node ID to its :class:`NodeLayout`.  Covers all
             internal child nodes and all peripheral nodes.
         boundaries: Mapping from boundary ID to its :class:`BoundaryLayout`.
-            Currently contains the root boundary; nested boundaries will be
-            added in future versions.
+            Covers the root boundary and all nested boundaries.
         port_anchors: Mapping from port ID to its :class:`PortAnchor`.
             Covers ports on every node and boundary in the diagram.
         edge_routes: Mapping from edge ID to its :class:`EdgeRoute`.  Only
@@ -241,7 +255,7 @@ def compute_layout(
             :class:`LayoutConfig` with standard values if omitted.
 
     Returns:
-        A :class:`LayoutPlan` covering all nodes, the root boundary, all port
+        A :class:`LayoutPlan` covering all nodes, all boundaries, all port
         anchors, and all resolvable edge routes.
     """
     return _Layouter(diagram, config or LayoutConfig()).run()
@@ -252,204 +266,109 @@ def compute_layout(
 # ################
 
 
+@dataclass
+class _BndLayoutResult:
+    """Pre-computed layout of a boundary's direct children in relative coordinates.
+
+    Relative coordinates have their origin at the top-left of the boundary's
+    interior area (i.e. after applying ``boundary_padding`` and
+    ``boundary_title_reserve`` offsets from the boundary's own top-left corner).
+    """
+
+    content_w: float
+    content_h: float
+    # (rel_x, rel_y, width, height) for each direct child
+    child_rects: dict[str, tuple[float, float, float, float]]
+    # Recursive layout results for any VizBoundary children
+    sub_layouts: dict[str, _BndLayoutResult]
+
+
 class _Layouter:
-    """Stateful helper that runs the full Sugiyama layout pipeline."""
+    """Stateful helper that runs the full layout pipeline."""
 
     def __init__(self, diagram: VizDiagram, cfg: LayoutConfig) -> None:
         self._diagram = diagram
         self._cfg = cfg
 
-    def run(self) -> LayoutPlan:  # noqa: PLR0914 – intentionally wide orchestrator
+    def run(self) -> LayoutPlan:
         diagram = self._diagram
         cfg = self._cfg
 
-        # --- Step 0: build port → node mapping ---
-        port_to_node = _build_port_to_node(diagram)
-
-        # --- Step 1: collect all leaf VizNodes and all nested VizBoundaries ---
-        # Boundaries can be arbitrarily deep (e.g. A inside Order inside Architecture).
-        # We flatten all leaf VizNode descendants into one list for layer assignment,
-        # and track which leaf nodes belong to which boundary for bounding-box computation.
-        child_nodes: list[VizNode] = [n for n in diagram.root.children if isinstance(n, VizNode)]
-        all_nested_boundaries: list[VizBoundary] = _collect_all_nested_boundaries(diagram.root)
-        boundary_inner_nodes: dict[str, list[VizNode]] = {}
-        for bnd in all_nested_boundaries:
-            leaf_nodes = _collect_leaf_nodes(bnd)
-            boundary_inner_nodes[bnd.id] = leaf_nodes
-            child_nodes.extend(leaf_nodes)
-        # Deduplicate while preserving order (a leaf node belongs to exactly one boundary,
-        # but collect_leaf_nodes is called per boundary so there are no actual duplicates).
-        seen_node_ids: set[str] = set()
-        deduped: list[VizNode] = []
-        for n in child_nodes:
-            if n.id not in seen_node_ids:
-                seen_node_ids.add(n.id)
-                deduped.append(n)
-        child_nodes = deduped
-
-        child_ids = {n.id for n in child_nodes}
-        child_by_id = {n.id: n for n in child_nodes}
-
-        # Build directed edge graph between child nodes.
-        internal_edges: list[tuple[str, str]] = []
-        for edge in diagram.edges:
-            src = port_to_node.get(edge.source_port_id)
-            tgt = port_to_node.get(edge.target_port_id)
-            if src in child_ids and tgt in child_ids and src != tgt:
-                internal_edges.append((src, tgt))
-
-        # --- Step 2: layer assignment (longest-path) ---
-        child_id_list = [n.id for n in child_nodes]
-        raw_layers = _longest_path_layers(child_id_list, internal_edges)
-
-        num_layers = max(raw_layers.values(), default=-1) + 1 if raw_layers else 0
-        layer_groups: dict[int, list[str]] = defaultdict(list)
-        for node_id, layer in raw_layers.items():
-            layer_groups[layer].append(node_id)
-        ordered_layers: list[list[str]] = [layer_groups.get(i, []) for i in range(num_layers)]
-
-        # --- Step 3: crossing minimisation (barycenter heuristic) ---
-        ordered_layers = _minimise_crossings(ordered_layers, internal_edges)
-
-        # --- Step 4: classify peripheral nodes ---
-        peripheral_left, peripheral_right = _classify_peripherals(diagram.peripheral_nodes, diagram.edges, port_to_node)
-
-        # --- Step 5: compute effective node dimensions (text-aware) ---
-        # Each category of nodes gets a single uniform size equal to the maximum
-        # required width across all members of that category.
-        node_w, node_h = _effective_inner_size(child_nodes, cfg)
+        # --- Step 1: classify peripheral nodes ---
+        peripheral_left, peripheral_right = _classify_peripherals(diagram.peripheral_nodes, diagram.edges)
         peri_w, peri_h = _effective_peripheral_size(diagram.peripheral_nodes, cfg)
 
-        # --- Step 6: compute geometry ---
-        max_per_layer = max((len(la) for la in ordered_layers), default=0)
-
-        # Padding used on all sides of nested (child) boundaries.
-        half_pad = cfg.boundary_padding * 0.75
-        # Each nesting level adds a top extension of (half_pad + boundary_title_reserve)
-        # because the inner boundary's top edge protrudes above its leaf nodes.
-        # Multiply by the maximum nesting depth so all titles clear the outer title.
-        # Each nesting level also adds a downward extension of half_pad below leaf nodes,
-        # so the same depth factor is applied symmetrically at the bottom.
-        nesting_depth = _max_boundary_depth(diagram.root)
-        nested_upward_ext = nesting_depth * (half_pad + cfg.boundary_title_reserve)
-        nested_downward_ext = nesting_depth * half_pad
-
-        inner_w = num_layers * node_w + max(0, num_layers - 1) * cfg.layer_gap
-        inner_h = max_per_layer * node_h + max(0, max_per_layer - 1) * cfg.node_gap
-        boundary_w = inner_w + 2 * cfg.boundary_padding
-        boundary_h = (
-            inner_h + 2 * cfg.boundary_padding + cfg.boundary_title_reserve + nested_upward_ext + nested_downward_ext
-        )
+        # --- Step 2: compute root boundary content layout (recursive) ---
+        root_content = _compute_bnd_layout(diagram.root, cfg, diagram.edges)
+        boundary_w = root_content.content_w + 2 * cfg.boundary_padding
+        boundary_h = root_content.content_h + 2 * cfg.boundary_padding + cfg.boundary_title_reserve
 
         left_h = _stack_height(len(peripheral_left), peri_h, cfg.node_gap)
         right_h = _stack_height(len(peripheral_right), peri_h, cfg.node_gap)
+        content_h = max(boundary_h, left_h, right_h)
 
-        total_h = max(boundary_h, left_h, right_h)
+        left_zone_w = (peri_w + cfg.peripheral_gap) if peripheral_left else 0.0
+        right_zone_w = (peri_w + cfg.peripheral_gap) if peripheral_right else 0.0
 
-        left_zone_w = peri_w if peripheral_left else 0.0
-        right_zone_w = peri_w if peripheral_right else 0.0
-        left_gap = cfg.peripheral_gap if peripheral_left else 0.0
-        right_gap = cfg.peripheral_gap if peripheral_right else 0.0
+        margin = cfg.diagram_margin
+        boundary_x = margin + left_zone_w
+        boundary_y = margin + (content_h - boundary_h) / 2.0
+        total_w = left_zone_w + boundary_w + right_zone_w + 2 * margin
+        total_h = content_h + 2 * margin
 
-        boundary_x = left_zone_w + left_gap
-        boundary_y = (total_h - boundary_h) / 2.0
-        total_w = boundary_x + boundary_w + right_gap + right_zone_w
-
-        # --- Step 7: assign node positions ---
+        # --- Step 3: assign absolute positions ---
         node_layouts: dict[str, NodeLayout] = {}
+        boundary_layouts: dict[str, BoundaryLayout] = {}
+        port_anchors: dict[str, PortAnchor] = {}
 
-        for layer_idx, layer_node_ids in enumerate(ordered_layers):
-            col_x = boundary_x + cfg.boundary_padding + layer_idx * (node_w + cfg.layer_gap)
-            col_h = _stack_height(len(layer_node_ids), node_h, cfg.node_gap)
-            col_start_y = (
-                boundary_y
-                + cfg.boundary_padding
-                + cfg.boundary_title_reserve
-                + nested_upward_ext
-                + (inner_h - col_h) / 2.0
-            )
-            for row, node_id in enumerate(layer_node_ids):
-                node_layouts[node_id] = NodeLayout(
-                    node_id=node_id,
-                    x=col_x,
-                    y=col_start_y + row * (node_h + cfg.node_gap),
-                    width=node_w,
-                    height=node_h,
-                )
+        root_bl = BoundaryLayout(
+            boundary_id=diagram.root.id,
+            x=boundary_x,
+            y=boundary_y,
+            width=boundary_w,
+            height=boundary_h,
+        )
+        boundary_layouts[diagram.root.id] = root_bl
+        _add_boundary_anchors(diagram.root, root_bl, port_anchors)
 
-        left_start_y = (total_h - left_h) / 2.0
+        _materialize_content(
+            diagram.root,
+            root_content,
+            boundary_x + cfg.boundary_padding,
+            boundary_y + cfg.boundary_padding + cfg.boundary_title_reserve,
+            cfg,
+            node_layouts,
+            boundary_layouts,
+            port_anchors,
+        )
+
+        # --- Step 4: place peripheral nodes ---
+        left_start_y = margin + (content_h - left_h) / 2.0
         for i, node in enumerate(peripheral_left):
-            node_layouts[node.id] = NodeLayout(
+            nl = NodeLayout(
                 node_id=node.id,
-                x=0.0,
+                x=margin,
                 y=left_start_y + i * (peri_h + cfg.node_gap),
                 width=peri_w,
                 height=peri_h,
             )
+            node_layouts[node.id] = nl
+            _add_node_anchors(node, nl, port_anchors)
 
-        right_x = boundary_x + boundary_w + right_gap
-        right_start_y = (total_h - right_h) / 2.0
+        right_x = boundary_x + boundary_w + (cfg.peripheral_gap if peripheral_right else 0.0)
+        right_start_y = margin + (content_h - right_h) / 2.0
         for i, node in enumerate(peripheral_right):
-            node_layouts[node.id] = NodeLayout(
+            nl = NodeLayout(
                 node_id=node.id,
                 x=right_x,
                 y=right_start_y + i * (peri_h + cfg.node_gap),
                 width=peri_w,
                 height=peri_h,
             )
+            node_layouts[node.id] = nl
+            _add_node_anchors(node, nl, port_anchors)
 
-        # --- Step 8: boundary layout ---
-        boundary_layouts: dict[str, BoundaryLayout] = {
-            diagram.root.id: BoundaryLayout(
-                boundary_id=diagram.root.id,
-                x=boundary_x,
-                y=boundary_y,
-                width=boundary_w,
-                height=boundary_h,
-            )
-        }
-
-        # Compute bounding-box layouts for all nested VizBoundary instances.
-        # Process in reverse order (deepest-first) so that when we compute a parent
-        # boundary's box we can also include its child boundaries' boxes.
-        for bnd in reversed(all_nested_boundaries):
-            inner_lays = [node_layouts[n.id] for n in boundary_inner_nodes[bnd.id] if n.id in node_layouts]
-            # Also include any direct VizBoundary children already computed.
-            for child in bnd.children:
-                if isinstance(child, VizBoundary) and child.id in boundary_layouts:
-                    bl = boundary_layouts[child.id]
-                    # Represent child boundary as a pseudo NodeLayout for min/max.
-                    inner_lays.append(NodeLayout(node_id=child.id, x=bl.x, y=bl.y, width=bl.width, height=bl.height))
-            if not inner_lays:
-                continue
-            bnd_min_x = min(nl.x for nl in inner_lays)
-            bnd_max_x = max(nl.x + nl.width for nl in inner_lays)
-            bnd_min_y = min(nl.y for nl in inner_lays)
-            bnd_max_y = max(nl.y + nl.height for nl in inner_lays)
-            boundary_layouts[bnd.id] = BoundaryLayout(
-                boundary_id=bnd.id,
-                x=bnd_min_x - half_pad,
-                y=bnd_min_y - half_pad - cfg.boundary_title_reserve,
-                width=(bnd_max_x - bnd_min_x) + 2 * half_pad,
-                height=(bnd_max_y - bnd_min_y) + 2 * half_pad + cfg.boundary_title_reserve,
-            )
-
-        # --- Step 9: port anchors ---
-        port_anchors: dict[str, PortAnchor] = {}
-
-        root_bl = boundary_layouts[diagram.root.id]
-        _add_boundary_anchors(diagram.root, root_bl, port_anchors)
-
-        all_viz_nodes: dict[str, VizNode] = {
-            **child_by_id,
-            **{n.id: n for n in diagram.peripheral_nodes},
-        }
-        for node_id, nl in node_layouts.items():
-            viz_node = all_viz_nodes.get(node_id)
-            if viz_node is not None:
-                _add_node_anchors(viz_node, nl, port_anchors)
-
-        # --- Step 10: edge routes (straight-line) ---
+        # --- Step 5: edge routes (straight-line) ---
         edge_routes: dict[str, EdgeRoute] = {}
         for edge in diagram.edges:
             src_anc = port_anchors.get(edge.source_port_id)
@@ -471,72 +390,189 @@ class _Layouter:
         )
 
 
-# -------- boundary traversal helpers --------
+# -------- recursive boundary layout --------
 
 
-def _collect_all_nested_boundaries(boundary: VizBoundary) -> list[VizBoundary]:
-    """Return all VizBoundary descendants of *boundary* in breadth-first order."""
-    result: list[VizBoundary] = []
-    queue = list(boundary.children)
-    while queue:
-        child = queue.pop(0)
+def _compute_bnd_layout(
+    boundary: VizBoundary,
+    cfg: LayoutConfig,
+    all_edges: list,
+) -> _BndLayoutResult:
+    """Compute the relative layout for *boundary*'s direct children.
+
+    Works recursively: nested :class:`VizBoundary` children are laid out first
+    so their dimensions are known before the parent arranges its columns.
+    Only edges that connect ports belonging to direct children at this level
+    are used for layer assignment — edges to/from deeper descendants are not
+    considered at this level.
+
+    Args:
+        boundary: The boundary whose children are to be laid out.
+        cfg: Layout configuration.
+        all_edges: All edges in the diagram (filtered to this level via
+            the direct-child port mapping).
+
+    Returns:
+        A :class:`_BndLayoutResult` with relative child positions and sizes.
+    """
+    direct_children = boundary.children
+    if not direct_children:
+        return _BndLayoutResult(content_w=0.0, content_h=0.0, child_rects={}, sub_layouts={})
+
+    # Map every port in this boundary's subtree to the direct child that owns it.
+    # This ensures edges to/from nested inner nodes are attributed to the right
+    # direct-child boundary, not to the inner node itself.
+    port_to_direct = _build_port_to_direct_child(boundary)
+    direct_ids = {c.id for c in direct_children}
+
+    # Build edge graph between direct children only.
+    internal_edges: list[tuple[str, str]] = []
+    for edge in all_edges:
+        src = port_to_direct.get(edge.source_port_id)
+        tgt = port_to_direct.get(edge.target_port_id)
+        if src is not None and tgt is not None and src in direct_ids and tgt in direct_ids and src != tgt:
+            internal_edges.append((src, tgt))
+
+    # Recursively compute sub-layouts for nested VizBoundary children.
+    sub_layouts: dict[str, _BndLayoutResult] = {}
+    for child in direct_children:
         if isinstance(child, VizBoundary):
-            result.append(child)
-            queue.extend(child.children)
-    return result
+            sub_layouts[child.id] = _compute_bnd_layout(child, cfg, all_edges)
 
+    # Compute uniform size for direct VizNode children.
+    viz_nodes = [c for c in direct_children if isinstance(c, VizNode)]
+    node_w, node_h = _effective_inner_size(viz_nodes, cfg) if viz_nodes else (cfg.node_width, cfg.node_height)
 
-def _collect_leaf_nodes(boundary: VizBoundary) -> list[VizNode]:
-    """Return all VizNode leaf descendants of *boundary* (recursive, depth-first)."""
-    result: list[VizNode] = []
-    for child in boundary.children:
+    # Determine each child's size.
+    child_sizes: dict[str, tuple[float, float]] = {}
+    for child in direct_children:
         if isinstance(child, VizNode):
-            result.append(child)
+            child_sizes[child.id] = (node_w, node_h)
         else:
-            result.extend(_collect_leaf_nodes(child))
-    return result
+            sub = sub_layouts[child.id]
+            bnd_w = sub.content_w + 2 * cfg.boundary_padding
+            bnd_h = sub.content_h + 2 * cfg.boundary_padding + cfg.boundary_title_reserve
+            child_sizes[child.id] = (bnd_w, bnd_h)
+
+    # Layer assignment.
+    child_id_list = [c.id for c in direct_children]
+    raw_layers = _longest_path_layers(child_id_list, internal_edges)
+    num_layers = max(raw_layers.values(), default=-1) + 1 if raw_layers else 0
+
+    if num_layers == 0:
+        ordered_layers: list[list[str]] = [child_id_list]
+        num_layers = 1
+    else:
+        layer_groups: dict[int, list[str]] = defaultdict(list)
+        for cid, layer in raw_layers.items():
+            layer_groups[layer].append(cid)
+        ordered_layers = [layer_groups.get(i, []) for i in range(num_layers)]
+
+    # Crossing minimisation.
+    ordered_layers = _minimise_crossings(ordered_layers, internal_edges)
+
+    # Compute column widths and heights.
+    col_widths = [max((child_sizes[cid][0] for cid in col), default=0.0) for col in ordered_layers]
+    col_heights = [_stack_height_variable([child_sizes[cid][1] for cid in col], cfg.node_gap) for col in ordered_layers]
+
+    content_w = sum(col_widths) + max(0, num_layers - 1) * cfg.layer_gap
+    content_h = max(col_heights, default=0.0)
+
+    # Assign relative positions (origin = interior top-left of this boundary).
+    child_rects: dict[str, tuple[float, float, float, float]] = {}
+    col_x = 0.0
+    for col, col_w, col_h in zip(ordered_layers, col_widths, col_heights, strict=True):
+        row_y = (content_h - col_h) / 2.0
+        for cid in col:
+            cw, ch = child_sizes[cid]
+            x = col_x + (col_w - cw) / 2.0
+            child_rects[cid] = (x, row_y, cw, ch)
+            row_y += ch + cfg.node_gap
+        col_x += col_w + cfg.layer_gap
+
+    return _BndLayoutResult(
+        content_w=content_w,
+        content_h=content_h,
+        child_rects=child_rects,
+        sub_layouts=sub_layouts,
+    )
 
 
-def _max_boundary_depth(boundary: VizBoundary) -> int:
-    """Return the maximum number of nested VizBoundary levels inside *boundary*."""
-    max_d = 0
+def _materialize_content(
+    boundary: VizBoundary,
+    content: _BndLayoutResult,
+    origin_x: float,
+    origin_y: float,
+    cfg: LayoutConfig,
+    node_layouts: dict[str, NodeLayout],
+    boundary_layouts: dict[str, BoundaryLayout],
+    port_anchors: dict[str, PortAnchor],
+) -> None:
+    """Convert relative positions in *content* to absolute layout positions.
+
+    Recursively descends into nested :class:`VizBoundary` children, translating
+    their relative coordinates by the parent's absolute origin.
+    """
     for child in boundary.children:
-        if isinstance(child, VizBoundary):
-            max_d = max(max_d, 1 + _max_boundary_depth(child))
-    return max_d
+        rect = content.child_rects.get(child.id)
+        if rect is None:
+            continue
+        rx, ry, rw, rh = rect
+        abs_x = origin_x + rx
+        abs_y = origin_y + ry
+
+        if isinstance(child, VizNode):
+            nl = NodeLayout(node_id=child.id, x=abs_x, y=abs_y, width=rw, height=rh)
+            node_layouts[child.id] = nl
+            _add_node_anchors(child, nl, port_anchors)
+        else:
+            bl = BoundaryLayout(boundary_id=child.id, x=abs_x, y=abs_y, width=rw, height=rh)
+            boundary_layouts[child.id] = bl
+            _add_boundary_anchors(child, bl, port_anchors)
+            sub = content.sub_layouts.get(child.id)
+            if sub is not None:
+                _materialize_content(
+                    child,
+                    sub,
+                    abs_x + cfg.boundary_padding,
+                    abs_y + cfg.boundary_padding + cfg.boundary_title_reserve,
+                    cfg,
+                    node_layouts,
+                    boundary_layouts,
+                    port_anchors,
+                )
 
 
-# -------- graph helpers --------
+# -------- port mapping helpers --------
 
 
-def _build_port_to_node(diagram: VizDiagram) -> dict[str, str]:
-    """Return a mapping ``port_id → node_or_boundary_id`` for the whole diagram."""
+def _build_port_to_direct_child(boundary: VizBoundary) -> dict[str, str]:
+    """Map every port in *boundary*'s subtree to the direct child that contains it."""
     result: dict[str, str] = {}
-    for p in diagram.root.ports:
-        result[p.id] = diagram.root.id
-    _collect_boundary_port_to_node(diagram.root, result)
-    for node in diagram.peripheral_nodes:
-        for p in node.ports:
-            result[p.id] = node.id
+    for child in boundary.children:
+        _map_subtree_ports_to(child, child.id, result)
     return result
 
 
-def _collect_boundary_port_to_node(boundary: VizBoundary, out: dict[str, str]) -> None:
-    """Recursively map ports of *boundary*'s children into *out*."""
-    for child in boundary.children:
-        if isinstance(child, VizNode):
-            for p in child.ports:
-                out[p.id] = child.id
-        else:
-            for p in child.ports:
-                out[p.id] = child.id
-            _collect_boundary_port_to_node(child, out)
+def _map_subtree_ports_to(
+    node: VizNode | VizBoundary,
+    target_id: str,
+    out: dict[str, str],
+) -> None:
+    """Recursively map all ports in *node*'s subtree to *target_id*."""
+    for p in node.ports:
+        out[p.id] = target_id
+    if isinstance(node, VizBoundary):
+        for child in node.children:
+            _map_subtree_ports_to(child, target_id, out)
+
+
+# -------- peripheral classification --------
 
 
 def _classify_peripherals(
     peripheral_nodes: list[VizNode],
     edges: list,
-    port_to_node: dict[str, str],
 ) -> tuple[list[VizNode], list[VizNode]]:
     """Classify peripheral nodes as left (source) or right (sink).
 
@@ -562,7 +598,6 @@ def _classify_peripherals(
         elif is_tgt and not is_src:
             right.append(node)
         elif is_src and is_tgt:
-            # Mixed: use majority port direction as tiebreaker.
             req_count = sum(1 for p in node.ports if p.direction == "requires")
             prov_count = len(node.ports) - req_count
             if req_count >= prov_count:
@@ -570,7 +605,6 @@ def _classify_peripherals(
             else:
                 right.append(node)
         else:
-            # No edges: terminal kind is authoritative.
             has_req = any(p.direction == "requires" for p in node.ports)
             if has_req:
                 left.append(node)
@@ -614,7 +648,6 @@ def _longest_path_layers(
             successors[src].append(tgt)
             in_degree[tgt] += 1
 
-    # Kahn's topological sort, tracking longest path simultaneously.
     layers: dict[str, int] = {}
     queue: deque[str] = deque()
     for n in node_ids:
@@ -623,7 +656,6 @@ def _longest_path_layers(
             queue.append(n)
 
     if not queue:
-        # All nodes are in cycles – assign every node to layer 0.
         return {n: 0 for n in node_ids}
 
     while queue:
@@ -637,7 +669,6 @@ def _longest_path_layers(
             if in_degree[succ] == 0:
                 queue.append(succ)
 
-    # Nodes unreachable from sources (in cycles) get layer 0.
     for n in node_ids:
         if n not in layers:
             layers[n] = 0
@@ -680,11 +711,11 @@ def _minimise_crossings(
     result = [list(la) for la in layers]
 
     for pass_num in range(num_passes):
-        if pass_num % 2 == 0:  # forward: order layer i by predecessors in i-1
+        if pass_num % 2 == 0:
             for i in range(1, len(result)):
                 fixed = {node: pos for pos, node in enumerate(result[i - 1])}
                 result[i] = _barycenter_sort(result[i], predecessors, fixed)
-        else:  # backward: order layer i by successors in i+1
+        else:
             for i in range(len(result) - 2, -1, -1):
                 fixed = {node: pos for pos, node in enumerate(result[i + 1])}
                 result[i] = _barycenter_sort(result[i], successors, fixed)
@@ -697,11 +728,7 @@ def _barycenter_sort(
     neighbors: dict[str, list[str]],
     positions: dict[str, int],
 ) -> list[str]:
-    """Sort *nodes* by the average position of their neighbours in the fixed layer.
-
-    Nodes with no neighbours in the fixed layer keep their relative order
-    (they are sorted to the end, preserving stability via Python's stable sort).
-    """
+    """Sort *nodes* by the average position of their neighbours in the fixed layer."""
 
     def _key(node_id: str) -> float:
         nbrs = [positions[nb] for nb in neighbors[node_id] if nb in positions]
@@ -731,12 +758,7 @@ def _required_text_width(text: str, cfg: LayoutConfig, *, bold: bool = False, fo
 
 
 def _min_channel_node_height(cfg: LayoutConfig) -> float:
-    """Minimum node height needed to fit two lines of text with an explicit gap.
-
-    Accounts for the bold interface-name line, the explicit
-    ``cfg.channel_line_gap``, the smaller channel-label line, and the total
-    vertical padding ``cfg.node_v_padding``.
-    """
+    """Minimum node height needed to fit two lines of text with an explicit gap."""
     line1_h = cfg.font_size
     line2_h = cfg.font_size * cfg.channel_label_font_ratio
     return line1_h + cfg.channel_line_gap + line2_h + cfg.node_v_padding
@@ -746,13 +768,7 @@ def _effective_inner_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple[floa
     """Return ``(width, height)`` for inner child nodes.
 
     Width is ``max(cfg.node_width, max_required_text_width)`` computed
-    uniformly so every label fits.  Bold text (used for ``component`` and
-    ``system`` node labels and for the interface-name line of ``channel``
-    nodes) is estimated using ``cfg.bold_char_width_factor``.
-
-    Height is ``max(cfg.node_height, _min_channel_node_height(cfg))`` when
-    any channel node is present; otherwise ``cfg.node_height``.  This
-    ensures both text lines and the explicit gap fit without clipping.
+    uniformly so every label fits.  Height accounts for channel nodes.
     """
     w = cfg.node_width
     h = cfg.node_height
@@ -773,12 +789,7 @@ def _effective_inner_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple[floa
 
 
 def _effective_peripheral_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple[float, float]:
-    """Return ``(width, height)`` for peripheral nodes.
-
-    The width is ``max(cfg.peripheral_node_width, max_required_text_width)``
-    so that every peripheral label fits.  Height is always
-    ``cfg.peripheral_node_height``.
-    """
+    """Return ``(width, height)`` for peripheral nodes."""
     w = cfg.peripheral_node_width
     for node in nodes:
         needed = _required_text_width(node.label, cfg)
@@ -790,10 +801,17 @@ def _effective_peripheral_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple
 
 
 def _stack_height(count: int, item_h: float, gap: float) -> float:
-    """Total height of *count* items stacked with *gap* between them."""
+    """Total height of *count* uniformly-sized items stacked with *gap* between them."""
     if count <= 0:
         return 0.0
     return count * item_h + max(0, count - 1) * gap
+
+
+def _stack_height_variable(heights: list[float], gap: float) -> float:
+    """Total height of variably-sized items stacked with *gap* between them."""
+    if not heights:
+        return 0.0
+    return sum(heights) + max(0, len(heights) - 1) * gap
 
 
 def _add_node_anchors(

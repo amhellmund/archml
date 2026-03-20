@@ -240,17 +240,27 @@ class VizDiagram:
 
 def build_viz_diagram(
     entity: Component | System,
+    depth: int | None = None,
 ) -> VizDiagram:
     """Build a :class:`VizDiagram` topology from a model entity.
 
-    The *entity* becomes the root :class:`VizBoundary`.  Its direct children
-    are placed inside the boundary as opaque :class:`VizNode` instances.
-    Named channels referenced in the entity's ``connect`` statements also
-    appear as child nodes with ``kind="channel"``.
+    The *entity* becomes the root :class:`VizBoundary`.  Depending on
+    *depth*, its descendants are rendered as opaque :class:`VizNode`
+    instances or as expanded :class:`VizBoundary` instances showing their
+    internal structure.
+
+    *depth* controls how many levels of nesting are expanded:
+
+    - ``None`` (default): expand all levels recursively (full depth).
+    - ``0``: show only the root entity itself — no child nodes are rendered.
+    - ``1``: render direct children as opaque :class:`VizNode` boxes.
+    - ``N``: expand *N* levels deep; nodes at depth *N* remain opaque.
+
+    Named channels referenced in the entity's ``connect`` statements appear
+    as child nodes with ``kind="channel"`` (unless ``depth=0``).
 
     The entity's own ``requires``/``provides`` interfaces become *terminal*
-    :class:`VizNode` instances in ``peripheral_nodes`` — one node per
-    interface, positioned at the diagram boundary.
+    :class:`VizNode` instances in ``peripheral_nodes`` at all depth settings.
 
     Each ``connect`` statement on the entity produces :class:`VizEdge`
     instances.  A connect through a named channel produces two edges (one
@@ -261,28 +271,15 @@ def build_viz_diagram(
 
     Args:
         entity: The focus component or system to visualize.
+        depth: Maximum nesting depth to expand.  ``None`` means unlimited.
 
     Returns:
-        A :class:`VizDiagram` describing the full diagram topology.
+        A :class:`VizDiagram` describing the diagram topology.
     """
     entity_path = entity.qualified_name or entity.name
     root_id = _make_id(entity_path)
 
-    # --- Child nodes (direct children rendered as opaque boxes) ---
-    child_node_map: dict[str, VizNode] = {}
-    for comp in entity.components:
-        child_path = f"{entity_path}::{comp.name}"
-        child_node_map[comp.name] = _make_child_node(comp, child_path)
-
-    if isinstance(entity, System):
-        for sys in entity.systems:
-            child_path = f"{entity_path}::{sys.name}"
-            child_node_map[sys.name] = _make_child_node(sys, child_path)
-        for user in entity.users:
-            child_path = f"{entity_path}::{user.name}"
-            child_node_map[user.name] = _make_child_node(user, child_path)
-
-    # --- Sub-entity map for connect statement port lookup ---
+    # --- Sub-entity map for connect/expose port lookups (always populated) ---
     all_sub_entity_map: dict[str, Component | System | UserDef] = {}
     for comp in entity.components:
         all_sub_entity_map[comp.name] = comp
@@ -292,13 +289,59 @@ def build_viz_diagram(
         for user in entity.users:
             all_sub_entity_map[user.name] = user
 
+    # --- Child nodes ---
+    # remaining: how many more levels of expansion are allowed for children.
+    # depth=0  → no children at all
+    # depth=1  → children as opaque VizNodes only (remaining=0)
+    # depth>=2 → expand children whose remaining > 0 into VizBoundaries
+    # depth=None → fully recursive (remaining=None)
+    opaque_child_map: dict[str, VizNode] = {}
+    expanded_boundary_map: dict[str, VizBoundary] = {}
+    child_expose_maps: dict[str, _ExposeMap] = {}
+    all_inner_edges: list[VizEdge] = []
+
+    if depth != 0:
+        # remaining: depth budget for the root entity's direct children.
+        # remaining=0 → children must be opaque (depth=1)
+        # remaining>0 or None → children that should_expand become VizBoundaries
+        remaining = None if depth is None else depth - 1
+        for child_name, child in all_sub_entity_map.items():
+            child_path = f"{entity_path}::{child.name}"
+            should_expand_child = (
+                isinstance(child, (Component, System))
+                and _should_expand(child)
+                and (remaining is None or remaining > 0)
+            )
+            if should_expand_child and isinstance(child, (Component, System)):
+                # child_remaining: budget for the child's own children.
+                # Using one level for the child itself, subtract 1 from remaining.
+                child_remaining = None if remaining is None else remaining - 1
+                bnd, inner_edges, expose_map = _build_recursive_boundary(
+                    child,
+                    child_path,
+                    child_remaining,
+                )
+                expanded_boundary_map[child_name] = bnd
+                child_expose_maps[child_name] = expose_map
+                all_inner_edges.extend(inner_edges)
+            else:
+                opaque_child_map[child_name] = _make_child_node(child, child_path)
+
     # --- Channel nodes (from connect statements in this scope) ---
-    channel_node_map = _collect_channel_nodes(entity.connects, root_id, all_sub_entity_map)
+    channel_node_map: dict[str, VizNode] = {}
+    if depth != 0:
+        channel_node_map = _collect_channel_nodes_resolve(
+            entity.connects, root_id, all_sub_entity_map, opaque_child_map, child_expose_maps
+        )
 
     # --- Root boundary ---
     root_ports = _make_ports(root_id, entity)
 
-    all_children: list[VizNode | VizBoundary] = [*child_node_map.values(), *channel_node_map.values()]
+    all_children: list[VizNode | VizBoundary] = [
+        *opaque_child_map.values(),
+        *expanded_boundary_map.values(),
+        *channel_node_map.values(),
+    ]
     root = VizBoundary(
         id=root_id,
         label=entity.name,
@@ -319,13 +362,14 @@ def build_viz_diagram(
         peripheral_nodes.append(_make_terminal_node(ref, "provides"))
     # Expose-based terminals: create a terminal for each exposed port so that
     # the boundary's external interface is visible even when the entity has no
-    # direct requires/provides declarations (e.g. Order::A uses only expose).
+    # direct requires/provides declarations (e.g. Order uses only expose).
+    # Uses _resolve_port_ref so multi-level expose chains are followed.
     _seen_expose_terminal_ids: set[str] = set()
     for _exp in entity.exposes:
         _child_ent = all_sub_entity_map.get(_exp.entity)
         if _child_ent is None:
             continue
-        _port_res = _find_ref_by_port_name(_child_ent, _exp.port)
+        _port_res = _resolve_port_ref(_child_ent, _exp.port)
         if _port_res is None:
             continue
         _exp_dir, _exp_ref = _port_res
@@ -335,15 +379,27 @@ def build_viz_diagram(
             _seen_expose_terminal_ids.add(_term_id)
             peripheral_nodes.append(_make_terminal_node(_exp_ref, _exp_dir, kind="interface"))
 
-    # --- Edges (derived from connect statements, deduplicated by port pair) ---
+    # --- Edges ---
     edges: list[VizEdge] = []
     seen_port_pairs: set[tuple[str, str]] = set()
-    for conn in entity.connects:
-        for edge in _build_edges_from_connect(conn, child_node_map, all_sub_entity_map, channel_node_map):
-            key = (edge.source_port_id, edge.target_port_id)
-            if key not in seen_port_pairs:
-                seen_port_pairs.add(key)
-                edges.append(edge)
+
+    # Inner edges collected during recursive boundary building.
+    for edge in all_inner_edges:
+        key = (edge.source_port_id, edge.target_port_id)
+        if key not in seen_port_pairs:
+            seen_port_pairs.add(key)
+            edges.append(edge)
+
+    # Connect statement edges (skipped when depth=0 since there are no children).
+    if depth != 0:
+        for conn in entity.connects:
+            for edge in _build_edges_from_connect_resolve(
+                conn, opaque_child_map, expanded_boundary_map, all_sub_entity_map, channel_node_map, child_expose_maps
+            ):
+                key = (edge.source_port_id, edge.target_port_id)
+                if key not in seen_port_pairs:
+                    seen_port_pairs.add(key)
+                    edges.append(edge)
 
     # --- Terminal boundary edges ---
     # Connect each terminal node to the root boundary's matching port so that
@@ -383,33 +439,97 @@ def build_viz_diagram(
                     interface_version=ref.version,
                 )
             )
-    # Expose-based terminal edges: connect each expose terminal directly to the
-    # child node's port so the connection visibly reaches the subcomponent.
+    # Expose-based terminal edges: connect each expose terminal to the appropriate
+    # endpoint depending on what is visible in the diagram at the current depth.
+    #
+    # Case 1 — opaque child: connect terminal directly to the child VizNode's port.
+    # Case 2 — expanded child (VizBoundary): connect terminal to the boundary's own
+    #           visible port (left/right edge).  Connecting to an inner leaf would
+    #           draw arrows that tunnel through the boundary box, which is confusing.
+    # Case 3 — child not visible (depth=0, or expose references a deeper-than-drawn
+    #           entity): promote the interface to a root-boundary port and connect the
+    #           terminal to that port, so the entity renders as a complete black box.
+    #
+    # _resolve_port_ref is used instead of _find_ref_by_port_name so that
+    # multi-level expose chains (e.g. Order→A.OrderRequest→SubA1.OrderRequest)
+    # are followed even when intermediate entities have no direct requires/provides.
     for _exp in entity.exposes:
         _child_ent = all_sub_entity_map.get(_exp.entity)
-        _child_node = child_node_map.get(_exp.entity)
-        if _child_ent is None or _child_node is None:
+        if _child_ent is None:
             continue
-        _port_res = _find_ref_by_port_name(_child_ent, _exp.port)
-        if _port_res is None:
+
+        _conn_port_id: str | None = None
+        _exp_dir: Literal["requires", "provides"]
+        _exp_ref: InterfaceRef
+
+        _child_node = opaque_child_map.get(_exp.entity)
+        if _child_node is not None:
+            # Case 1: child is an opaque VizNode — resolve port (following expose
+            # chains within the child if it has no direct requires/provides).
+            _port_res = _resolve_port_ref(_child_ent, _exp.port)
+            if _port_res is None:
+                continue
+            _exp_dir, _exp_ref = _port_res
+            _conn_port_id = _find_port_id(_child_node, _exp_dir, _exp_ref)
+            if _conn_port_id is None:
+                _p = _make_port(_child_node.id, _exp_dir, _exp_ref)
+                _child_node.ports.append(_p)
+                _conn_port_id = _p.id
+        elif _exp.entity in expanded_boundary_map:
+            # Case 2: child is an expanded VizBoundary — follow its expose chain to
+            # the deepest visible opaque VizNode, so arrows connect to the lowest
+            # available port at the current depth.  Fall back to the boundary's own
+            # port when the interface is a direct requires/provides (not expose-based).
+            _bnd = expanded_boundary_map[_exp.entity]
+            _inner = child_expose_maps.get(_exp.entity, {}).get(_exp.port)
+            if _inner is not None:
+                _leaf_node, _leaf_ent, _leaf_port = _inner
+                _leaf_res = _find_ref_by_port_name(_leaf_ent, _leaf_port)
+                if _leaf_res is None:
+                    continue
+                _exp_dir, _exp_ref = _leaf_res
+                _conn_port_id = _find_port_id(_leaf_node, _exp_dir, _exp_ref)
+                if _conn_port_id is None:
+                    _p = _make_port(_leaf_node.id, _exp_dir, _exp_ref)
+                    _leaf_node.ports.append(_p)
+                    _conn_port_id = _p.id
+            else:
+                # Direct port on expanded boundary (no expose chain to follow).
+                _port_res = _resolve_port_ref(_child_ent, _exp.port)
+                if _port_res is None:
+                    continue
+                _exp_dir, _exp_ref = _port_res
+                _conn_port_id = _find_port_id(_bnd, _exp_dir, _exp_ref)
+                if _conn_port_id is None:
+                    _p = _make_port(_bnd.id, _exp_dir, _exp_ref)
+                    _bnd.ports.append(_p)
+                    _conn_port_id = _p.id
+        else:
+            # Case 3: child not visible — resolve the ultimate ref through the
+            # full expose chain and promote it to a root-boundary port.
+            _port_res = _resolve_port_ref(_child_ent, _exp.port)
+            if _port_res is None:
+                continue
+            _exp_dir, _exp_ref = _port_res
+            _root_pid = _port_id(root_id, _exp_dir, _exp_ref)
+            if not any(p.id == _root_pid for p in root_ports):
+                root_ports.append(_make_port(root_id, _exp_dir, _exp_ref))
+            _conn_port_id = _root_pid
+
+        if _conn_port_id is None:
             continue
-        _exp_dir, _exp_ref = _port_res
-        _child_port_id = _find_port_id(_child_node, _exp_dir, _exp_ref)
-        if _child_port_id is None:
-            _p = _make_port(_child_node.id, _exp_dir, _exp_ref)
-            _child_node.ports.append(_p)
-            _child_port_id = _p.id
+
         if _exp_dir == "requires":
             _term_id = f"terminal.req.{_iref_label(_exp_ref)}"
             _term_port_id = f"{_term_id}.port"
-            _ekey: tuple[str, str] = (_term_port_id, _child_port_id)
+            _ekey: tuple[str, str] = (_term_port_id, _conn_port_id)
             if _ekey not in seen_port_pairs:
                 seen_port_pairs.add(_ekey)
                 edges.append(
                     VizEdge(
-                        id=f"edge.{_term_port_id}--{_child_port_id}",
+                        id=f"edge.{_term_port_id}--{_conn_port_id}",
                         source_port_id=_term_port_id,
-                        target_port_id=_child_port_id,
+                        target_port_id=_conn_port_id,
                         label=_iref_label(_exp_ref),
                         interface_name=_exp_ref.name,
                         interface_version=_exp_ref.version,
@@ -418,13 +538,13 @@ def build_viz_diagram(
         else:
             _term_id = f"terminal.prov.{_iref_label(_exp_ref)}"
             _term_port_id = f"{_term_id}.port"
-            _ekey = (_child_port_id, _term_port_id)
+            _ekey = (_conn_port_id, _term_port_id)
             if _ekey not in seen_port_pairs:
                 seen_port_pairs.add(_ekey)
                 edges.append(
                     VizEdge(
-                        id=f"edge.{_child_port_id}--{_term_port_id}",
-                        source_port_id=_child_port_id,
+                        id=f"edge.{_conn_port_id}--{_term_port_id}",
+                        source_port_id=_conn_port_id,
                         target_port_id=_term_port_id,
                         label=_iref_label(_exp_ref),
                         interface_name=_exp_ref.name,
@@ -442,7 +562,7 @@ def build_viz_diagram(
     )
 
 
-def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
+def build_viz_diagram_all(arch_files: dict[str, ArchFile], depth: int | None = None) -> VizDiagram:
     """Build a :class:`VizDiagram` showing all top-level entities across *arch_files*.
 
     Creates a synthetic root boundary labelled ``"Architecture"`` whose
@@ -452,11 +572,16 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
     Top-level ``connect`` statements from all files provide the edges and
     channel nodes.
 
-    Non-external components and systems that have inner children (components,
-    sub-systems, or users) are rendered as expanded :class:`VizBoundary`
-    instances so their internal structure is visible.  Expansion is recursive:
-    an expanded entity's children that themselves have sub-entities are also
-    expanded.  External entities and leaf entities are opaque :class:`VizNode`
+    *depth* controls how many levels of nesting are expanded:
+
+    - ``None`` (default): expand all levels recursively (full depth).
+    - ``0``: render top-level entities as opaque :class:`VizNode` boxes.
+    - ``1``: expand top-level entities one level; their children are opaque.
+    - ``N``: expand *N* levels deep; nodes at depth *N* remain opaque.
+
+    Non-external components and systems that have inner children are rendered
+    as expanded :class:`VizBoundary` instances when the depth budget allows.
+    External entities and leaf entities are always opaque :class:`VizNode`
     instances.
 
     When a ``connect`` targets a port on an expanded entity, resolution follows
@@ -470,6 +595,7 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
         arch_files: Mapping from canonical file key to compiled
             :class:`~archml.model.entities.ArchFile`, as returned by
             :func:`~archml.compiler.build.compile_files`.
+        depth: Maximum nesting depth to expand.  ``None`` means unlimited.
 
     Returns:
         A :class:`VizDiagram` describing the full architecture topology.
@@ -487,12 +613,18 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
     all_inner_edges: list[VizEdge] = []
     all_connects: list[ConnectDef] = []
 
+    # entity_depth: remaining_depth to pass into _build_recursive_boundary for
+    # each top-level entity.  depth=0 → entities are opaque (no expansion);
+    # depth=1 → entities expanded with entity_depth=0 (children opaque);
+    # depth=N → entity_depth=N-1; depth=None → None (unlimited).
+    entity_depth = None if depth is None else max(depth - 1, 0)
+
     for arch_file in arch_files.values():
         for comp in arch_file.components:
             entity_path = comp.qualified_name or comp.name
             all_sub_entity_map[comp.name] = comp
-            if _should_expand(comp):
-                bnd, inner_edges, expose_map = _build_recursive_boundary(comp, entity_path)
+            if _should_expand(comp) and (depth is None or depth >= 1):
+                bnd, inner_edges, expose_map = _build_recursive_boundary(comp, entity_path, entity_depth)
                 expanded_boundary_map[comp.name] = bnd
                 expanded_expose_maps[comp.name] = expose_map
                 all_inner_edges.extend(inner_edges)
@@ -501,8 +633,8 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
         for sys in arch_file.systems:
             entity_path = sys.qualified_name or sys.name
             all_sub_entity_map[sys.name] = sys
-            if _should_expand(sys):
-                bnd, inner_edges, expose_map = _build_recursive_boundary(sys, entity_path)
+            if _should_expand(sys) and (depth is None or depth >= 1):
+                bnd, inner_edges, expose_map = _build_recursive_boundary(sys, entity_path, entity_depth)
                 expanded_boundary_map[sys.name] = bnd
                 expanded_expose_maps[sys.name] = expose_map
                 all_inner_edges.extend(inner_edges)
@@ -540,11 +672,12 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile]) -> VizDiagram:
             seen_port_pairs.add(key)
             edges.append(edge)
 
-    # Top-level edges — resolve exposed ports through the full expose chain.
+    # Top-level edges — route to boundary ports for expanded entities.
     for conn in all_connects:
         for edge in _build_edges_from_connect_expanded(
             conn,
             opaque_node_map,
+            expanded_boundary_map,
             all_sub_entity_map,
             channel_node_map,
             expanded_expose_maps,
@@ -780,7 +913,7 @@ def _collect_channel_nodes(
 
 
 def _find_port_id(
-    node: VizNode,
+    node: VizNode | VizBoundary,
     direction: Literal["requires", "provides"],
     ref: InterfaceRef,
 ) -> str | None:
@@ -810,6 +943,46 @@ def _find_ref_by_port_name(
         effective = ref.port_name if ref.port_name else ref.name
         if effective == port_name:
             return ("provides", ref)
+    return None
+
+
+def _resolve_port_ref(
+    entity: Component | System | UserDef,
+    port_name: str,
+) -> tuple[Literal["requires", "provides"], InterfaceRef] | None:
+    """Resolve *port_name* on *entity*, following expose chains if necessary.
+
+    First checks direct ``requires``/``provides`` declarations.  If not found,
+    walks the entity's ``expose`` declarations recursively until the leaf
+    entity that owns the underlying interface is reached.
+
+    Returns a ``(direction, InterfaceRef)`` pair, or ``None`` if unresolvable.
+    """
+    result = _find_ref_by_port_name(entity, port_name)
+    if result is not None:
+        return result
+    if isinstance(entity, (Component, System)):
+        for exp in entity.exposes:
+            effective = exp.as_name if exp.as_name else exp.port
+            if effective != port_name:
+                continue
+            sub_ent: Component | System | UserDef | None = None
+            for comp in entity.components:
+                if comp.name == exp.entity:
+                    sub_ent = comp
+                    break
+            if sub_ent is None and isinstance(entity, System):
+                for sys in entity.systems:
+                    if sys.name == exp.entity:
+                        sub_ent = sys
+                        break
+                if sub_ent is None:
+                    for user in entity.users:
+                        if user.name == exp.entity:
+                            sub_ent = user
+                            break
+            if sub_ent is not None:
+                return _resolve_port_ref(sub_ent, exp.port)
     return None
 
 
@@ -996,6 +1169,7 @@ _ExposeMap = dict[str, tuple[VizNode, "Component | System | UserDef", str]]
 def _build_recursive_boundary(
     entity: Component | System,
     entity_path: str,
+    remaining_depth: int | None = None,
 ) -> tuple[VizBoundary, list[VizEdge], _ExposeMap]:
     """Build a :class:`VizBoundary` for *entity*, recursively expanding children.
 
@@ -1007,6 +1181,13 @@ def _build_recursive_boundary(
     Port and interface resolution follows ``expose`` chains at arbitrary depth
     so that a connect statement referencing an exposed port on an expanded child
     is correctly routed to the actual leaf component.
+
+    *remaining_depth* controls how many additional levels of nesting are
+    expanded inside *entity*:
+
+    - ``None`` (default): expand all nested levels (unlimited).
+    - ``0``: all of *entity*'s children are rendered as opaque nodes.
+    - ``N > 0``: expand *N* more levels; children at depth *N* are opaque.
 
     Returns:
         A three-tuple ``(boundary, edges, expose_map)`` where
@@ -1033,8 +1214,9 @@ def _build_recursive_boundary(
     for child in child_entities:
         child_path = f"{entity_path}::{child.name}"
         sub_entity_map[child.name] = child
-        if _should_expand(child):
-            child_bnd, child_edges, child_expose_map = _build_recursive_boundary(child, child_path)  # type: ignore[arg-type]
+        if _should_expand(child) and (remaining_depth is None or remaining_depth > 0):
+            next_depth = None if remaining_depth is None else remaining_depth - 1
+            child_bnd, child_edges, child_expose_map = _build_recursive_boundary(child, child_path, next_depth)  # type: ignore[arg-type]
             child_boundary_map[child.name] = child_bnd
             child_expose_maps[child.name] = child_expose_map
             all_edges.extend(child_edges)
@@ -1067,7 +1249,7 @@ def _build_recursive_boundary(
     seen: set[tuple[str, str]] = set()
     for conn in entity.connects:
         for edge in _build_edges_from_connect_resolve(
-            conn, opaque_node_map, sub_entity_map, channel_node_map, child_expose_maps
+            conn, opaque_node_map, child_boundary_map, sub_entity_map, channel_node_map, child_expose_maps
         ):
             key = (edge.source_port_id, edge.target_port_id)
             if key not in seen:
@@ -1172,27 +1354,38 @@ def _collect_channel_nodes_resolve(
 def _build_edges_from_connect_resolve(
     conn: ConnectDef,
     opaque_node_map: dict[str, VizNode],
+    expanded_boundary_map: dict[str, VizBoundary],
     sub_entity_map: dict[str, Component | System | UserDef],
     channel_node_map: dict[str, VizNode],
     child_expose_maps: dict[str, _ExposeMap],
 ) -> list[VizEdge]:
-    """Build edges from a connect statement using expose-chain resolution.
+    """Build edges from a connect statement, connecting to the lowest visible port.
 
-    Used inside :func:`_build_recursive_boundary` to build edges that may
-    reference exposed ports on expanded child entities.
+    For opaque entities the edge attaches to the entity's :class:`VizNode` port.
+    For expanded entities the expose chain is followed to the deepest visible
+    opaque :class:`VizNode` inside the boundary.  If the port is a direct
+    ``requires``/``provides`` (not expose-based), the :class:`VizBoundary` port
+    on the visible edge is used as fallback.
     """
 
     def resolve_side(
         entity_name: str | None, port_name: str | None
-    ) -> tuple[VizNode, Component | System | UserDef, str] | None:
+    ) -> tuple[VizNode | VizBoundary, Component | System | UserDef, str] | None:
         if entity_name is None or port_name is None:
             return None
-        if entity_name in child_expose_maps:
-            result = child_expose_maps[entity_name].get(port_name)
-            return result  # (leaf_node, leaf_entity, leaf_port) or None
-        node = opaque_node_map.get(entity_name)
         entity = sub_entity_map.get(entity_name)
-        if node is not None and entity is not None:
+        if entity is None:
+            return None
+        expose_map = child_expose_maps.get(entity_name)
+        if expose_map is not None:
+            inner = expose_map.get(port_name)
+            if inner is not None:
+                return inner  # (leaf_node, leaf_entity, leaf_port) — deepest visible
+            bnd = expanded_boundary_map.get(entity_name)
+            if bnd is not None:
+                return (bnd, entity, port_name)  # direct port on expanded boundary
+        node = opaque_node_map.get(entity_name)
+        if node is not None:
             return (node, entity, port_name)
         return None
 
@@ -1203,20 +1396,25 @@ def _resolve_endpoint(
     entity_name: str,
     port_name: str,
     opaque_node_map: dict[str, VizNode],
+    expanded_boundary_map: dict[str, VizBoundary],
     all_entity_map: dict[str, Component | System | UserDef],
-    expanded_expose_maps: dict[str, _ExposeMap],
-) -> tuple[VizNode, Component | System | UserDef, str] | None:
-    """Resolve an ``entity.port`` reference to ``(leaf_node, leaf_entity, leaf_port)``.
+) -> tuple[VizNode | VizBoundary, Component | System | UserDef, str] | None:
+    """Resolve an ``entity.port`` reference to ``(node, entity, port_name)``.
 
-    For expanded entities the resolution uses the pre-computed expose map that
-    follows the full expose chain to the actual leaf component.  For opaque
-    entities the entity's own :class:`VizNode` is returned directly.
+    For expanded entities the boundary itself is returned so that the edge
+    attaches to the entity's own boundary port rather than to an inner leaf.
+    For opaque entities the entity's :class:`VizNode` is returned directly.
+    In both cases :func:`_resolve_port_ref` is used by the caller to obtain
+    the interface direction, so expose chains are always followed.
     """
-    if entity_name in expanded_expose_maps:
-        return expanded_expose_maps[entity_name].get(port_name)
     entity = all_entity_map.get(entity_name)
+    if entity is None:
+        return None
+    boundary = expanded_boundary_map.get(entity_name)
+    if boundary is not None:
+        return (boundary, entity, port_name)
     node = opaque_node_map.get(entity_name)
-    if entity is not None and node is not None:
+    if node is not None:
         return (node, entity, port_name)
     return None
 
@@ -1224,18 +1422,39 @@ def _resolve_endpoint(
 def _build_edges_from_connect_expanded(
     conn: ConnectDef,
     opaque_node_map: dict[str, VizNode],
+    expanded_boundary_map: dict[str, VizBoundary],
     all_entity_map: dict[str, Component | System | UserDef],
     channel_node_map: dict[str, VizNode],
     expanded_expose_maps: dict[str, _ExposeMap],
 ) -> list[VizEdge]:
-    """Build edges for the all-diagram, resolving exposed ports through the full chain."""
+    """Build edges for the all-diagram, connecting to the lowest visible port.
+
+    For expanded entities the expose chain is followed to the deepest visible
+    opaque :class:`VizNode` inside the boundary.  If the port is a direct
+    ``requires``/``provides`` (not expose-based), the :class:`VizBoundary` port
+    is used as fallback.  For opaque entities the :class:`VizNode` port is used.
+    """
 
     def resolve_side(
         entity_name: str | None, port_name: str | None
-    ) -> tuple[VizNode, Component | System | UserDef, str] | None:
+    ) -> tuple[VizNode | VizBoundary, Component | System | UserDef, str] | None:
         if entity_name is None or port_name is None:
             return None
-        return _resolve_endpoint(entity_name, port_name, opaque_node_map, all_entity_map, expanded_expose_maps)
+        entity = all_entity_map.get(entity_name)
+        if entity is None:
+            return None
+        expose_map = expanded_expose_maps.get(entity_name)
+        if expose_map is not None:
+            inner = expose_map.get(port_name)
+            if inner is not None:
+                return inner  # deepest visible opaque VizNode
+            bnd = expanded_boundary_map.get(entity_name)
+            if bnd is not None:
+                return (bnd, entity, port_name)  # direct port on expanded boundary
+        node = opaque_node_map.get(entity_name)
+        if node is not None:
+            return (node, entity, port_name)
+        return None
 
     return _build_edges_for_connect(conn, channel_node_map, resolve_side)
 
@@ -1243,12 +1462,19 @@ def _build_edges_from_connect_expanded(
 def _build_edges_for_connect(
     conn: ConnectDef,
     channel_node_map: dict[str, VizNode],
-    resolve_side: Callable[[str | None, str | None], tuple[VizNode, Component | System | UserDef, str] | None],
+    resolve_side: Callable[
+        [str | None, str | None],
+        tuple[VizNode | VizBoundary, Component | System | UserDef, str] | None,
+    ],
 ) -> list[VizEdge]:
     """Core edge-building logic shared between all connect resolution paths.
 
     *resolve_side* is called with ``(entity_name, port_name)`` and must return
-    ``(leaf_node, leaf_entity, leaf_port)`` or ``None`` when resolution fails.
+    ``(node, entity, port_name)`` or ``None`` when resolution fails.  *node*
+    may be a :class:`VizNode` (opaque entity) or :class:`VizBoundary`
+    (expanded entity); in the latter case a boundary port is added on demand.
+    Port direction and interface ref are resolved via :func:`_resolve_port_ref`
+    so that expose chains are always followed correctly.
     """
     if conn.channel is None:
         if conn.src_entity is None or conn.src_port is None:
@@ -1261,8 +1487,8 @@ def _build_edges_for_connect(
             return []
         src_node, src_sub, src_eff = src
         dst_node, dst_sub, dst_eff = dst
-        src_result = _find_ref_by_port_name(src_sub, src_eff)
-        dst_result = _find_ref_by_port_name(dst_sub, dst_eff)
+        src_result = _resolve_port_ref(src_sub, src_eff)
+        dst_result = _resolve_port_ref(dst_sub, dst_eff)
         if src_result is None or dst_result is None:
             return []
         src_dir, src_ref = src_result
@@ -1304,7 +1530,7 @@ def _build_edges_for_connect(
         src = resolve_side(conn.src_entity, conn.src_port)
         if src is not None:
             src_node, src_sub, src_eff = src
-            src_result = _find_ref_by_port_name(src_sub, src_eff)
+            src_result = _resolve_port_ref(src_sub, src_eff)
             if src_result is not None:
                 src_dir, src_ref = src_result
                 src_port_id = _find_port_id(src_node, src_dir, src_ref)
@@ -1330,7 +1556,7 @@ def _build_edges_for_connect(
         dst = resolve_side(conn.dst_entity, conn.dst_port)
         if dst is not None:
             dst_node, dst_sub, dst_eff = dst
-            dst_result = _find_ref_by_port_name(dst_sub, dst_eff)
+            dst_result = _resolve_port_ref(dst_sub, dst_eff)
             if dst_result is not None:
                 dst_dir, dst_ref = dst_result
                 dst_port_id = _find_port_id(dst_node, dst_dir, dst_ref)

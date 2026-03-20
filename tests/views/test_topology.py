@@ -887,6 +887,322 @@ def test_user_connect_creates_edge() -> None:
 
 
 # ###############
+# build_viz_diagram — depth parameter
+# ###############
+
+
+class TestBuildVizDiagramDepth:
+    """Tests for the depth parameter of build_viz_diagram."""
+
+    def _nested_system(self) -> System:
+        """Return a 3-level hierarchy: System → SubSys → Component."""
+        leaf = Component(name="Leaf", provides=[_iref("Data")])
+        sub = System(name="Sub", components=[leaf])
+        root = System(name="Root", systems=[sub])
+        return root
+
+    # depth=0 ---------------------------------------------------------------
+
+    def test_depth_0_root_has_no_children(self) -> None:
+        """depth=0 renders the root boundary with no children at all."""
+        sys = self._nested_system()
+        diag = build_viz_diagram(sys, depth=0)
+        assert diag.root.children == []
+
+    def test_depth_0_root_boundary_still_created(self) -> None:
+        """depth=0 still creates the root VizBoundary."""
+        sys = self._nested_system()
+        diag = build_viz_diagram(sys, depth=0)
+        assert diag.root.id == "Root"
+        assert diag.root.kind == "system"
+
+    def test_depth_0_terminal_nodes_still_present(self) -> None:
+        """depth=0 still shows terminal nodes for the entity's own interfaces."""
+        comp = Component(name="C", requires=[_iref("In")], provides=[_iref("Out")])
+        diag = build_viz_diagram(comp, depth=0)
+        ids = _node_ids(diag.peripheral_nodes)
+        assert "terminal.req.In" in ids
+        assert "terminal.prov.Out" in ids
+
+    def test_depth_0_no_connect_edges(self) -> None:
+        """depth=0 produces no edges from connect statements."""
+        a = Component(name="A", provides=[_iref("X")])
+        b = Component(name="B", requires=[_iref("X")])
+        sys = System(
+            name="S",
+            components=[a, b],
+            connects=[ConnectDef(src_entity="A", src_port="X", channel="ch", dst_entity="B", dst_port="X")],
+        )
+        diag = build_viz_diagram(sys, depth=0)
+        assert diag.root.children == []
+        # No connect edges, but no terminal edges either (S has no own interfaces).
+        assert diag.edges == []
+
+    # depth=1 ---------------------------------------------------------------
+
+    def test_depth_1_direct_children_are_opaque_nodes(self) -> None:
+        """depth=1 renders direct children as opaque VizNode instances."""
+        sys = self._nested_system()
+        diag = build_viz_diagram(sys, depth=1)
+        # The direct child 'Sub' should be an opaque VizNode (not a boundary).
+        child = next(c for c in diag.root.children if c.label == "Sub")
+        assert isinstance(child, VizNode)
+
+    def test_depth_1_non_leaf_child_is_opaque(self) -> None:
+        """depth=1 keeps non-leaf children as opaque boxes (does not expand them)."""
+        inner = Component(name="Inner")
+        outer = System(name="Outer", components=[inner])
+        parent = System(name="Parent", systems=[outer])
+        diag = build_viz_diagram(parent, depth=1)
+        child = next(c for c in diag.root.children if c.label == "Outer")
+        assert isinstance(child, VizNode)
+
+    # depth=2 ---------------------------------------------------------------
+
+    def test_depth_2_direct_non_leaf_children_expanded(self) -> None:
+        """depth=2 expands direct children that have sub-children into VizBoundary."""
+        sys = self._nested_system()
+        diag = build_viz_diagram(sys, depth=2)
+        # 'Sub' has a child → should become a VizBoundary.
+        child = next(c for c in diag.root.children if c.label == "Sub")
+        assert isinstance(child, VizBoundary)
+
+    def test_depth_2_grandchildren_are_opaque(self) -> None:
+        """depth=2 keeps grandchildren (children of expanded children) as opaque VizNodes."""
+        sys = self._nested_system()
+        diag = build_viz_diagram(sys, depth=2)
+        sub_boundary = next(c for c in diag.root.children if isinstance(c, VizBoundary) and c.label == "Sub")
+        grandchild = next(c for c in sub_boundary.children if c.label == "Leaf")
+        assert isinstance(grandchild, VizNode)
+
+    def test_depth_2_leaf_direct_children_stay_opaque(self) -> None:
+        """depth=2 does not expand leaf children (those without sub-children)."""
+        leaf_child = Component(name="Leaf")
+        parent = System(name="Parent", components=[leaf_child])
+        diag = build_viz_diagram(parent, depth=2)
+        child = next(c for c in diag.root.children if c.label == "Leaf")
+        assert isinstance(child, VizNode)
+
+    # depth=None (full expansion) -------------------------------------------
+
+    def test_depth_none_fully_expands_all_levels(self) -> None:
+        """depth=None (default) expands all levels recursively."""
+        sys = self._nested_system()
+        diag = build_viz_diagram(sys)
+        # 'Sub' has a child → VizBoundary.
+        sub_boundary = next(c for c in diag.root.children if isinstance(c, VizBoundary) and c.label == "Sub")
+        # 'Leaf' has no sub-children → opaque VizNode inside Sub.
+        leaf = next(c for c in sub_boundary.children if c.label == "Leaf")
+        assert isinstance(leaf, VizNode)
+
+    def test_depth_none_equals_no_depth_arg(self) -> None:
+        """Calling with depth=None is identical to calling without depth."""
+        sys = self._nested_system()
+        diag_default = build_viz_diagram(sys)
+        diag_none = build_viz_diagram(sys, depth=None)
+
+        # Both should expand 'Sub' as a VizBoundary.
+        def _child_types(diag: object) -> set[type]:
+            import archml.views.topology as topo
+
+            assert isinstance(diag, topo.VizDiagram)
+            return {type(c) for c in diag.root.children}
+
+        assert _child_types(diag_default) == _child_types(diag_none)
+
+    # expose-based terminal edges across all depths --------------------------
+
+    def _expose_system(self) -> System:
+        """System with no direct requires/provides, only expose declarations.
+
+        Order (exposes A.OrderRequest, exposes B.OrderConfirmation)
+          A (requires OrderRequest, provides Simple)
+          B (requires Simple, provides OrderConfirmation)
+        """
+        a = Component(name="A", requires=[_iref("OrderRequest")], provides=[_iref("Simple")])
+        b = Component(name="B", requires=[_iref("Simple")], provides=[_iref("OrderConfirmation")])
+        return System(
+            name="Order",
+            components=[a, b],
+            exposes=[ExposeDef(entity="A", port="OrderRequest"), ExposeDef(entity="B", port="OrderConfirmation")],
+        )
+
+    def test_expose_depth_0_terminal_nodes_exist(self) -> None:
+        """At depth=0 terminals are created for expose-based interfaces."""
+        diag = build_viz_diagram(self._expose_system(), depth=0)
+        ids = _node_ids(diag.peripheral_nodes)
+        assert "terminal.req.OrderRequest" in ids
+        assert "terminal.prov.OrderConfirmation" in ids
+
+    def test_expose_depth_0_root_has_expose_ports(self) -> None:
+        """At depth=0 the root boundary receives ports for each expose-based interface."""
+        diag = build_viz_diagram(self._expose_system(), depth=0)
+        port_names = {p.interface_name for p in diag.root.ports}
+        assert "OrderRequest" in port_names
+        assert "OrderConfirmation" in port_names
+
+    def test_expose_depth_0_terminal_edges_connect_to_root_ports(self) -> None:
+        """At depth=0 expose-terminal edges link terminal nodes to root boundary ports."""
+        diag = build_viz_diagram(self._expose_system(), depth=0)
+        assert len(diag.edges) == 2
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+
+    def test_expose_depth_1_terminal_edges_connect_to_child_ports(self) -> None:
+        """At depth=1 expose-terminal edges connect directly to the child VizNode's port."""
+        diag = build_viz_diagram(self._expose_system(), depth=1)
+        all_ports = collect_all_ports(diag)
+        # Edge for OrderRequest: terminal → Order__A.req.OrderRequest
+        req_edge = next(e for e in diag.edges if e.interface_name == "OrderRequest")
+        tgt = all_ports[req_edge.target_port_id]
+        assert tgt.node_id == "Order__A"
+
+    def test_expose_depth_2_expanded_child_terminal_edge_reaches_inner_node(self) -> None:
+        """At depth=2, when A is expanded, the expose-terminal edge reaches SubA1 inside A."""
+        sub_a1 = Component(name="SubA1", requires=[_iref("OrderRequest")])
+        sub_a2 = Component(name="SubA2", provides=[_iref("Simple")])
+        a = Component(
+            name="A",
+            components=[sub_a1, sub_a2],
+            exposes=[ExposeDef(entity="SubA1", port="OrderRequest")],
+        )
+        b = Component(name="B", requires=[_iref("Simple")], provides=[_iref("OrderConfirmation")])
+        order = System(
+            name="Order",
+            components=[a, b],
+            exposes=[ExposeDef(entity="A", port="OrderRequest"), ExposeDef(entity="B", port="OrderConfirmation")],
+        )
+        diag = build_viz_diagram(order, depth=2)
+        all_ports = collect_all_ports(diag)
+        # A should be expanded as a VizBoundary.
+        a_child = next(c for c in diag.root.children if c.label == "A")
+        assert isinstance(a_child, VizBoundary)
+        # The expose chain is followed to the lowest visible node: SubA1 inside A.
+        req_edge = next(e for e in diag.edges if e.interface_name == "OrderRequest")
+        tgt = all_ports[req_edge.target_port_id]
+        assert "SubA1" in tgt.node_id
+
+
+# ###############
+# build_viz_diagram_all — depth parameter
+# ###############
+
+
+class TestBuildVizDiagramAllDepth:
+    """Tests for the depth parameter of build_viz_diagram_all."""
+
+    def _nested_arch_file(self) -> "ArchFile":
+        """Return an ArchFile with a two-level system: Order → [A, B]."""
+        comp_a = Component(name="A", requires=[_iref("OrderRequest")])
+        comp_b = Component(name="B", provides=[_iref("OrderRequest")])
+        order = System(name="Order", components=[comp_a, comp_b])
+        return _arch_file(systems=[order])
+
+    def test_depth_0_top_level_entities_are_opaque(self) -> None:
+        """depth=0 shows top-level entities as opaque VizNodes."""
+        af = self._nested_arch_file()
+        diag = build_viz_diagram_all({"f": af}, depth=0)
+        child = next(c for c in diag.root.children if c.label == "Order")
+        assert isinstance(child, VizNode)
+
+    def test_depth_1_top_level_entities_expanded(self) -> None:
+        """depth=1 expands top-level entities that have children."""
+        af = self._nested_arch_file()
+        diag = build_viz_diagram_all({"f": af}, depth=1)
+        child = next(c for c in diag.root.children if c.label == "Order")
+        assert isinstance(child, VizBoundary)
+
+    def test_depth_1_children_are_opaque(self) -> None:
+        """depth=1 keeps the children of expanded top-level entities opaque."""
+        af = self._nested_arch_file()
+        diag = build_viz_diagram_all({"f": af}, depth=1)
+        order_boundary = next(c for c in diag.root.children if isinstance(c, VizBoundary) and c.label == "Order")
+        for grandchild in order_boundary.children:
+            assert isinstance(grandchild, VizNode)
+
+    def test_depth_2_top_level_entities_expanded(self) -> None:
+        """depth=2 expands top-level entities that have children."""
+        af = self._nested_arch_file()
+        diag = build_viz_diagram_all({"f": af}, depth=2)
+        child = next(c for c in diag.root.children if c.label == "Order")
+        assert isinstance(child, VizBoundary)
+
+    def test_depth_0_connections_are_present(self) -> None:
+        """depth=0 produces edges connecting opaque entities via a channel."""
+        sink = System(name="Sink", is_external=True, requires=[_iref("OrderRequest")])
+        source = System(name="Source", is_external=True, provides=[_iref("OrderRequest")])
+        conn = ConnectDef(
+            src_entity="Source",
+            src_port="OrderRequest",
+            channel="ch",
+            dst_entity="Sink",
+            dst_port="OrderRequest",
+        )
+        af = _arch_file(systems=[source, sink], connects=[conn])
+        diag = build_viz_diagram_all({"f": af}, depth=0)
+        assert len(diag.edges) == 2  # source→channel and channel→sink
+
+    def test_depth_1_external_entities_not_inside_expanded_system(self) -> None:
+        """depth=1: external systems are siblings of Order, not inside it."""
+        comp_a = Component(name="A", requires=[_iref("Req")])
+        order = System(
+            name="Order",
+            components=[comp_a],
+            exposes=[ExposeDef(entity="A", port="Req")],
+        )
+        ext = System(name="External", is_external=True, provides=[_iref("Req")])
+        conn = ConnectDef(
+            src_entity="External",
+            src_port="Req",
+            channel="ch",
+            dst_entity="Order",
+            dst_port="Req",
+        )
+        af = _arch_file(systems=[order, ext], connects=[conn])
+        diag = build_viz_diagram_all({"f": af}, depth=1)
+        order_boundary = next(c for c in diag.root.children if isinstance(c, VizBoundary) and c.label == "Order")
+        child_labels = {c.label for c in order_boundary.children}
+        assert "External" not in child_labels
+
+    def test_depth_1_edges_connect_to_lowest_visible_node(self) -> None:
+        """depth=1: edges from outside connect to the deepest visible node inside Order."""
+        comp_a = Component(name="A", requires=[_iref("Req")])
+        order = System(
+            name="Order",
+            components=[comp_a],
+            exposes=[ExposeDef(entity="A", port="Req")],
+        )
+        ext = System(name="External", is_external=True, provides=[_iref("Req")])
+        conn = ConnectDef(
+            src_entity="External",
+            src_port="Req",
+            channel="ch",
+            dst_entity="Order",
+            dst_port="Req",
+        )
+        af = _arch_file(systems=[order, ext], connects=[conn])
+        diag = build_viz_diagram_all({"f": af}, depth=1)
+        order_boundary = next(c for c in diag.root.children if isinstance(c, VizBoundary) and c.label == "Order")
+        # At depth=1, A is visible as an opaque VizNode inside Order.
+        # The edge must connect to A's port (the lowest visible node), not Order's boundary port.
+        inner_a = next(c for c in order_boundary.children if c.label == "A")
+        inner_port_ids = {p.id for p in inner_a.ports}
+        all_edges = diag.edges
+        assert any(e.target_port_id in inner_port_ids for e in all_edges)
+
+    def test_depth_none_default_matches_full_expansion(self) -> None:
+        """depth=None (default) produces the same diagram as calling without depth."""
+        af = self._nested_arch_file()
+        diag_default = build_viz_diagram_all({"f": af})
+        diag_none = build_viz_diagram_all({"f": af}, depth=None)
+        types_default = {type(c) for c in diag_default.root.children}
+        types_none = {type(c) for c in diag_none.root.children}
+        assert types_default == types_none
+
+
+# ###############
 # build_viz_diagram_all
 # ###############
 
@@ -1064,8 +1380,8 @@ class TestBuildVizDiagramAllExpanded:
         # Two edges: A → inner_ch, inner_ch → B
         assert len(diag.edges) == 2
 
-    def test_exposed_port_connect_routes_edge_to_inner_component(self) -> None:
-        """A top-level connect to Order.OrderRequest is resolved via expose to the inner component A."""
+    def test_exposed_port_connect_routes_edge_to_inner_node(self) -> None:
+        """A top-level connect to Order.OrderRequest follows the expose chain to A inside Order."""
         comp_a = Component(name="A", requires=[_iref("OrderRequest")])
         order = System(
             name="Order",
@@ -1082,19 +1398,18 @@ class TestBuildVizDiagramAllExpanded:
         )
         af = _arch_file(systems=[order], components=[ingestor], connects=[conn])
         diag = build_viz_diagram_all({"f": af})
-        # Two edges: DataIngestor → channel, channel → A (inner component)
         assert len(diag.edges) == 2
         all_ports = collect_all_ports(diag)
         for edge in diag.edges:
             assert edge.source_port_id in all_ports
             assert edge.target_port_id in all_ports
-        # The target of the second edge should be A's port, not Order's.
+        # The expose chain is followed to the lowest visible node: A inside Order.
         edge_ch_to_dst = diag.edges[1]
         dst_port = all_ports[edge_ch_to_dst.target_port_id]
-        assert "Order__A" in dst_port.node_id
+        assert dst_port.node_id == "Order__A"
 
-    def test_exposed_provides_port_routes_edge_from_inner_component(self) -> None:
-        """A top-level connect from Order.OrderConfirmation resolves via expose to inner component B."""
+    def test_exposed_provides_port_routes_edge_from_inner_node(self) -> None:
+        """A top-level connect from Order.OrderConfirmation follows the expose chain to B inside Order."""
         comp_b = Component(name="B", provides=[_iref("OrderConfirmation")])
         order = System(
             name="Order",
@@ -1116,10 +1431,10 @@ class TestBuildVizDiagramAllExpanded:
         for edge in diag.edges:
             assert edge.source_port_id in all_ports
             assert edge.target_port_id in all_ports
-        # The source of the first edge should be B's port.
+        # The expose chain is followed to the lowest visible node: B inside Order.
         edge_src_to_ch = diag.edges[0]
         src_port = all_ports[edge_src_to_ch.source_port_id]
-        assert "Order__B" in src_port.node_id
+        assert src_port.node_id == "Order__B"
 
     def test_exposed_port_with_as_name_resolves_correctly(self) -> None:
         """expose A.OrderRequest as ExposedPort is reachable via the alias in a top-level connect."""
@@ -1143,7 +1458,7 @@ class TestBuildVizDiagramAllExpanded:
         all_ports = collect_all_ports(diag)
         edge_ch_to_dst = diag.edges[1]
         dst_port = all_ports[edge_ch_to_dst.target_port_id]
-        assert "Order__A" in dst_port.node_id
+        assert dst_port.node_id == "Order__A"
 
     def test_unexposed_port_on_expanded_system_produces_no_channel_to_dst_edge(self) -> None:
         """When a port has no matching expose, the channel→dst edge is not produced.
@@ -1248,14 +1563,14 @@ class TestBuildVizDiagramAllExpanded:
             assert edge.source_port_id in all_ports, f"missing src port {edge.source_port_id}"
             assert edge.target_port_id in all_ports, f"missing dst port {edge.target_port_id}"
 
-        # The edge from order_request channel to dst routes to A (not Order).
-        ch_to_a_edges = [e for e in diag.edges if "order_request" in e.source_port_id]
-        assert len(ch_to_a_edges) == 1
-        dst_port = all_ports[ch_to_a_edges[0].target_port_id]
-        assert "Order__A" in dst_port.node_id
+        # The edge from order_request channel to dst routes to A (inner node via expose chain).
+        ch_to_order_edges = [e for e in diag.edges if "order_request" in e.source_port_id]
+        assert len(ch_to_order_edges) == 1
+        dst_port = all_ports[ch_to_order_edges[0].target_port_id]
+        assert dst_port.node_id == "Order__A"
 
-        # The edge from src to order_confirmation channel comes from B (not Order).
-        b_to_ch_edges = [e for e in diag.edges if "order_confirmation" in e.target_port_id]
-        assert len(b_to_ch_edges) == 1
-        src_port = all_ports[b_to_ch_edges[0].source_port_id]
-        assert "Order__B" in src_port.node_id
+        # The edge from src to order_confirmation channel comes from B (inner node via expose chain).
+        order_to_ch_edges = [e for e in diag.edges if "order_confirmation" in e.target_port_id]
+        assert len(order_to_ch_edges) == 1
+        src_port = all_ports[order_to_ch_edges[0].source_port_id]
+        assert src_port.node_id == "Order__B"
