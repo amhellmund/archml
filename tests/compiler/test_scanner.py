@@ -596,7 +596,12 @@ class TestErrors:
     def test_error_message_format(self) -> None:
         with pytest.raises(LexerError) as exc_info:
             tokenize("~")
-        assert "Line 1, column 1:" in str(exc_info.value)
+        assert "1:1:" in str(exc_info.value)
+
+    def test_error_message_format_with_filename(self) -> None:
+        with pytest.raises(LexerError) as exc_info:
+            tokenize("~", filename="foo.archml")
+        assert "foo.archml:1:1:" in str(exc_info.value)
 
     def test_unterminated_string_error_location(self) -> None:
         with pytest.raises(LexerError) as exc_info:

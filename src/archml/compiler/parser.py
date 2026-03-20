@@ -42,21 +42,25 @@ class ParseError(Exception):
     """Raised when the parser encounters a syntactically invalid construct.
 
     Attributes:
+        filename: Source file path (empty string when not provided).
         line: 1-based line number of the error.
         column: 1-based column number of the error.
     """
 
-    def __init__(self, message: str, line: int, column: int) -> None:
-        super().__init__(f"Line {line}, column {column}: {message}")
+    def __init__(self, message: str, line: int, column: int, filename: str = "") -> None:
+        loc = f"{filename}:{line}:{column}" if filename else f"{line}:{column}"
+        super().__init__(f"{loc}: {message}")
+        self.filename = filename
         self.line = line
         self.column = column
 
 
-def parse(source: str) -> ArchFile:
+def parse(source: str, filename: str = "") -> ArchFile:
     """Parse ArchML source text into a semantic ArchFile model.
 
     Args:
         source: The full text of an .archml file.
+        filename: Optional source file path included in error messages.
 
     Returns:
         An ArchFile instance representing the parsed architecture.
@@ -65,8 +69,8 @@ def parse(source: str) -> ArchFile:
         LexerError: If the source contains invalid characters or unterminated literals.
         ParseError: If the source is syntactically invalid.
     """
-    tokens = tokenize(source)
-    return _Parser(tokens).parse()
+    tokens = tokenize(source, filename)
+    return _Parser(tokens, filename).parse()
 
 
 # ################
@@ -116,9 +120,10 @@ _PRIMITIVE_TYPES: dict[str, PrimitiveType] = {
 class _Parser:
     """Recursive-descent parser for ArchML token streams."""
 
-    def __init__(self, tokens: list[Token]) -> None:
+    def __init__(self, tokens: list[Token], filename: str = "") -> None:
         self._tokens = tokens
         self._pos = 0
+        self._filename = filename
 
     def parse(self) -> ArchFile:
         """Parse the full token stream and return an ArchFile."""
@@ -169,6 +174,7 @@ class _Parser:
                 f"Expected {expected}, got {tok.value!r}",
                 tok.line,
                 tok.column,
+                self._filename,
             )
         return self._advance()
 
@@ -190,6 +196,7 @@ class _Parser:
                 f"Expected identifier, got {tok.value!r}",
                 tok.line,
                 tok.column,
+                self._filename,
             )
         return self._advance()
 
@@ -230,12 +237,14 @@ class _Parser:
                     f"Expected 'component', 'system', or 'user' after 'external', got {inner.value!r}",
                     inner.line,
                     inner.column,
+                    self._filename,
                 )
         else:
             raise ParseError(
                 f"Unexpected token {tok.value!r} at top level",
                 tok.line,
                 tok.column,
+                self._filename,
             )
 
     # ------------------------------------------------------------------
@@ -244,11 +253,11 @@ class _Parser:
 
     def _parse_import(self) -> ImportDeclaration:
         """Parse: from <path> import <entity1> [, <entity2>]*"""
-        self._expect(TokenType.FROM)
+        from_tok = self._expect(TokenType.FROM)
         path = self._parse_import_path()
         self._expect(TokenType.IMPORT)
         entities = self._parse_identifier_list()
-        return ImportDeclaration(source_path=path, entities=entities)
+        return ImportDeclaration(source_path=path, entities=entities, line=from_tok.line)
 
     def _parse_import_path(self) -> str:
         """Parse an import path such as 'interfaces/order' or '@repo/path/to/file'."""
@@ -292,7 +301,7 @@ class _Parser:
         self._expect(TokenType.ENUM)
         name_tok = self._expect(TokenType.IDENTIFIER)
         lbrace = self._expect(TokenType.LBRACE)
-        enum_def = EnumDef(name=name_tok.value)
+        enum_def = EnumDef(name=name_tok.value, line=name_tok.line)
         last_value_line = lbrace.line
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TITLE):
@@ -308,6 +317,7 @@ class _Parser:
                         f"Enum value {value_tok.value!r} must be on a new line",
                         value_tok.line,
                         value_tok.column,
+                        self._filename,
                     )
                 last_value_line = value_tok.line
                 self._advance()
@@ -318,6 +328,7 @@ class _Parser:
                     f"Unexpected token {tok.value!r} in enum body",
                     tok.line,
                     tok.column,
+                    self._filename,
                 )
         self._expect(TokenType.RBRACE)
         return enum_def
@@ -331,7 +342,7 @@ class _Parser:
         self._expect(TokenType.TYPE)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
-        type_def = TypeDef(name=name_tok.value)
+        type_def = TypeDef(name=name_tok.value, line=name_tok.line)
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TITLE):
                 type_def.title = self._parse_string_attr(TokenType.TITLE)
@@ -347,6 +358,7 @@ class _Parser:
                     f"Unexpected token {tok.value!r} in type body",
                     tok.line,
                     tok.column,
+                    self._filename,
                 )
         self._expect(TokenType.RBRACE)
         return type_def
@@ -365,7 +377,7 @@ class _Parser:
             ver_tok = self._expect(TokenType.IDENTIFIER)
             version = ver_tok.value
         self._expect(TokenType.LBRACE)
-        iface = InterfaceDef(name=name_tok.value, version=version)
+        iface = InterfaceDef(name=name_tok.value, version=version, line=name_tok.line)
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TITLE):
                 iface.title = self._parse_string_attr(TokenType.TITLE)
@@ -381,6 +393,7 @@ class _Parser:
                     f"Unexpected token {tok.value!r} in interface body",
                     tok.line,
                     tok.column,
+                    self._filename,
                 )
         self._expect(TokenType.RBRACE)
         return iface
@@ -394,7 +407,7 @@ class _Parser:
         self._expect(TokenType.COMPONENT)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
-        comp = Component(name=name_tok.value, is_external=is_external)
+        comp = Component(name=name_tok.value, is_external=is_external, line=name_tok.line)
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TITLE):
                 comp.title = self._parse_string_attr(TokenType.TITLE)
@@ -424,6 +437,7 @@ class _Parser:
                         f"Expected 'component' after 'external' inside component body, got {inner.value!r}",
                         inner.line,
                         inner.column,
+                        self._filename,
                     )
             else:
                 tok = self._current()
@@ -431,6 +445,7 @@ class _Parser:
                     f"Unexpected token {tok.value!r} in component body",
                     tok.line,
                     tok.column,
+                    self._filename,
                 )
         self._expect(TokenType.RBRACE)
         return comp
@@ -444,7 +459,7 @@ class _Parser:
         self._expect(TokenType.SYSTEM)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
-        system = System(name=name_tok.value, is_external=is_external)
+        system = System(name=name_tok.value, is_external=is_external, line=name_tok.line)
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TITLE):
                 system.title = self._parse_string_attr(TokenType.TITLE)
@@ -483,6 +498,7 @@ class _Parser:
                         f" inside system body, got {inner.value!r}",
                         inner.line,
                         inner.column,
+                        self._filename,
                     )
             elif self._check(TokenType.USE):
                 self._parse_use_statement(system)
@@ -492,6 +508,7 @@ class _Parser:
                     f"Unexpected token {tok.value!r} in system body",
                     tok.line,
                     tok.column,
+                    self._filename,
                 )
         self._expect(TokenType.RBRACE)
         return system
@@ -507,20 +524,21 @@ class _Parser:
         if kind.type == TokenType.COMPONENT:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
-            system.components.append(Component(name=name_tok.value, is_stub=True))
+            system.components.append(Component(name=name_tok.value, is_stub=True, line=name_tok.line))
         elif kind.type == TokenType.SYSTEM:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
-            system.systems.append(System(name=name_tok.value, is_stub=True))
+            system.systems.append(System(name=name_tok.value, is_stub=True, line=name_tok.line))
         elif kind.type == TokenType.USER:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
-            system.users.append(UserDef(name=name_tok.value))
+            system.users.append(UserDef(name=name_tok.value, line=name_tok.line))
         else:
             raise ParseError(
                 f"Expected 'component', 'system', or 'user' after 'use', got {kind.value!r}",
                 kind.line,
                 kind.column,
+                self._filename,
             )
 
     # ------------------------------------------------------------------
@@ -536,7 +554,7 @@ class _Parser:
         self._expect(TokenType.USER)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
-        user = UserDef(name=name_tok.value, is_external=is_external)
+        user = UserDef(name=name_tok.value, is_external=is_external, line=name_tok.line)
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TITLE):
                 user.title = self._parse_string_attr(TokenType.TITLE)
@@ -554,6 +572,7 @@ class _Parser:
                     f"Unexpected token {tok.value!r} in user body",
                     tok.line,
                     tok.column,
+                    self._filename,
                 )
         self._expect(TokenType.RBRACE)
         return user
@@ -575,20 +594,21 @@ class _Parser:
         ``port`` (port on the current scope's own boundary).
         """
         connect_tok = self._expect(TokenType.CONNECT)
-        connect_def = ConnectDef()
+        connect_def = ConnectDef(line=connect_tok.line)
 
         # Parse left-hand side: either $channel or Entity.port / port
         if self._check(TokenType.DOLLAR):
             # Form: connect $channel -> <dst_port>
             self._advance()  # consume $
             ch_tok = self._expect(TokenType.IDENTIFIER)
-            connect_def = ConnectDef(channel=ch_tok.value)
+            connect_def = ConnectDef(channel=ch_tok.value, line=connect_tok.line)
             self._expect(TokenType.ARROW)
             entity, port = self._parse_port_ref(connect_tok)
             connect_def = ConnectDef(
                 channel=ch_tok.value,
                 dst_entity=entity,
                 dst_port=port,
+                line=connect_tok.line,
             )
         else:
             # Left side is a port reference
@@ -608,6 +628,7 @@ class _Parser:
                         channel=ch_tok.value,
                         dst_entity=dst_entity,
                         dst_port=dst_port,
+                        line=connect_tok.line,
                     )
                 else:
                     # One-sided src
@@ -615,6 +636,7 @@ class _Parser:
                         src_entity=src_entity,
                         src_port=src_port,
                         channel=ch_tok.value,
+                        line=connect_tok.line,
                     )
             else:
                 # Direct: connect <src_port> -> <dst_port>
@@ -624,6 +646,7 @@ class _Parser:
                     src_port=src_port,
                     dst_entity=dst_entity,
                     dst_port=dst_port,
+                    line=connect_tok.line,
                 )
 
         # Optional attribute block
@@ -637,6 +660,7 @@ class _Parser:
                         "Connect attributes must each be on a new line",
                         attr_tok.line,
                         attr_tok.column,
+                        self._filename,
                     )
                 connect_def = self._parse_connect_attr(connect_def)
                 last_attr_line = self._tokens[self._pos - 1].line
@@ -673,6 +697,7 @@ class _Parser:
                 protocol=connect_def.protocol,
                 is_async=connect_def.is_async,
                 description=description,
+                line=connect_def.line,
             )
         elif tok.type == TokenType.IDENTIFIER:
             attr_name = self._advance().value
@@ -688,6 +713,7 @@ class _Parser:
                     protocol=str_tok.value,
                     is_async=connect_def.is_async,
                     description=connect_def.description,
+                    line=connect_def.line,
                 )
             elif attr_name == "async":
                 bool_tok = self._expect(TokenType.TRUE, TokenType.FALSE)
@@ -700,18 +726,21 @@ class _Parser:
                     protocol=connect_def.protocol,
                     is_async=bool_tok.type == TokenType.TRUE,
                     description=connect_def.description,
+                    line=connect_def.line,
                 )
             else:
                 raise ParseError(
                     f"Unknown connect attribute {attr_name!r}",
                     tok.line,
                     tok.column,
+                    self._filename,
                 )
         else:
             raise ParseError(
                 f"Unexpected token {tok.value!r} in connect annotation block",
                 tok.line,
                 tok.column,
+                self._filename,
             )
 
     # ------------------------------------------------------------------
@@ -720,7 +749,7 @@ class _Parser:
 
     def _parse_expose(self) -> ExposeDef:
         """Parse: expose <Entity>.<port> [as <new_name>]"""
-        self._expect(TokenType.EXPOSE)
+        expose_tok = self._expect(TokenType.EXPOSE)
         entity_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.DOT)
         port_tok = self._expect(TokenType.IDENTIFIER)
@@ -729,7 +758,7 @@ class _Parser:
             self._advance()  # consume 'as'
             as_tok = self._expect(TokenType.IDENTIFIER)
             as_name = as_tok.value
-        return ExposeDef(entity=entity_tok.value, port=port_tok.value, as_name=as_name)
+        return ExposeDef(entity=entity_tok.value, port=port_tok.value, as_name=as_name, line=expose_tok.line)
 
     # ------------------------------------------------------------------
     # Field declarations
@@ -741,7 +770,7 @@ class _Parser:
         name_tok = self._expect_name_token()
         self._expect(TokenType.COLON)
         field_type = self._parse_type_ref()
-        f = FieldDef(name=name_tok.value, type=field_type)
+        f = FieldDef(name=name_tok.value, type=field_type, line=name_tok.line)
         if self._check(TokenType.LBRACE):
             self._advance()  # consume {
             while not self._check(TokenType.RBRACE, TokenType.EOF):
@@ -757,6 +786,7 @@ class _Parser:
                         f"Unexpected token {inner_tok.value!r} in field annotation block",
                         inner_tok.line,
                         inner_tok.column,
+                        self._filename,
                     )
             self._expect(TokenType.RBRACE)
         return f
@@ -816,7 +846,7 @@ class _Parser:
             self._advance()  # consume 'as'
             alias_tok = self._expect(TokenType.IDENTIFIER)
             port_name = alias_tok.value
-        return InterfaceRef(name=name_tok.value, version=version, port_name=port_name)
+        return InterfaceRef(name=name_tok.value, version=version, port_name=port_name, line=name_tok.line)
 
     # ------------------------------------------------------------------
     # Common attribute parsers

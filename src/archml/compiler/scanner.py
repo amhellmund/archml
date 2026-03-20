@@ -90,17 +90,20 @@ class LexerError(Exception):
     """Raised when the scanner encounters an invalid character or unterminated literal.
 
     Attributes:
+        filename: Source file path (empty string when not provided).
         line: 1-based line number of the error.
         column: 1-based column number of the error.
     """
 
-    def __init__(self, message: str, line: int, column: int) -> None:
-        super().__init__(f"Line {line}, column {column}: {message}")
+    def __init__(self, message: str, line: int, column: int, filename: str = "") -> None:
+        loc = f"{filename}:{line}:{column}" if filename else f"{line}:{column}"
+        super().__init__(f"{loc}: {message}")
+        self.filename = filename
         self.line = line
         self.column = column
 
 
-def tokenize(source: str) -> list[Token]:
+def tokenize(source: str, filename: str = "") -> list[Token]:
     """Tokenize ArchML source text into a sequence of tokens.
 
     Returns a list of tokens. The final token is always an EOF token.
@@ -108,6 +111,7 @@ def tokenize(source: str) -> list[Token]:
 
     Args:
         source: The full text of an .archml file.
+        filename: Optional source file path included in error messages.
 
     Returns:
         A list of Token objects ending with a single EOF token.
@@ -116,7 +120,7 @@ def tokenize(source: str) -> list[Token]:
         LexerError: On unexpected characters, unterminated string literals,
             or unterminated block comments.
     """
-    return _Lexer(source).tokenize()
+    return _Lexer(source, filename).tokenize()
 
 
 # ################
@@ -169,8 +173,9 @@ _SINGLE_CHAR_TOKENS: dict[str, TokenType] = {
 class _Lexer:
     """Internal scanner state machine."""
 
-    def __init__(self, source: str) -> None:
+    def __init__(self, source: str, filename: str = "") -> None:
         self._source = source
+        self._filename = filename
         self._pos = 0
         self._line = 1
         self._column = 1
@@ -257,7 +262,7 @@ class _Lexer:
         elif ch.isalpha() or ch == "_":
             self._scan_identifier_or_keyword(line, col)
         else:
-            raise LexerError(f"Unexpected character: {ch!r}", line, col)
+            raise LexerError(f"Unexpected character: {ch!r}", line, col, self._filename)
 
     # ------------------------------------------------------------------
     # Literal scanners
@@ -291,11 +296,11 @@ class _Lexer:
                 self._tokens.append(Token(TokenType.STRING, "".join(chars), line, col))
                 return
             if ch == "\n":
-                raise LexerError("Unterminated string literal", line, col)
+                raise LexerError("Unterminated string literal", line, col, self._filename)
             if ch == "\\":
                 self._advance()
                 if self._pos >= len(self._source):
-                    raise LexerError("Unterminated string literal", line, col)
+                    raise LexerError("Unterminated string literal", line, col, self._filename)
                 esc = self._current()
                 if esc == "n":
                     chars.append("\n")
@@ -310,12 +315,13 @@ class _Lexer:
                         f"Invalid escape sequence: '\\{esc}'",
                         self._line,
                         self._column,
+                        self._filename,
                     )
                 self._advance()
             else:
                 chars.append(ch)
                 self._advance()
-        raise LexerError("Unterminated string literal", line, col)
+        raise LexerError("Unterminated string literal", line, col, self._filename)
 
     def _scan_triple_quoted_string(self, line: int, col: int) -> None:
         """Scan a triple-quoted string (\"\"\"...\"\"\").
@@ -341,7 +347,7 @@ class _Lexer:
             if ch == "\\":
                 self._advance()
                 if self._pos >= len(self._source):
-                    raise LexerError("Unterminated triple-quoted string literal", line, col)
+                    raise LexerError("Unterminated triple-quoted string literal", line, col, self._filename)
                 esc = self._current()
                 if esc == "n":
                     chars.append("\n")
@@ -356,12 +362,13 @@ class _Lexer:
                         f"Invalid escape sequence: '\\{esc}'",
                         self._line,
                         self._column,
+                        self._filename,
                     )
                 self._advance()
             else:
                 chars.append(ch)
                 self._advance()
-        raise LexerError("Unterminated triple-quoted string literal", line, col)
+        raise LexerError("Unterminated triple-quoted string literal", line, col, self._filename)
 
     def _scan_number(self, line: int, col: int) -> None:
         """Scan an integer."""

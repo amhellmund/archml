@@ -582,8 +582,17 @@ class TestErrorCases:
         src = tmp_path / "src"
         build = tmp_path / "build"
         _write(src / "bad.archml", "component {}")  # missing name
-        with pytest.raises(CompilerError, match="Parse error"):
+        with pytest.raises(CompilerError) as exc_info:
             compile_files([src / "bad.archml"], build, {("", "app"): src})
+        assert "bad.archml" in str(exc_info.value)
+
+    def test_lexer_error_raises_compiler_error(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "bad.archml", "component C { ~ }")  # invalid character
+        with pytest.raises(CompilerError) as exc_info:
+            compile_files([src / "bad.archml"], build, {("", "app"): src})
+        assert "bad.archml" in str(exc_info.value)
 
     def test_missing_dependency_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
@@ -599,8 +608,9 @@ class TestErrorCases:
             src / "bad.archml",
             "component C { requires UnknownInterface }",
         )
-        with pytest.raises(CompilerError, match="Semantic errors"):
+        with pytest.raises(CompilerError) as exc_info:
             compile_files([src / "bad.archml"], build, {("", "app"): src})
+        assert "bad.archml" in str(exc_info.value)
 
     def test_circular_dependency_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
@@ -633,8 +643,9 @@ enum Dup {
 }
 """,
         )
-        with pytest.raises(CompilerError, match="Semantic errors"):
+        with pytest.raises(CompilerError) as exc_info:
             compile_files([src / "bad.archml"], build, {("", "app"): src})
+        assert "bad.archml" in str(exc_info.value)
 
 
 # ###############

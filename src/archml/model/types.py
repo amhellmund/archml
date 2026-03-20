@@ -93,6 +93,7 @@ class FieldDef(BaseModel):
     description: str | None = None
     schema_ref: str | None = None
     filetype: str | None = None
+    line: int = 0
 
 
 # Resolve forward references for models that use TypeRef.

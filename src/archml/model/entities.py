@@ -26,6 +26,7 @@ class InterfaceRef(BaseModel):
     name: str
     version: str | None = None
     port_name: str | None = None
+    line: int = 0
 
 
 class EnumDef(BaseModel):
@@ -36,6 +37,7 @@ class EnumDef(BaseModel):
     title: str | None = None
     description: str | None = None
     tags: list[str] = _Field(default_factory=list)
+    line: int = 0
 
 
 class TypeDef(BaseModel):
@@ -46,6 +48,7 @@ class TypeDef(BaseModel):
     title: str | None = None
     description: str | None = None
     tags: list[str] = _Field(default_factory=list)
+    line: int = 0
 
 
 class InterfaceDef(BaseModel):
@@ -58,6 +61,7 @@ class InterfaceDef(BaseModel):
     description: str | None = None
     tags: list[str] = _Field(default_factory=list)
     qualified_name: str = ""
+    line: int = 0
 
 
 class ConnectDef(BaseModel):
@@ -90,6 +94,7 @@ class ConnectDef(BaseModel):
     protocol: str | None = None
     is_async: bool = False
     description: str | None = None
+    line: int = 0
 
 
 class ExposeDef(BaseModel):
@@ -101,6 +106,7 @@ class ExposeDef(BaseModel):
     entity: str
     port: str
     as_name: str | None = None
+    line: int = 0
 
 
 class UserDef(BaseModel):
@@ -118,6 +124,7 @@ class UserDef(BaseModel):
     provides: list[InterfaceRef] = _Field(default_factory=list)
     is_external: bool = False
     qualified_name: str = ""
+    line: int = 0
 
 
 class Component(BaseModel):
@@ -136,6 +143,7 @@ class Component(BaseModel):
     is_external: bool = False
     is_stub: bool = False
     qualified_name: str = ""
+    line: int = 0
 
 
 class System(BaseModel):
@@ -156,6 +164,7 @@ class System(BaseModel):
     is_external: bool = False
     is_stub: bool = False
     qualified_name: str = ""
+    line: int = 0
 
 
 class ImportDeclaration(BaseModel):
@@ -163,6 +172,7 @@ class ImportDeclaration(BaseModel):
 
     source_path: str
     entities: list[str] = _Field(default_factory=list)
+    line: int = 0
 
 
 class ArchFile(BaseModel):

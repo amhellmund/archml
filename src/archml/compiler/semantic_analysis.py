@@ -37,9 +37,20 @@ class SemanticError:
 
     Attributes:
         message: Human-readable description of the error.
+        filename: Source file path where the error occurred, if known.
+        line: 1-based source line number, if known.
     """
 
     message: str
+    filename: str | None = None
+    line: int | None = None
+
+    def __str__(self) -> str:
+        if self.filename and self.line is not None and self.line > 0:
+            return f"{self.filename}:{self.line}: {self.message}"
+        if self.filename:
+            return f"{self.filename}: {self.message}"
+        return self.message
 
 
 def analyze(
@@ -47,6 +58,7 @@ def analyze(
     *,
     resolved_imports: dict[str, ArchFile] | None = None,
     file_key: str | None = None,
+    filename: str | None = None,
 ) -> list[SemanticError]:
     """Perform semantic analysis on a parsed ArchFile.
 
@@ -95,13 +107,15 @@ def analyze(
             (e.g. ``"myapp/services"`` or ``"@payments/lib/types"``).
             When provided it is used as the prefix for all
             ``qualified_name`` values in this file.
+        filename: Optional source file path for error messages. When provided,
+            all returned :class:`SemanticError` instances include the file path.
 
     Returns:
         A list of :class:`SemanticError` instances. An empty list means no
         semantic errors were found.
     """
     _assign_qualified_names(arch_file, file_key=file_key)
-    return _SemanticAnalyzer(arch_file, resolved_imports).analyze()
+    return _SemanticAnalyzer(arch_file, resolved_imports, filename).analyze()
 
 
 # ################
@@ -116,9 +130,11 @@ class _SemanticAnalyzer:
         self,
         arch_file: ArchFile,
         resolved_imports: dict[str, ArchFile] | None,
+        filename: str | None = None,
     ) -> None:
         self._file = arch_file
         self._resolved = resolved_imports
+        self._filename = filename
 
     def analyze(self) -> list[SemanticError]:
         """Run all semantic checks and return collected errors."""
@@ -140,28 +156,31 @@ class _SemanticAnalyzer:
         all_interface_plain_names = {i.name for i in self._file.interfaces} | imported_names
 
         # 1. Check for duplicate top-level definitions.
-        errors.extend(_check_top_level_duplicates(self._file))
+        errors.extend(_check_top_level_duplicates(self._file, self._filename))
 
         # 1a. Check for duplicate import names across all import statements.
-        errors.extend(_check_duplicate_imports(self._file))
+        errors.extend(_check_duplicate_imports(self._file, self._filename))
 
         # 2. Check internals of each enum.
         for enum_def in self._file.enums:
-            errors.extend(_check_enum_values(enum_def))
+            errors.extend(_check_enum_values(enum_def, self._filename))
 
         # 3. Check internals of each type definition.
         for type_def in self._file.types:
-            errors.extend(_check_field_names(f"type '{type_def.name}'", type_def.fields))
-            errors.extend(_check_type_refs_in_fields(f"type '{type_def.name}'", type_def.fields, all_type_names))
+            errors.extend(_check_field_names(f"type '{type_def.name}'", type_def.fields, self._filename))
+            errors.extend(
+                _check_type_refs_in_fields(f"type '{type_def.name}'", type_def.fields, all_type_names, self._filename)
+            )
 
         # 4. Check internals of each interface definition.
         for iface_def in self._file.interfaces:
-            errors.extend(_check_field_names(f"interface '{iface_def.name}'", iface_def.fields))
+            errors.extend(_check_field_names(f"interface '{iface_def.name}'", iface_def.fields, self._filename))
             errors.extend(
                 _check_type_refs_in_fields(
                     f"interface '{iface_def.name}'",
                     iface_def.fields,
                     all_type_names,
+                    self._filename,
                 )
             )
 
@@ -197,6 +216,7 @@ class _SemanticAnalyzer:
                     all_interface_plain_names,
                     local_interface_defs,
                     imported_names,
+                    self._filename,
                 )
             )
 
@@ -207,8 +227,8 @@ class _SemanticAnalyzer:
             **{u.name: u for u in self._file.users},
         }
         for conn in self._file.connects:
-            errors.extend(_resolve_simplified_connect(conn, top_child_entity_map, "top-level"))
-            errors.extend(_check_connect("top-level", conn, top_child_entity_map))
+            errors.extend(_resolve_simplified_connect(conn, top_child_entity_map, "top-level", self._filename))
+            errors.extend(_check_connect("top-level", conn, top_child_entity_map, self._filename))
 
         # 9. Validate import entities against resolved source files.
         errors.extend(self._check_import_resolutions())
@@ -228,17 +248,19 @@ class _SemanticAnalyzer:
 
         # Check for duplicate local interface definitions.
         errors.extend(
-            _check_duplicate_names(
-                [i.name for i in comp.interfaces],
+            _check_duplicate_name_lines(
+                [(i.name, i.line) for i in comp.interfaces],
                 "Duplicate local interface name '{}' in " + ctx,
+                self._filename,
             )
         )
 
         # Check for duplicate sub-component names.
         errors.extend(
-            _check_duplicate_names(
-                [c.name for c in comp.components],
+            _check_duplicate_name_lines(
+                [(c.name, c.line) for c in comp.components],
                 "Duplicate sub-component name '{}' in " + ctx,
+                self._filename,
             )
         )
 
@@ -256,6 +278,7 @@ class _SemanticAnalyzer:
                     merged_interface_defs,
                     imported_names,
                     "requires",
+                    self._filename,
                 )
             )
         for ref in comp.provides:
@@ -267,19 +290,20 @@ class _SemanticAnalyzer:
                     merged_interface_defs,
                     imported_names,
                     "provides",
+                    self._filename,
                 )
             )
 
         # Check for duplicate port names across requires and provides.
-        errors.extend(_check_port_names(ctx, comp.requires, comp.provides))
+        errors.extend(_check_port_names(ctx, comp.requires, comp.provides, self._filename))
 
         # Check connect / expose statements.
         child_entity_map: dict[str, Component | System | UserDef] = {c.name: c for c in comp.components}
         for conn in comp.connects:
-            errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx))
-            errors.extend(_check_connect(ctx, conn, child_entity_map))
+            errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx, self._filename))
+            errors.extend(_check_connect(ctx, conn, child_entity_map, self._filename))
         for exp in comp.exposes:
-            errors.extend(_check_expose(ctx, exp, child_entity_map))
+            errors.extend(_check_expose(ctx, exp, child_entity_map, self._filename))
 
         # Recurse into sub-components, passing the merged scope.
         for sub in comp.components:
@@ -308,9 +332,10 @@ class _SemanticAnalyzer:
 
         # Check for duplicate local interface definitions.
         errors.extend(
-            _check_duplicate_names(
-                [i.name for i in system.interfaces],
+            _check_duplicate_name_lines(
+                [(i.name, i.line) for i in system.interfaces],
                 "Duplicate local interface name '{}' in " + ctx,
+                self._filename,
             )
         )
 
@@ -320,23 +345,26 @@ class _SemanticAnalyzer:
 
         # Check for duplicate component names within this system.
         errors.extend(
-            _check_duplicate_names(
-                [c.name for c in system.components],
+            _check_duplicate_name_lines(
+                [(c.name, c.line) for c in system.components],
                 "Duplicate component name '{}' in " + ctx,
+                self._filename,
             )
         )
         # Check for duplicate sub-system names within this system.
         errors.extend(
-            _check_duplicate_names(
-                [s.name for s in system.systems],
+            _check_duplicate_name_lines(
+                [(s.name, s.line) for s in system.systems],
                 "Duplicate sub-system name '{}' in " + ctx,
+                self._filename,
             )
         )
         # Check for duplicate user names within this system.
         errors.extend(
-            _check_duplicate_names(
-                [u.name for u in system.users],
+            _check_duplicate_name_lines(
+                [(u.name, u.line) for u in system.users],
                 "Duplicate user name '{}' in " + ctx,
+                self._filename,
             )
         )
 
@@ -345,9 +373,19 @@ class _SemanticAnalyzer:
         sys_names = {s.name for s in system.systems}
         user_names = {u.name for u in system.users}
         for name in sorted(comp_names & sys_names):
-            errors.append(SemanticError(f"{ctx}: name '{name}' is used for both a component and a sub-system"))
+            errors.append(
+                SemanticError(
+                    message=f"{ctx}: name '{name}' is used for both a component and a sub-system",
+                    filename=self._filename,
+                )
+            )
         for name in sorted((comp_names | sys_names) & user_names):
-            errors.append(SemanticError(f"{ctx}: name '{name}' is used for both a user and a component or sub-system"))
+            errors.append(
+                SemanticError(
+                    message=f"{ctx}: name '{name}' is used for both a user and a component or sub-system",
+                    filename=self._filename,
+                )
+            )
 
         # Check requires / provides interface references.
         for ref in system.requires:
@@ -359,6 +397,7 @@ class _SemanticAnalyzer:
                     merged_interface_defs,
                     imported_names,
                     "requires",
+                    self._filename,
                 )
             )
         for ref in system.provides:
@@ -370,11 +409,12 @@ class _SemanticAnalyzer:
                     merged_interface_defs,
                     imported_names,
                     "provides",
+                    self._filename,
                 )
             )
 
         # Check for duplicate port names across requires and provides.
-        errors.extend(_check_port_names(ctx, system.requires, system.provides))
+        errors.extend(_check_port_names(ctx, system.requires, system.provides, self._filename))
 
         # Check connect / expose statements.
         child_entity_map: dict[str, Component | System | UserDef] = {
@@ -383,10 +423,10 @@ class _SemanticAnalyzer:
             **{u.name: u for u in system.users},
         }
         for conn in system.connects:
-            errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx))
-            errors.extend(_check_connect(ctx, conn, child_entity_map))
+            errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx, self._filename))
+            errors.extend(_check_connect(ctx, conn, child_entity_map, self._filename))
         for exp in system.exposes:
-            errors.extend(_check_expose(ctx, exp, child_entity_map))
+            errors.extend(_check_expose(ctx, exp, child_entity_map, self._filename))
 
         # Recurse into children, passing the merged scope.
         for comp in system.components:
@@ -416,6 +456,7 @@ class _SemanticAnalyzer:
                     merged_interface_names,
                     merged_interface_defs,
                     imported_names,
+                    self._filename,
                 )
             )
 
@@ -430,14 +471,26 @@ class _SemanticAnalyzer:
         for imp in self._file.imports:
             path = imp.source_path
             if path not in self._resolved:
-                errors.append(SemanticError(f"Import source '{path}' could not be resolved"))
+                errors.append(
+                    SemanticError(
+                        message=f"Import source '{path}' could not be resolved",
+                        filename=self._filename,
+                        line=imp.line,
+                    )
+                )
                 continue
 
             resolved_file = self._resolved[path]
             defined_names = _collect_all_top_level_names(resolved_file)
             for entity_name in imp.entities:
                 if entity_name not in defined_names:
-                    errors.append(SemanticError(f"'{entity_name}' is not defined in '{path}'"))
+                    errors.append(
+                        SemanticError(
+                            message=f"'{entity_name}' is not defined in '{path}'",
+                            filename=self._filename,
+                            line=imp.line,
+                        )
+                    )
 
         return errors
 
@@ -499,7 +552,7 @@ def _assign_system_qualified_names(system: System, prefix: str | None) -> None:
         _assign_user_qualified_name(user, prefix=system.qualified_name)
 
 
-def _check_duplicate_imports(arch_file: ArchFile) -> list[SemanticError]:
+def _check_duplicate_imports(arch_file: ArchFile, filename: str | None = None) -> list[SemanticError]:
     """Check that no entity name is imported from more than one source path.
 
     An entity name that appears in multiple ``from ... import`` statements
@@ -514,8 +567,12 @@ def _check_duplicate_imports(arch_file: ArchFile) -> list[SemanticError]:
             if name in seen:
                 errors.append(
                     SemanticError(
-                        f"Duplicate import name '{name}': already imported from '{seen[name]}'"
-                        f", cannot also import from '{imp.source_path}'"
+                        message=(
+                            f"Duplicate import name '{name}': already imported from '{seen[name]}'"
+                            f", cannot also import from '{imp.source_path}'"
+                        ),
+                        filename=filename,
+                        line=imp.line,
                     )
                 )
             else:
@@ -535,7 +592,7 @@ def _collect_all_top_level_names(arch_file: ArchFile) -> set[str]:
     return names
 
 
-def _check_duplicate_names(names: list[str], fmt: str) -> list[SemanticError]:
+def _check_duplicate_names(names: list[str], fmt: str, filename: str | None = None) -> list[SemanticError]:
     """Return a SemanticError for each name that appears more than once.
 
     Only one error per unique duplicate name is emitted (even if it appears
@@ -548,27 +605,53 @@ def _check_duplicate_names(names: list[str], fmt: str) -> list[SemanticError]:
     for name in names:
         if name in seen:
             if name not in reported:
-                errors.append(SemanticError(fmt.format(name)))
+                errors.append(SemanticError(message=fmt.format(name), filename=filename))
                 reported.add(name)
         else:
             seen.add(name)
     return errors
 
 
-def _check_top_level_duplicates(arch_file: ArchFile) -> list[SemanticError]:
+def _check_duplicate_name_lines(
+    name_lines: list[tuple[str, int]],
+    fmt: str,
+    filename: str | None = None,
+) -> list[SemanticError]:
+    """Return a SemanticError for each name that appears more than once, with line info.
+
+    *name_lines* is a list of (name, line) pairs. Only one error per unique
+    duplicate name is emitted (for the second occurrence). *fmt* must contain
+    a single ``{}`` placeholder filled with the duplicate name.
+    """
+    seen: dict[str, int] = {}
+    reported: set[str] = set()
+    errors: list[SemanticError] = []
+    for name, line in name_lines:
+        if name in seen:
+            if name not in reported:
+                errors.append(SemanticError(message=fmt.format(name), filename=filename, line=line))
+                reported.add(name)
+        else:
+            seen[name] = line
+    return errors
+
+
+def _check_top_level_duplicates(arch_file: ArchFile, filename: str | None = None) -> list[SemanticError]:
     """Check for duplicate names among top-level definitions."""
     errors: list[SemanticError] = []
 
     errors.extend(
-        _check_duplicate_names(
-            [e.name for e in arch_file.enums],
+        _check_duplicate_name_lines(
+            [(e.name, e.line) for e in arch_file.enums],
             "Duplicate enum name '{}'",
+            filename,
         )
     )
     errors.extend(
-        _check_duplicate_names(
-            [t.name for t in arch_file.types],
+        _check_duplicate_name_lines(
+            [(t.name, t.line) for t in arch_file.types],
             "Duplicate type name '{}'",
+            filename,
         )
     )
 
@@ -581,27 +664,36 @@ def _check_top_level_duplicates(arch_file: ArchFile) -> list[SemanticError]:
         if key in seen_ifaces:
             if key not in reported_ifaces:
                 ver_str = f"@{iface.version}" if iface.version else ""
-                errors.append(SemanticError(f"Duplicate interface definition '{iface.name}{ver_str}'"))
+                errors.append(
+                    SemanticError(
+                        message=f"Duplicate interface definition '{iface.name}{ver_str}'",
+                        filename=filename,
+                        line=iface.line,
+                    )
+                )
                 reported_ifaces.add(key)
         else:
             seen_ifaces.add(key)
 
     errors.extend(
-        _check_duplicate_names(
-            [c.name for c in arch_file.components],
+        _check_duplicate_name_lines(
+            [(c.name, c.line) for c in arch_file.components],
             "Duplicate component name '{}'",
+            filename,
         )
     )
     errors.extend(
-        _check_duplicate_names(
-            [s.name for s in arch_file.systems],
+        _check_duplicate_name_lines(
+            [(s.name, s.line) for s in arch_file.systems],
             "Duplicate system name '{}'",
+            filename,
         )
     )
     errors.extend(
-        _check_duplicate_names(
-            [u.name for u in arch_file.users],
+        _check_duplicate_name_lines(
+            [(u.name, u.line) for u in arch_file.users],
             "Duplicate user name '{}'",
+            filename,
         )
     )
 
@@ -610,24 +702,26 @@ def _check_top_level_duplicates(arch_file: ArchFile) -> list[SemanticError]:
     enum_names = {e.name for e in arch_file.enums}
     type_names = {t.name for t in arch_file.types}
     for name in sorted(enum_names & type_names):
-        errors.append(SemanticError(f"Name '{name}' is defined as both an enum and a type"))
+        errors.append(SemanticError(message=f"Name '{name}' is defined as both an enum and a type", filename=filename))
 
     return errors
 
 
-def _check_enum_values(enum_def: EnumDef) -> list[SemanticError]:
+def _check_enum_values(enum_def: EnumDef, filename: str | None = None) -> list[SemanticError]:
     """Check for duplicate values within an enum."""
     return _check_duplicate_names(
         enum_def.values,
         f"Duplicate value '{{}}' in enum '{enum_def.name}'",
+        filename,
     )
 
 
-def _check_field_names(ctx: str, fields: list[FieldDef]) -> list[SemanticError]:
+def _check_field_names(ctx: str, fields: list[FieldDef], filename: str | None = None) -> list[SemanticError]:
     """Check for duplicate field names within a type or interface."""
-    return _check_duplicate_names(
-        [f.name for f in fields],
+    return _check_duplicate_name_lines(
+        [(f.name, f.line) for f in fields],
         f"Duplicate field name '{{}}' in {ctx}",
+        filename,
     )
 
 
@@ -648,13 +742,20 @@ def _check_type_refs_in_fields(
     ctx: str,
     fields: list[FieldDef],
     valid_type_names: set[str],
+    filename: str | None = None,
 ) -> list[SemanticError]:
     """Check that every NamedTypeRef in field types resolves to a known name."""
     errors: list[SemanticError] = []
     for field_def in fields:
         for name_ref in _collect_named_type_refs(field_def.type):
             if name_ref not in valid_type_names:
-                errors.append(SemanticError(f"Undefined type '{name_ref}' in field '{field_def.name}' of {ctx}"))
+                errors.append(
+                    SemanticError(
+                        message=f"Undefined type '{name_ref}' in field '{field_def.name}' of {ctx}",
+                        filename=filename,
+                        line=field_def.line,
+                    )
+                )
     return errors
 
 
@@ -665,6 +766,7 @@ def _check_interface_ref(
     local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
     imported_names: set[str],
     keyword: str,
+    filename: str | None = None,
 ) -> list[SemanticError]:
     """Check that an interface reference resolves to a known interface.
 
@@ -675,7 +777,13 @@ def _check_interface_ref(
     ver_str = f"@{ref.version}" if ref.version else ""
 
     if ref.name not in all_interface_names:
-        errors.append(SemanticError(f"{ctx}: '{keyword} {ref.name}{ver_str}' refers to unknown interface '{ref.name}'"))
+        errors.append(
+            SemanticError(
+                message=f"{ctx}: '{keyword} {ref.name}{ver_str}' refers to unknown interface '{ref.name}'",
+                filename=filename,
+                line=ref.line,
+            )
+        )
         return errors
 
     # Only validate the version when the interface is locally defined and not
@@ -687,9 +795,13 @@ def _check_interface_ref(
     ):
         errors.append(
             SemanticError(
-                f"{ctx}: '{keyword} {ref.name}@{ref.version}'"
-                f" — no version '{ref.version}' of interface"
-                f" '{ref.name}' is defined"
+                message=(
+                    f"{ctx}: '{keyword} {ref.name}@{ref.version}'"
+                    f" — no version '{ref.version}' of interface"
+                    f" '{ref.name}' is defined"
+                ),
+                filename=filename,
+                line=ref.line,
             )
         )
 
@@ -719,10 +831,49 @@ def _valid_connect_port_names(entity: Component | System | UserDef) -> set[str] 
     return names
 
 
+def _boundary_port_names(entity: Component | System | UserDef, direction: str) -> list[str]:
+    """Return port names in *direction* at the entity's boundary.
+
+    Includes direct ``requires``/``provides`` declarations and exposed ports
+    whose underlying sub-entity port resolves to the same direction (recursive).
+    For stub entities the expose chain cannot be followed; those ports are skipped.
+    """
+    # Direct ports.
+    direct_refs: list[InterfaceRef] = getattr(entity, direction)
+    names: list[str] = [_effective_port_name(ref) for ref in direct_refs]
+
+    # Exposed ports — follow the expose chain recursively.
+    if isinstance(entity, (Component, System)):
+        child_map: dict[str, Component | System | UserDef] = {}
+        if isinstance(entity, Component):
+            for c in entity.components:
+                child_map[c.name] = c
+        else:
+            for c in entity.components:
+                child_map[c.name] = c
+            for s in entity.systems:
+                child_map[s.name] = s
+            for u in entity.users:
+                child_map[u.name] = u
+
+        for exp in entity.exposes:
+            if exp.entity not in child_map:
+                continue
+            child = child_map[exp.entity]
+            if isinstance(child, (Component, System)) and child.is_stub:
+                continue  # port direction unknown for stubs
+            boundary_name = exp.as_name if exp.as_name else exp.port
+            if exp.port in _boundary_port_names(child, direction):
+                names.append(boundary_name)
+
+    return names
+
+
 def _check_connect(
     ctx: str,
     conn: ConnectDef,
     child_entity_map: dict[str, Component | System | UserDef],
+    filename: str | None = None,
 ) -> list[SemanticError]:
     """Check that entity and port references in a connect statement are valid."""
     errors: list[SemanticError] = []
@@ -730,12 +881,24 @@ def _check_connect(
         if side_entity is None:
             continue
         if side_entity not in child_entity_map:
-            errors.append(SemanticError(f"{ctx}: connect references unknown child entity '{side_entity}'"))
+            errors.append(
+                SemanticError(
+                    message=f"{ctx}: connect references unknown child entity '{side_entity}'",
+                    filename=filename,
+                    line=conn.line,
+                )
+            )
             continue
         if side_port is not None:
             valid = _valid_connect_port_names(child_entity_map[side_entity])
             if valid is not None and side_port not in valid:
-                errors.append(SemanticError(f"{ctx}: connect references unknown port '{side_port}' on '{side_entity}'"))
+                errors.append(
+                    SemanticError(
+                        message=f"{ctx}: connect references unknown port '{side_port}' on '{side_entity}'",
+                        filename=filename,
+                        line=conn.line,
+                    )
+                )
     return errors
 
 
@@ -744,21 +907,33 @@ def _infer_unique_port(
     direction: str,
     entity_name: str,
     ctx: str,
+    filename: str | None = None,
+    line: int | None = None,
 ) -> tuple[str | None, list[SemanticError]]:
     """Return the unique port name in *direction* ('provides' or 'requires') for *entity*.
 
     Returns ``(port_name, [])`` when exactly one port exists, or
     ``(None, [error])`` when zero or more than one port exists.
     """
-    ports: list[InterfaceRef] = getattr(entity, direction)
-    if len(ports) == 1:
-        return _effective_port_name(ports[0]), []
-    if len(ports) == 0:
-        return None, [SemanticError(f"{ctx}: simplified connect: '{entity_name}' has no {direction} ports")]
+    port_names = _boundary_port_names(entity, direction)
+    if len(port_names) == 1:
+        return port_names[0], []
+    if len(port_names) == 0:
+        return None, [
+            SemanticError(
+                message=f"{ctx}: simplified connect: '{entity_name}' has no {direction} ports",
+                filename=filename,
+                line=line,
+            )
+        ]
     return None, [
         SemanticError(
-            f"{ctx}: simplified connect: '{entity_name}' has multiple {direction} ports;"
-            f" use '{entity_name}.port' form to disambiguate"
+            message=(
+                f"{ctx}: simplified connect: '{entity_name}' has multiple {direction} ports;"
+                f" use '{entity_name}.port' form to disambiguate"
+            ),
+            filename=filename,
+            line=line,
         )
     ]
 
@@ -767,6 +942,7 @@ def _resolve_simplified_connect(
     conn: ConnectDef,
     child_entity_map: dict[str, Component | System | UserDef],
     ctx: str,
+    filename: str | None = None,
 ) -> list[SemanticError]:
     """Resolve simplified connect forms in-place.
 
@@ -777,10 +953,12 @@ def _resolve_simplified_connect(
     """
     errors: list[SemanticError] = []
 
+    conn_line = conn.line if conn.line > 0 else None
+
     # Src side: (None, "EntityName") where EntityName is a child.
     if conn.src_entity is None and conn.src_port is not None and conn.src_port in child_entity_map:
         entity = child_entity_map[conn.src_port]
-        port, errs = _infer_unique_port(entity, "provides", conn.src_port, ctx)
+        port, errs = _infer_unique_port(entity, "provides", conn.src_port, ctx, filename, conn_line)
         errors.extend(errs)
         if port is not None:
             conn.src_entity = conn.src_port
@@ -789,7 +967,7 @@ def _resolve_simplified_connect(
     # Dst side: (None, "EntityName") where EntityName is a child.
     if conn.dst_entity is None and conn.dst_port is not None and conn.dst_port in child_entity_map:
         entity = child_entity_map[conn.dst_port]
-        port, errs = _infer_unique_port(entity, "requires", conn.dst_port, ctx)
+        port, errs = _infer_unique_port(entity, "requires", conn.dst_port, ctx, filename, conn_line)
         errors.extend(errs)
         if port is not None:
             conn.dst_entity = conn.dst_port
@@ -802,16 +980,29 @@ def _check_expose(
     ctx: str,
     exp: ExposeDef,
     child_entity_map: dict[str, Component | System | UserDef],
+    filename: str | None = None,
 ) -> list[SemanticError]:
     """Check that the entity and port in an expose statement are valid."""
     if exp.entity not in child_entity_map:
-        return [SemanticError(f"{ctx}: expose references unknown child entity '{exp.entity}'")]
+        return [
+            SemanticError(
+                message=f"{ctx}: expose references unknown child entity '{exp.entity}'",
+                filename=filename,
+                line=exp.line,
+            )
+        ]
     entity = child_entity_map[exp.entity]
     if isinstance(entity, (Component, System)) and entity.is_stub:
         return []
     valid_ports = _valid_connect_port_names(entity)
     if valid_ports is not None and exp.port not in valid_ports:
-        return [SemanticError(f"{ctx}: expose references unknown port '{exp.port}' on '{exp.entity}'")]
+        return [
+            SemanticError(
+                message=f"{ctx}: expose references unknown port '{exp.port}' on '{exp.entity}'",
+                filename=filename,
+                line=exp.line,
+            )
+        ]
     return []
 
 
@@ -828,6 +1019,7 @@ def _check_port_names(
     ctx: str,
     requires: list[InterfaceRef],
     provides: list[InterfaceRef],
+    filename: str | None = None,
 ) -> list[SemanticError]:
     """Check that all port names within an entity are unique.
 
@@ -835,10 +1027,11 @@ def _check_port_names(
     The effective port name defaults to the interface name when no explicit
     ``as`` alias is given.
     """
-    all_port_names = [_effective_port_name(r) for r in requires] + [_effective_port_name(p) for p in provides]
-    return _check_duplicate_names(
-        all_port_names,
+    all_port_refs = list(requires) + list(provides)
+    return _check_duplicate_name_lines(
+        [(_effective_port_name(r), r.line) for r in all_port_refs],
         f"Duplicate port name '{{}}' in {ctx}",
+        filename,
     )
 
 
@@ -847,17 +1040,22 @@ def _check_user(
     all_interface_names: set[str],
     local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
     imported_names: set[str],
+    filename: str | None = None,
 ) -> list[SemanticError]:
     """Check requires/provides interface references on a user entity."""
     errors: list[SemanticError] = []
     ctx = f"user '{user.name}'"
     for ref in user.requires:
         errors.extend(
-            _check_interface_ref(ctx, ref, all_interface_names, local_interface_defs, imported_names, "requires")
+            _check_interface_ref(
+                ctx, ref, all_interface_names, local_interface_defs, imported_names, "requires", filename
+            )
         )
     for ref in user.provides:
         errors.extend(
-            _check_interface_ref(ctx, ref, all_interface_names, local_interface_defs, imported_names, "provides")
+            _check_interface_ref(
+                ctx, ref, all_interface_names, local_interface_defs, imported_names, "provides", filename
+            )
         )
-    errors.extend(_check_port_names(ctx, user.requires, user.provides))
+    errors.extend(_check_port_names(ctx, user.requires, user.provides, filename))
     return errors

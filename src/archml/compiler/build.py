@@ -37,6 +37,7 @@ from typing import NamedTuple
 
 from archml.compiler.artifact import ARTIFACT_SUFFIX, read_artifact, write_artifact
 from archml.compiler.parser import ParseError, parse
+from archml.compiler.scanner import LexerError
 from archml.compiler.semantic_analysis import analyze
 from archml.model.entities import ArchFile
 
@@ -322,9 +323,9 @@ def _compile_file(
         raise CompilerError(f"Cannot read source file '{source_file}': {exc}") from exc
 
     try:
-        arch_file = parse(source_text)
-    except ParseError as exc:
-        raise CompilerError(f"Parse error in '{source_file}': {exc}") from exc
+        arch_file = parse(source_text, filename=source_file.name)
+    except (LexerError, ParseError) as exc:
+        raise CompilerError(str(exc)) from exc
 
     in_progress.add(key)
     try:
@@ -340,10 +341,10 @@ def _compile_file(
             resolved_imports[imp.source_path] = dep
 
         # Semantic validation.
-        errors = analyze(arch_file, resolved_imports=resolved_imports, file_key=key)
+        errors = analyze(arch_file, resolved_imports=resolved_imports, file_key=key, filename=source_file.name)
         if errors:
-            error_lines = "\n".join(f"  {e.message}" for e in errors)
-            raise CompilerError(f"Semantic errors in '{source_file}':\n{error_lines}")
+            error_lines = "\n".join(str(e) for e in errors)
+            raise CompilerError(error_lines)
 
         # Write artifact.
         artifact.parent.mkdir(parents=True, exist_ok=True)

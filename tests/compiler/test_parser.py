@@ -1850,8 +1850,12 @@ class TestParseErrors:
     def test_error_message_includes_line_column(self) -> None:
         with pytest.raises(ParseError) as exc_info:
             _parse("requires X")
-        assert "Line" in str(exc_info.value)
-        assert "column" in str(exc_info.value)
+        assert "1:1:" in str(exc_info.value)
+
+    def test_error_message_includes_filename_when_given(self) -> None:
+        with pytest.raises(ParseError) as exc_info:
+            parse("requires X", filename="myfile.archml")
+        assert "myfile.archml:1:1:" in str(exc_info.value)
 
     def test_external_inside_component_body_non_component_raises(self) -> None:
         with pytest.raises(ParseError) as exc_info:
