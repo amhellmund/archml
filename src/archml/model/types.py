@@ -36,18 +36,6 @@ class PrimitiveTypeRef(BaseModel):
     primitive: PrimitiveType
 
 
-class FileTypeRef(BaseModel):
-    """Reference to the File filesystem type."""
-
-    kind: Literal["file"] = "file"
-
-
-class DirectoryTypeRef(BaseModel):
-    """Reference to the Directory filesystem type."""
-
-    kind: Literal["directory"] = "directory"
-
-
 class ListTypeRef(BaseModel):
     """Reference to a parameterized List<T> type."""
 
@@ -80,7 +68,7 @@ class NamedTypeRef(BaseModel):
 # A field type reference — one of the built-in, container, or named types.
 # The `kind` discriminator field enables fast, unambiguous deserialization.
 TypeRef = Annotated[
-    PrimitiveTypeRef | FileTypeRef | DirectoryTypeRef | ListTypeRef | MapTypeRef | OptionalTypeRef | NamedTypeRef,
+    PrimitiveTypeRef | ListTypeRef | MapTypeRef | OptionalTypeRef | NamedTypeRef,
     _Field(discriminator="kind"),
 ]
 
@@ -92,7 +80,6 @@ class FieldDef(BaseModel):
     type: TypeRef
     description: str | None = None
     schema_ref: str | None = None
-    filetype: str | None = None
     line: int = 0
 
 

@@ -21,9 +21,7 @@ from archml.model.entities import (
     UserDef,
 )
 from archml.model.types import (
-    DirectoryTypeRef,
     FieldDef,
-    FileTypeRef,
     ListTypeRef,
     MapTypeRef,
     NamedTypeRef,
@@ -88,7 +86,6 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.TYPE,
         TokenType.ENUM,
         TokenType.FIELD,
-        TokenType.FILETYPE,
         TokenType.SCHEMA,
         TokenType.REQUIRES,
         TokenType.PROVIDES,
@@ -765,7 +762,7 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_field(self) -> FieldDef:
-        """Parse: field <name>: <type> [{ description=.. schema=.. filetype=.. }]"""
+        """Parse: field <name>: <type> [{ description=.. schema=.. }]"""
         self._expect(TokenType.FIELD)
         name_tok = self._expect_name_token()
         self._expect(TokenType.COLON)
@@ -778,8 +775,6 @@ class _Parser:
                     f.description = self._parse_string_attr(TokenType.DESCRIPTION)
                 elif self._check(TokenType.SCHEMA):
                     f.schema_ref = self._parse_string_attr(TokenType.SCHEMA)
-                elif self._check(TokenType.FILETYPE):
-                    f.filetype = self._parse_string_attr(TokenType.FILETYPE)
                 else:
                     inner_tok = self._current()
                     raise ParseError(
@@ -798,17 +793,12 @@ class _Parser:
     def _parse_type_ref(self) -> TypeRef:
         """Parse a type reference.
 
-        Handles primitive types, File, Directory, List<T>, Map<K,V>,
-        Optional<T>, or a named type.
+        Handles primitive types, List<T>, Map<K,V>, Optional<T>, or a named type.
         """
         name_tok = self._expect(TokenType.IDENTIFIER)
         name = name_tok.value
         if name in _PRIMITIVE_TYPES:
             return PrimitiveTypeRef(primitive=_PRIMITIVE_TYPES[name])
-        if name == "File":
-            return FileTypeRef()
-        if name == "Directory":
-            return DirectoryTypeRef()
         if name == "List":
             self._expect(TokenType.LANGLE)
             inner = self._parse_type_ref()

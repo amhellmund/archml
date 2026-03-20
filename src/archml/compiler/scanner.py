@@ -27,7 +27,6 @@ class TokenType(enum.Enum):
     TYPE = "type"
     ENUM = "enum"
     FIELD = "field"
-    FILETYPE = "filetype"
     SCHEMA = "schema"
     REQUIRES = "requires"
     PROVIDES = "provides"
@@ -137,7 +136,6 @@ _KEYWORDS: dict[str, TokenType] = {
     "type": TokenType.TYPE,
     "enum": TokenType.ENUM,
     "field": TokenType.FIELD,
-    "filetype": TokenType.FILETYPE,
     "schema": TokenType.SCHEMA,
     "requires": TokenType.REQUIRES,
     "provides": TokenType.PROVIDES,

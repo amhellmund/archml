@@ -22,9 +22,7 @@ from archml.model.entities import (
     TypeDef,
 )
 from archml.model.types import (
-    DirectoryTypeRef,
     FieldDef,
-    FileTypeRef,
     ListTypeRef,
     MapTypeRef,
     NamedTypeRef,
@@ -159,16 +157,6 @@ class TestContainerTypeRefs:
         field_type = result.types[0].fields[0].type
         assert isinstance(field_type, OptionalTypeRef)
         assert isinstance(field_type.inner_type, PrimitiveTypeRef)
-
-    def test_file_type_ref(self) -> None:
-        af = ArchFile(interfaces=[InterfaceDef(name="I", fields=[FieldDef(name="f", type=FileTypeRef())])])
-        result = _roundtrip(af)
-        assert isinstance(result.interfaces[0].fields[0].type, FileTypeRef)
-
-    def test_directory_type_ref(self) -> None:
-        af = ArchFile(interfaces=[InterfaceDef(name="I", fields=[FieldDef(name="d", type=DirectoryTypeRef())])])
-        result = _roundtrip(af)
-        assert isinstance(result.interfaces[0].fields[0].type, DirectoryTypeRef)
 
     def test_named_type_ref(self) -> None:
         af = ArchFile(

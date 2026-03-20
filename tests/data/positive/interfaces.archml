@@ -79,15 +79,13 @@ interface InventoryStatus {
 }
 
 interface ReportOutput {
-    field report: File {
-        filetype = "PDF"
+    field report: String {
         schema = "Monthly sales summary report."
     }
-    field export: File {
-        filetype = "CSV"
+    field export: String {
         schema = "Raw transaction data."
     }
-    field artifact: Directory {
+    field artifact: String {
         schema = "Contains report.pdf, data.csv, and metadata.json."
     }
 }

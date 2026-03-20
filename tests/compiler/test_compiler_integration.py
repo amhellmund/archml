@@ -404,23 +404,6 @@ system Outer {
         errors = analyze(arch_file)
         assert any("Ghost" in e.message for e in errors)
 
-    def test_file_and_directory_type_refs_are_valid(self) -> None:
-        """File and Directory types require no resolution and are always valid."""
-        source = """
-interface Artifacts {
-    field report: File {
-        filetype = "PDF"
-        schema = "Monthly report."
-    }
-    field exports: Directory {
-        schema = "Contains CSV files."
-    }
-}
-"""
-        arch_file = parse(source)
-        errors = analyze(arch_file)
-        assert errors == [], f"Expected clean but got: {[e.message for e in errors]}"
-
     def test_use_statement_adds_component_to_scope(self) -> None:
         """Components added via 'use' are valid connect targets."""
         source = """

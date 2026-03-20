@@ -17,9 +17,7 @@ from archml.model.entities import (
     UserDef,
 )
 from archml.model.types import (
-    DirectoryTypeRef,
     FieldDef,
-    FileTypeRef,
     ListTypeRef,
     MapTypeRef,
     NamedTypeRef,
@@ -33,8 +31,6 @@ __all__ = [
     # Type system
     "PrimitiveType",
     "PrimitiveTypeRef",
-    "FileTypeRef",
-    "DirectoryTypeRef",
     "ListTypeRef",
     "MapTypeRef",
     "OptionalTypeRef",

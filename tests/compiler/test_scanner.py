@@ -78,7 +78,6 @@ class TestKeywords:
             ("type", TokenType.TYPE),
             ("enum", TokenType.ENUM),
             ("field", TokenType.FIELD),
-            ("filetype", TokenType.FILETYPE),
             ("schema", TokenType.SCHEMA),
             ("requires", TokenType.REQUIRES),
             ("provides", TokenType.PROVIDES),
@@ -809,11 +808,6 @@ class TestStructuralPatterns:
         types = _types(source)
         assert types == [TokenType.IDENTIFIER, TokenType.EQUALS, TokenType.FALSE]
 
-    def test_filetype_annotation(self) -> None:
-        source = 'filetype = "PDF"'
-        types = _types(source)
-        assert types == [TokenType.FILETYPE, TokenType.EQUALS, TokenType.STRING]
-
     def test_schema_annotation(self) -> None:
         source = 'schema = "Monthly sales summary report."'
         types = _types(source)
@@ -963,18 +957,6 @@ class TestFullExample:
         assert len(connect_tokens) == 1
         assert len(arrow_tokens) == 2
         assert len(dollar_tokens) == 1
-
-    def test_file_field_annotation(self) -> None:
-        source = """
-            field app_config: File {
-                filetype = "YAML"
-                schema = "Top-level keys: server, database, logging."
-            }
-        """
-        types = _types(source)
-        assert types[0] == TokenType.FIELD
-        assert TokenType.FILETYPE in types
-        assert TokenType.SCHEMA in types
 
     def test_integer_values_in_source(self) -> None:
         source = "field quantity: Int"

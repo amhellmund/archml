@@ -7,10 +7,8 @@ from archml.model import (
     ArchFile,
     Component,
     ConnectDef,
-    DirectoryTypeRef,
     EnumDef,
     FieldDef,
-    FileTypeRef,
     ImportDeclaration,
     InterfaceDef,
     InterfaceRef,
@@ -63,31 +61,6 @@ def test_field_with_annotations() -> None:
     )
     assert f.description == "ISO 4217 currency code."
     assert f.schema_ref == "Three-letter uppercase code, e.g. USD, EUR."
-    assert f.filetype is None
-
-
-def test_file_type_field() -> None:
-    """A field can reference the File filesystem type with filetype and schema."""
-    f = FieldDef(
-        name="report",
-        type=FileTypeRef(),
-        filetype="PDF",
-        schema_ref="Monthly sales summary report.",
-    )
-    assert isinstance(f.type, FileTypeRef)
-    assert f.filetype == "PDF"
-    assert f.schema_ref == "Monthly sales summary report."
-
-
-def test_directory_type_field() -> None:
-    """A field can reference the Directory filesystem type."""
-    f = FieldDef(
-        name="artifact",
-        type=DirectoryTypeRef(),
-        schema_ref="Contains manifests/*.yaml, config/app.yaml",
-    )
-    assert isinstance(f.type, DirectoryTypeRef)
-    assert f.schema_ref == "Contains manifests/*.yaml, config/app.yaml"
 
 
 def test_enum_definition() -> None:
