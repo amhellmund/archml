@@ -988,90 +988,13 @@ system S {
         assert conn.dst_entity == "B"
         assert conn.dst_port == "PaymentRequest"
 
-    def test_connect_with_protocol(self) -> None:
-        source = """\
-system S {
-    component A { provides PaymentRequest }
-    component B { requires PaymentRequest }
-    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
-        protocol = "gRPC"
-    }
-}"""
-        result = _parse(source)
-        conn = result.systems[0].connects[0]
-        assert conn.protocol == "gRPC"
-
-    def test_connect_with_async_true(self) -> None:
-        source = """\
-system S {
-    component A { provides PaymentRequest }
-    component B { requires PaymentRequest }
-    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
-        async = true
-    }
-}"""
-        result = _parse(source)
-        assert result.systems[0].connects[0].is_async is True
-
-    def test_connect_with_async_false(self) -> None:
-        source = """\
-system S {
-    component A { provides PaymentRequest }
-    component B { requires PaymentRequest }
-    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
-        async = false
-    }
-}"""
-        result = _parse(source)
-        assert result.systems[0].connects[0].is_async is False
-
-    def test_connect_with_description(self) -> None:
-        source = """\
-system S {
-    component A { provides PaymentRequest }
-    component B { requires PaymentRequest }
-    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
-        description = "Carries payment processing requests."
-    }
-}"""
-        result = _parse(source)
-        assert result.systems[0].connects[0].description == "Carries payment processing requests."
-
-    def test_connect_with_all_annotations(self) -> None:
-        source = """\
-system S {
-    component A { provides PaymentRequest }
-    component B { requires PaymentRequest }
-    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
-        protocol = "gRPC"
-        async = true
-        description = "Initiates payment processing for confirmed orders."
-    }
-}"""
-        result = _parse(source)
-        conn = result.systems[0].connects[0]
-        assert conn.channel == "payment"
-        assert conn.protocol == "gRPC"
-        assert conn.is_async is True
-        assert conn.description == "Initiates payment processing for confirmed orders."
-
-    def test_connect_attr_on_same_line_as_lbrace_raises(self) -> None:
-        with pytest.raises(ParseError) as exc_info:
-            _parse('system S { component A {} component B {} connect A.X -> B.X { protocol = "HTTP" } }')
-        assert "new line" in str(exc_info.value)
-
-    def test_connect_attrs_on_same_line_as_each_other_raises(self) -> None:
-        source = """\
-system S {
-    component A { provides X }
-    component B { requires X }
-    connect A.X -> $ch -> B.X {
-        protocol = "HTTP"  async = true
-    }
-}"""
-        with pytest.raises(ParseError) as exc_info:
-            _parse(source)
-        assert "new line" in str(exc_info.value)
+    def test_connect_with_braces_raises(self) -> None:
+        """A connect statement followed by { } is a parse error."""
+        with pytest.raises(ParseError):
+            _parse(
+                "system S { component A { provides X } component B { requires X } "
+                'connect A.X -> $ch -> B.X { protocol = "HTTP" } }'
+            )
 
     def test_multiple_connects_in_system(self) -> None:
         source = """\
@@ -1080,13 +1003,8 @@ system ECommerce {
     component B { requires PaymentRequest }
     component C { provides InventoryCheck }
     component D { requires InventoryCheck }
-    connect A.PaymentRequest -> $payment -> B.PaymentRequest {
-        protocol = "gRPC"
-        async = true
-    }
-    connect C.InventoryCheck -> $inventory -> D.InventoryCheck {
-        protocol = "HTTP"
-    }
+    connect A.PaymentRequest -> $payment -> B.PaymentRequest
+    connect C.InventoryCheck -> $inventory -> D.InventoryCheck
     connect A.PaymentRequest -> B.PaymentRequest
 }"""
         result = _parse(source)
@@ -1536,13 +1454,8 @@ system ECommerce {
         provides InventoryStatus
     }
 
-    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-        protocol = "HTTP"
-        async = true
-    }
-    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
-        protocol = "HTTP"
-    }
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck
 }
 """
         result = _parse(source)
@@ -1563,8 +1476,7 @@ system ECommerce {
         assert gw.tags == ["critical", "pci-scope"]
 
         payment_conn = ecommerce.connects[0]
-        assert payment_conn.protocol == "HTTP"
-        assert payment_conn.is_async is True
+        assert payment_conn.channel == "payment"
 
     def test_nested_component_with_connects(self) -> None:
         """Parse a component with nested sub-components and internal connect."""
@@ -1785,10 +1697,9 @@ class TestParseErrors:
         with pytest.raises(ParseError):
             _parse("from interfaces/order X")
 
-    def test_unknown_connect_attribute(self) -> None:
-        with pytest.raises(ParseError) as exc_info:
+    def test_connect_with_braces_is_parse_error(self) -> None:
+        with pytest.raises(ParseError):
             _parse("system S {\n    connect A.p -> $ch -> B.p {\n        timeout = 30\n    }\n}")
-        assert "Unknown connect attribute" in str(exc_info.value)
 
     def test_unknown_field_annotation(self) -> None:
         with pytest.raises(ParseError):
@@ -1984,7 +1895,7 @@ interface AllPrimitives {
         assert isinstance(map_type.value_type, NamedTypeRef)
         assert map_type.value_type.name == "OrderItem"
 
-    def test_connect_without_annotation_block(self) -> None:
+    def test_connect_basic_fields(self) -> None:
         source = (
             "system S { component A { provides PaymentRequest } "
             "component B { requires PaymentRequest } "
@@ -1992,9 +1903,11 @@ interface AllPrimitives {
         )
         result = _parse(source)
         conn = result.systems[0].connects[0]
-        assert conn.protocol is None
-        assert conn.is_async is False
-        assert conn.description is None
+        assert conn.src_entity == "A"
+        assert conn.src_port == "PaymentRequest"
+        assert conn.channel == "payment"
+        assert conn.dst_entity == "B"
+        assert conn.dst_port == "PaymentRequest"
 
     def test_interface_field_empty_annotation_block(self) -> None:
         source = "interface I { field x: String {} }"
@@ -2128,22 +2041,6 @@ connect Frontend.API -> $bus -> Backend.API
         assert conn.channel == "bus"
         assert conn.dst_entity == "Backend"
         assert conn.dst_port == "API"
-
-    def test_top_level_connect_with_attributes(self) -> None:
-        """Top-level connect statement supports annotation blocks."""
-        source = """\
-system A {}
-system B {}
-
-connect A.Data -> $pipe -> B.Data {
-    async = true
-    protocol = "grpc"
-}
-"""
-        result = _parse(source)
-        conn = result.connects[0]
-        assert conn.is_async is True
-        assert conn.protocol == "grpc"
 
     def test_top_level_multiple_connects(self) -> None:
         """Multiple top-level connect statements are all collected."""

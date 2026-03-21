@@ -71,15 +71,8 @@ system ECommerce {
         provides InventoryStatus
     }
 
-    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-        protocol = "gRPC"
-        async = false
-        description = "Submit payment for confirmed order."
-    }
-    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
-        protocol = "HTTP"
-        async = true
-    }
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck
 
     expose OrderService.OrderRequest
     expose OrderService.OrderConfirmation

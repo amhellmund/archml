@@ -2,3 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Sphinx extension for embedding ArchML architecture views."""
+
+from archml.sphinx_ext.extension import ArchmlVisualizeDirective, find_workspace_root, setup
+
+__all__ = [
+    "setup",
+    "ArchmlVisualizeDirective",
+    "find_workspace_root",
+]

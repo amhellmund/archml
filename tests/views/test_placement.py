@@ -35,8 +35,6 @@ def _connect(
     dst_entity: str,
     dst_port: str,
     channel: str | None = None,
-    protocol: str | None = None,
-    is_async: bool = False,
 ) -> ConnectDef:
     return ConnectDef(
         src_entity=src_entity,
@@ -44,8 +42,6 @@ def _connect(
         channel=channel,
         dst_entity=dst_entity,
         dst_port=dst_port,
-        protocol=protocol,
-        is_async=is_async,
     )
 
 

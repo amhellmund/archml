@@ -165,16 +165,12 @@ def test_connect_definition() -> None:
         channel="payment",
         dst_entity="OrderService",
         dst_port="PaymentRequest",
-        protocol="gRPC",
-        is_async=True,
-        description="Initiates payment processing.",
     )
     assert conn.src_entity == "PaymentGateway"
     assert conn.src_port == "PaymentRequest"
     assert conn.channel == "payment"
     assert conn.dst_entity == "OrderService"
-    assert conn.protocol == "gRPC"
-    assert conn.is_async
+    assert conn.dst_port == "PaymentRequest"
 
 
 def test_interface_ref_with_port_name() -> None:

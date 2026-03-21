@@ -179,9 +179,6 @@ class VizEdge:
             (``"InterfaceName"`` or ``"InterfaceName@vN"``).
         interface_name: Base interface name without version suffix.
         interface_version: Version string, or ``None``.
-        protocol: Optional transport protocol annotation (e.g. ``"gRPC"``).
-        is_async: Whether the connection is asynchronous.
-        description: Optional human-readable description of the connection.
     """
 
     id: str
@@ -190,9 +187,6 @@ class VizEdge:
     label: str
     interface_name: str
     interface_version: str | None = None
-    protocol: str | None = None
-    is_async: bool = False
-    description: str | None = None
 
 
 @dataclass
@@ -1037,9 +1031,6 @@ def _build_edges_from_connect(
                         label=_iref_label(src_ref),
                         interface_name=src_ref.name,
                         interface_version=src_ref.version,
-                        protocol=conn.protocol,
-                        is_async=conn.is_async,
-                        description=conn.description,
                     )
                 )
 
@@ -1064,9 +1055,6 @@ def _build_edges_from_connect(
                         label=_iref_label(dst_ref),
                         interface_name=dst_ref.name,
                         interface_version=dst_ref.version,
-                        protocol=conn.protocol,
-                        is_async=conn.is_async,
-                        description=conn.description,
                     )
                 )
 
@@ -1126,9 +1114,6 @@ def _build_direct_edge(
         label=label,
         interface_name=src_ref.name,
         interface_version=src_ref.version,
-        protocol=conn.protocol,
-        is_async=conn.is_async,
-        description=conn.description,
     )
 
 
@@ -1511,9 +1496,6 @@ def _build_edges_for_connect(
                 label=_iref_label(src_ref),
                 interface_name=src_ref.name,
                 interface_version=src_ref.version,
-                protocol=conn.protocol,
-                is_async=conn.is_async,
-                description=conn.description,
             )
         ]
 
@@ -1546,9 +1528,6 @@ def _build_edges_for_connect(
                         label=_iref_label(src_ref),
                         interface_name=src_ref.name,
                         interface_version=src_ref.version,
-                        protocol=conn.protocol,
-                        is_async=conn.is_async,
-                        description=conn.description,
                     )
                 )
 
@@ -1572,9 +1551,6 @@ def _build_edges_for_connect(
                         label=_iref_label(dst_ref),
                         interface_name=dst_ref.name,
                         interface_version=dst_ref.version,
-                        protocol=conn.protocol,
-                        is_async=conn.is_async,
-                        description=conn.description,
                     )
                 )
     return edges

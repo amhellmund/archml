@@ -107,9 +107,6 @@ class ConnectDef(BaseModel):
     channel: str | None = None
     dst_entity: str | None = None
     dst_port: str | None = None
-    protocol: str | None = None
-    is_async: bool = False
-    description: str | None = None
     line: int = 0
 
 

@@ -32,8 +32,5 @@ system ECommerce {
     }
 
     connect PaymentGateway.pay_in -> $payment -> OrderService.PaymentRequest
-    connect PaymentGateway.stripe_in -> $stripe {
-        protocol = "HTTP"
-        async = true
-    }
+    connect PaymentGateway.stripe_in -> $stripe
 }

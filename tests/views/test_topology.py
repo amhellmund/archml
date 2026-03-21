@@ -28,9 +28,6 @@ def _connect(
     dst_entity: str,
     dst_port: str,
     channel: str | None = None,
-    protocol: str | None = None,
-    is_async: bool = False,
-    description: str | None = None,
 ) -> ConnectDef:
     return ConnectDef(
         src_entity=src_entity,
@@ -38,9 +35,6 @@ def _connect(
         channel=channel,
         dst_entity=dst_entity,
         dst_port=dst_port,
-        protocol=protocol,
-        is_async=is_async,
-        description=description,
     )
 
 
@@ -515,23 +509,6 @@ def test_edge_source_and_target_port_owners() -> None:
     assert all_ports[diag.edges[1].target_port_id].node_id == "S__A"
 
 
-def test_edge_protocol_and_async_propagated() -> None:
-    """Connect protocol and async attributes are propagated to both channel edges."""
-    a = Component(name="A", requires=[_iref("X")])
-    b = Component(name="B", provides=[_iref("X")])
-    parent = System(
-        name="S",
-        connects=[_connect("B", "X", "A", "X", channel="ch", protocol="gRPC", is_async=True, description="async call")],
-        components=[a, b],
-    )
-    diag = build_viz_diagram(parent)
-    # Both edges carry the connect attributes.
-    for edge in diag.edges:
-        assert edge.protocol == "gRPC"
-        assert edge.is_async is True
-        assert edge.description == "async call"
-
-
 def test_multiple_edges_from_multiple_connects() -> None:
     """Two channel connects (different channels) each produce two edges = four total."""
     a = Component(name="A", requires=[_iref("X"), _iref("Y")])
@@ -751,15 +728,7 @@ def test_ecommerce_system_topology() -> None:
         connects=[
             _connect("PaymentGateway", "PaymentRequest", "OrderService", "PaymentRequest", channel="payment"),
             _connect("InventoryManager", "InventoryCheck", "OrderService", "InventoryCheck", channel="inventory"),
-            _connect(
-                "StripeAPI",
-                "StripePayment",
-                "PaymentGateway",
-                "StripePayment",
-                channel="stripe",
-                protocol="HTTP",
-                is_async=True,
-            ),
+            _connect("StripeAPI", "StripePayment", "PaymentGateway", "StripePayment", channel="stripe"),
         ],
         components=[order_svc, payment_gw, inventory, stripe],
     )
@@ -791,10 +760,9 @@ def test_ecommerce_system_topology() -> None:
     assert "PaymentRequest" in edge_labels
     assert "InventoryCheck" in edge_labels
 
-    # Async annotation on all stripe-channel edges.
-    stripe_edges = [e for e in diag.edges if e.protocol == "HTTP"]
+    # Stripe channel produces two edges.
+    stripe_edges = [e for e in diag.edges if "StripePayment" in e.label]
     assert len(stripe_edges) == 2
-    assert all(e.is_async for e in stripe_edges)
 
     # All ports resolvable.
     all_ports = collect_all_ports(diag)
@@ -1648,20 +1616,17 @@ class TestDepthConnectionEdges:
         assert all_ports[diag.edges[0].target_port_id].node_id == ch.id
         assert all_ports[diag.edges[1].source_port_id].node_id == ch.id
 
-    def test_depth_1_channel_attributes_preserved(self) -> None:
-        """Protocol and async attributes on the connect are visible on both edges."""
+    def test_depth_1_channel_produces_two_edges(self) -> None:
+        """A channel connect at depth=1 produces exactly two edges."""
         a = Component(name="A", provides=[_iref("X")])
         b = Component(name="B", requires=[_iref("X")])
         sys = System(
             name="Root",
             components=[a, b],
-            connects=[_connect("A", "X", "B", "X", channel="ch", protocol="gRPC", is_async=True)],
+            connects=[_connect("A", "X", "B", "X", channel="ch")],
         )
         diag = build_viz_diagram(sys, depth=1)
         assert len(diag.edges) == 2
-        for edge in diag.edges:
-            assert edge.protocol == "gRPC"
-            assert edge.is_async is True
 
     def test_depth_1_direct_connect_produces_single_edge(self) -> None:
         """A direct connect (no channel) at depth=1 produces exactly one edge."""

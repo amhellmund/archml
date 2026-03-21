@@ -277,9 +277,6 @@ class TestComponents:
                             channel="sig_ch",
                             dst_entity="B",
                             dst_port="Signal",
-                            protocol="gRPC",
-                            is_async=True,
-                            description="Data flow.",
                         )
                     ],
                     exposes=[],
@@ -293,9 +290,6 @@ class TestComponents:
         assert conn.channel == "sig_ch"
         assert conn.dst_entity == "B"
         assert conn.dst_port == "Signal"
-        assert conn.protocol == "gRPC"
-        assert conn.is_async
-        assert conn.description == "Data flow."
 
     def test_expose_roundtrip(self) -> None:
         af = ArchFile(

@@ -618,10 +618,10 @@ class _Parser:
         """Parse a connect statement.
 
         Four forms:
-            connect <src_port> -> $<channel> -> <dst_port> [{ attrs }]
-            connect <src_port> -> $<channel>               [{ attrs }]
-            connect $<channel> -> <dst_port>               [{ attrs }]
-            connect <src_port> -> <dst_port>               [{ attrs }]
+            connect <src_port> -> $<channel> -> <dst_port>
+            connect <src_port> -> $<channel>
+            connect $<channel> -> <dst_port>
+            connect <src_port> -> <dst_port>
 
         Where <src_port> / <dst_port> is either ``Entity.port`` or just
         ``port`` (port on the current scope's own boundary).
@@ -682,23 +682,6 @@ class _Parser:
                     line=connect_tok.line,
                 )
 
-        # Optional attribute block
-        if self._check(TokenType.LBRACE):
-            lbrace = self._advance()  # consume {
-            last_attr_line = lbrace.line
-            while not self._check(TokenType.RBRACE, TokenType.EOF):
-                attr_tok = self._current()
-                if attr_tok.line <= last_attr_line:
-                    raise ParseError(
-                        "Connect attributes must each be on a new line",
-                        attr_tok.line,
-                        attr_tok.column,
-                        self._filename,
-                    )
-                connect_def = self._parse_connect_attr(connect_def)
-                last_attr_line = self._tokens[self._pos - 1].line
-            self._expect(TokenType.RBRACE)
-
         return connect_def
 
     def _parse_port_ref(self, ctx_tok: Token) -> tuple[str | None, str]:
@@ -712,69 +695,6 @@ class _Parser:
             port_tok = self._expect(TokenType.IDENTIFIER)
             return (name_tok.value, port_tok.value)
         return (None, name_tok.value)
-
-    def _parse_connect_attr(self, connect_def: ConnectDef) -> ConnectDef:
-        """Parse a single attribute inside a connect annotation block.
-
-        Returns an updated ConnectDef with the attribute applied.
-        """
-        tok = self._current()
-        if tok.type == TokenType.DESCRIPTION:
-            description = self._parse_string_attr(TokenType.DESCRIPTION)
-            return ConnectDef(
-                src_entity=connect_def.src_entity,
-                src_port=connect_def.src_port,
-                channel=connect_def.channel,
-                dst_entity=connect_def.dst_entity,
-                dst_port=connect_def.dst_port,
-                protocol=connect_def.protocol,
-                is_async=connect_def.is_async,
-                description=description,
-                line=connect_def.line,
-            )
-        elif tok.type == TokenType.IDENTIFIER:
-            attr_name = self._advance().value
-            self._expect(TokenType.EQUALS)
-            if attr_name == "protocol":
-                str_tok = self._expect(TokenType.STRING)
-                return ConnectDef(
-                    src_entity=connect_def.src_entity,
-                    src_port=connect_def.src_port,
-                    channel=connect_def.channel,
-                    dst_entity=connect_def.dst_entity,
-                    dst_port=connect_def.dst_port,
-                    protocol=str_tok.value,
-                    is_async=connect_def.is_async,
-                    description=connect_def.description,
-                    line=connect_def.line,
-                )
-            elif attr_name == "async":
-                bool_tok = self._expect(TokenType.TRUE, TokenType.FALSE)
-                return ConnectDef(
-                    src_entity=connect_def.src_entity,
-                    src_port=connect_def.src_port,
-                    channel=connect_def.channel,
-                    dst_entity=connect_def.dst_entity,
-                    dst_port=connect_def.dst_port,
-                    protocol=connect_def.protocol,
-                    is_async=bool_tok.type == TokenType.TRUE,
-                    description=connect_def.description,
-                    line=connect_def.line,
-                )
-            else:
-                raise ParseError(
-                    f"Unknown connect attribute {attr_name!r}",
-                    tok.line,
-                    tok.column,
-                    self._filename,
-                )
-        else:
-            raise ParseError(
-                f"Unexpected token {tok.value!r} in connect annotation block",
-                tok.line,
-                tok.column,
-                self._filename,
-            )
 
     # ------------------------------------------------------------------
     # Expose statements
