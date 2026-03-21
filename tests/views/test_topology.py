@@ -1574,3 +1574,327 @@ class TestBuildVizDiagramAllExpanded:
         assert len(order_to_ch_edges) == 1
         src_port = all_ports[order_to_ch_edges[0].source_port_id]
         assert src_port.node_id == "Order__B"
+
+
+# ###############
+# build_viz_diagram — depth + connection correctness
+# ###############
+
+
+class TestDepthConnectionEdges:
+    """Tests that connect edges are produced with correct port IDs at each depth level.
+
+    Structural expansion tests (VizBoundary vs VizNode) live in
+    TestBuildVizDiagramDepth.  This class focuses exclusively on *which edges*
+    appear and *which nodes they connect* at depths 0, 1, 2, and None.
+    """
+
+    def _two_child_system(self) -> System:
+        """Root → A (provides Out) and B (requires Out), connected via $ch."""
+        a = Component(name="A", provides=[_iref("Out")])
+        b = Component(name="B", requires=[_iref("Out")])
+        return System(
+            name="Root",
+            components=[a, b],
+            connects=[_connect("A", "Out", "B", "Out", channel="ch")],
+        )
+
+    # depth=0 — connects not rendered because children are absent ----------
+
+    def test_depth_0_internal_connect_produces_no_edges(self) -> None:
+        """At depth=0 no children exist, so internal connects yield no edges."""
+        diag = build_viz_diagram(self._two_child_system(), depth=0)
+        assert diag.edges == []
+
+    # depth=1 — children are opaque VizNodes, connects ARE rendered ----------
+
+    def test_depth_1_channel_connect_produces_two_edges(self) -> None:
+        """At depth=1 a channel connect (A→$ch→B) produces exactly two edges."""
+        diag = build_viz_diagram(self._two_child_system(), depth=1)
+        assert len(diag.edges) == 2
+
+    def test_depth_1_first_edge_source_is_child_a(self) -> None:
+        """At depth=1, edges[0] source port belongs to child A (provider)."""
+        diag = build_viz_diagram(self._two_child_system(), depth=1)
+        all_ports = collect_all_ports(diag)
+        src_port = all_ports[diag.edges[0].source_port_id]
+        assert src_port.node_id == "Root__A"
+        assert src_port.direction == "provides"
+
+    def test_depth_1_second_edge_target_is_child_b(self) -> None:
+        """At depth=1, edges[1] target port belongs to child B (requirer)."""
+        diag = build_viz_diagram(self._two_child_system(), depth=1)
+        all_ports = collect_all_ports(diag)
+        tgt_port = all_ports[diag.edges[1].target_port_id]
+        assert tgt_port.node_id == "Root__B"
+        assert tgt_port.direction == "requires"
+
+    def test_depth_1_all_edge_ports_resolvable(self) -> None:
+        """At depth=1, every edge port ID resolves in collect_all_ports."""
+        diag = build_viz_diagram(self._two_child_system(), depth=1)
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports, f"missing src {edge.source_port_id}"
+            assert edge.target_port_id in all_ports, f"missing dst {edge.target_port_id}"
+
+    def test_depth_1_channel_node_is_intermediate(self) -> None:
+        """At depth=1, a channel VizNode sits between the two child nodes."""
+        diag = build_viz_diagram(self._two_child_system(), depth=1)
+        all_ports = collect_all_ports(diag)
+        channel_nodes = [c for c in diag.root.children if isinstance(c, VizNode) and c.kind == "channel"]
+        assert len(channel_nodes) == 1
+        ch = channel_nodes[0]
+        # edges[0] target is the channel; edges[1] source is the channel
+        assert all_ports[diag.edges[0].target_port_id].node_id == ch.id
+        assert all_ports[diag.edges[1].source_port_id].node_id == ch.id
+
+    def test_depth_1_channel_attributes_preserved(self) -> None:
+        """Protocol and async attributes on the connect are visible on both edges."""
+        a = Component(name="A", provides=[_iref("X")])
+        b = Component(name="B", requires=[_iref("X")])
+        sys = System(
+            name="Root",
+            components=[a, b],
+            connects=[_connect("A", "X", "B", "X", channel="ch", protocol="gRPC", is_async=True)],
+        )
+        diag = build_viz_diagram(sys, depth=1)
+        assert len(diag.edges) == 2
+        for edge in diag.edges:
+            assert edge.protocol == "gRPC"
+            assert edge.is_async is True
+
+    def test_depth_1_direct_connect_produces_single_edge(self) -> None:
+        """A direct connect (no channel) at depth=1 produces exactly one edge."""
+        a = Component(name="A", provides=[_iref("X")])
+        b = Component(name="B", requires=[_iref("X")])
+        sys = System(
+            name="Root",
+            components=[a, b],
+            connects=[ConnectDef(src_entity="A", src_port="X", dst_entity="B", dst_port="X")],
+        )
+        diag = build_viz_diagram(sys, depth=1)
+        assert len(diag.edges) == 1
+        all_ports = collect_all_ports(diag)
+        assert all_ports[diag.edges[0].source_port_id].node_id == "Root__A"
+        assert all_ports[diag.edges[0].target_port_id].node_id == "Root__B"
+
+    def test_depth_1_multiple_connects_produce_correct_edge_count(self) -> None:
+        """Two channel connects at depth=1 produce four edges in total."""
+        a = Component(name="A", requires=[_iref("X"), _iref("Y")])
+        b = Component(name="B", provides=[_iref("X")])
+        c = Component(name="C", provides=[_iref("Y")])
+        sys = System(
+            name="Root",
+            components=[a, b, c],
+            connects=[
+                _connect("B", "X", "A", "X", channel="ch1"),
+                _connect("C", "Y", "A", "Y", channel="ch2"),
+            ],
+        )
+        diag = build_viz_diagram(sys, depth=1)
+        assert len(diag.edges) == 4
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+
+    # depth=2 — grandchildren remain opaque; sub-system connects appear ------
+
+    def _three_level_system(self) -> System:
+        """Root → Sub (System) → A (provides Out) + B (requires Out), connected via $inner."""
+        a = Component(name="A", provides=[_iref("Out")])
+        b = Component(name="B", requires=[_iref("Out")])
+        sub = System(
+            name="Sub",
+            components=[a, b],
+            connects=[_connect("A", "Out", "B", "Out", channel="inner")],
+        )
+        return System(name="Root", systems=[sub])
+
+    def test_depth_1_sub_system_opaque_no_inner_edges(self) -> None:
+        """At depth=1, Sub is an opaque VizNode so its inner connects produce no edges."""
+        diag = build_viz_diagram(self._three_level_system(), depth=1)
+        assert diag.edges == []
+
+    def test_depth_2_sub_system_expanded_inner_edges_appear(self) -> None:
+        """At depth=2, Sub is expanded and its inner connect A→$inner→B is visible."""
+        diag = build_viz_diagram(self._three_level_system(), depth=2)
+        assert len(diag.edges) == 2
+
+    def test_depth_2_inner_edge_ports_reference_grandchildren(self) -> None:
+        """At depth=2, edge ports reference A and B inside the expanded Sub boundary."""
+        diag = build_viz_diagram(self._three_level_system(), depth=2)
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+        src_port = all_ports[diag.edges[0].source_port_id]
+        assert src_port.node_id == "Root__Sub__A"
+        tgt_port = all_ports[diag.edges[1].target_port_id]
+        assert tgt_port.node_id == "Root__Sub__B"
+
+    # depth=3 vs depth=2 — four-level hierarchy controls when deepest edges appear
+
+    def _four_level_system(self) -> System:
+        """Root → Mid → Sub → A (provides Out) + B (requires Out), connected via $leaf."""
+        a = Component(name="A", provides=[_iref("Out")])
+        b = Component(name="B", requires=[_iref("Out")])
+        sub = System(
+            name="Sub",
+            components=[a, b],
+            connects=[_connect("A", "Out", "B", "Out", channel="leaf")],
+        )
+        mid = System(name="Mid", systems=[sub])
+        return System(name="Root", systems=[mid])
+
+    def test_depth_2_four_level_sub_opaque_no_leaf_edges(self) -> None:
+        """At depth=2, Sub is still opaque (Mid expanded but Sub is not), so no edges."""
+        diag = build_viz_diagram(self._four_level_system(), depth=2)
+        assert diag.edges == []
+
+    def test_depth_3_four_level_sub_expanded_leaf_edges_appear(self) -> None:
+        """At depth=3, Sub is expanded and the leaf connect A→$leaf→B is visible."""
+        diag = build_viz_diagram(self._four_level_system(), depth=3)
+        assert len(diag.edges) == 2
+
+    def test_depth_3_leaf_edge_ports_reference_deepest_nodes(self) -> None:
+        """At depth=3, edge ports carry the full four-level path for A and B."""
+        diag = build_viz_diagram(self._four_level_system(), depth=3)
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+        src_port = all_ports[diag.edges[0].source_port_id]
+        assert src_port.node_id == "Root__Mid__Sub__A"
+        tgt_port = all_ports[diag.edges[1].target_port_id]
+        assert tgt_port.node_id == "Root__Mid__Sub__B"
+
+    def test_depth_none_four_level_shows_all_edges(self) -> None:
+        """depth=None (full expansion) shows the leaf-level connect edges."""
+        diag = build_viz_diagram(self._four_level_system())
+        assert len(diag.edges) == 2
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+
+
+# ###############
+# build_viz_diagram_all — depth + connection correctness
+# ###############
+
+
+class TestBuildVizDiagramAllDepthConnections:
+    """Tests that build_viz_diagram_all produces the right edges at each depth.
+
+    Focuses on which edges appear and where their ports land as depth controls
+    which systems are expanded vs. opaque.
+    """
+
+    def _single_pipeline(self) -> dict[str, ArchFile]:
+        """Pipeline (System) → A (provides Out) + B (requires Out), connected via $ab."""
+        a = Component(name="A", provides=[_iref("Out")])
+        b = Component(name="B", requires=[_iref("Out")])
+        pipeline = System(
+            name="Pipeline",
+            components=[a, b],
+            connects=[_connect("A", "Out", "B", "Out", channel="ab")],
+        )
+        return {"f": _arch_file(systems=[pipeline])}
+
+    def test_depth_0_top_level_opaque_no_inner_edges(self) -> None:
+        """depth=0: Pipeline is opaque — its inner connect produces no edges."""
+        diag = build_viz_diagram_all(self._single_pipeline(), depth=0)
+        assert diag.edges == []
+
+    def test_depth_1_top_level_expanded_inner_edges_visible(self) -> None:
+        """depth=1: Pipeline is expanded — inner connect A→$ab→B produces two edges."""
+        diag = build_viz_diagram_all(self._single_pipeline(), depth=1)
+        assert len(diag.edges) == 2
+
+    def test_depth_1_inner_edge_ports_reference_child_nodes(self) -> None:
+        """depth=1: edge ports of the inner connect reference A and B inside Pipeline."""
+        diag = build_viz_diagram_all(self._single_pipeline(), depth=1)
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+        src_port = all_ports[diag.edges[0].source_port_id]
+        assert src_port.node_id == "Pipeline__A"
+        tgt_port = all_ports[diag.edges[1].target_port_id]
+        assert tgt_port.node_id == "Pipeline__B"
+
+    def _nested_pipeline(self) -> dict[str, ArchFile]:
+        """Outer (System) → Inner (System) → A (provides Out) + B (requires Out), connected via $ab."""
+        a = Component(name="A", provides=[_iref("Out")])
+        b = Component(name="B", requires=[_iref("Out")])
+        inner = System(
+            name="Inner",
+            components=[a, b],
+            connects=[_connect("A", "Out", "B", "Out", channel="ab")],
+        )
+        outer = System(name="Outer", systems=[inner])
+        return {"f": _arch_file(systems=[outer])}
+
+    def test_depth_1_outer_expanded_inner_opaque_no_leaf_edges(self) -> None:
+        """depth=1: Outer expanded, Inner still opaque — leaf connect not visible."""
+        diag = build_viz_diagram_all(self._nested_pipeline(), depth=1)
+        assert diag.edges == []
+
+    def test_depth_2_both_expanded_leaf_edges_visible(self) -> None:
+        """depth=2: Outer and Inner both expanded — inner connect produces two edges."""
+        diag = build_viz_diagram_all(self._nested_pipeline(), depth=2)
+        assert len(diag.edges) == 2
+
+    def test_depth_2_leaf_edge_ports_reference_deepest_nodes(self) -> None:
+        """depth=2: edge ports carry the full path Outer__Inner__A and Outer__Inner__B."""
+        diag = build_viz_diagram_all(self._nested_pipeline(), depth=2)
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+        src_port = all_ports[diag.edges[0].source_port_id]
+        assert src_port.node_id == "Outer__Inner__A"
+        tgt_port = all_ports[diag.edges[1].target_port_id]
+        assert tgt_port.node_id == "Outer__Inner__B"
+
+    def test_depth_none_nested_pipeline_shows_all_edges(self) -> None:
+        """depth=None (default): all levels expanded, leaf connect always visible."""
+        diag = build_viz_diagram_all(self._nested_pipeline())
+        assert len(diag.edges) == 2
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+
+    def test_depth_1_top_level_connect_edges_still_present_with_opaque_entities(self) -> None:
+        """depth=1: top-level connects between opaque external entities produce edges."""
+        src = System(name="Src", is_external=True, provides=[_iref("Msg")])
+        dst = System(name="Dst", is_external=True, requires=[_iref("Msg")])
+        conn = _connect("Src", "Msg", "Dst", "Msg", channel="bus")
+        af = _arch_file(systems=[src, dst], connects=[conn])
+        diag = build_viz_diagram_all({"f": af}, depth=1)
+        # Two external entities + channel connect → 2 edges
+        assert len(diag.edges) == 2
+        all_ports = collect_all_ports(diag)
+        for edge in diag.edges:
+            assert edge.source_port_id in all_ports
+            assert edge.target_port_id in all_ports
+
+    def test_depth_2_direct_connect_no_channel_single_edge(self) -> None:
+        """depth=2: a direct (no-channel) connect inside a doubly-nested system yields one edge."""
+        a = Component(name="A", provides=[_iref("X")])
+        b = Component(name="B", requires=[_iref("X")])
+        inner = System(
+            name="Inner",
+            components=[a, b],
+            connects=[ConnectDef(src_entity="A", src_port="X", dst_entity="B", dst_port="X")],
+        )
+        outer = System(name="Outer", systems=[inner])
+        af = _arch_file(systems=[outer])
+        diag = build_viz_diagram_all({"f": af}, depth=2)
+        assert len(diag.edges) == 1
+        all_ports = collect_all_ports(diag)
+        edge = diag.edges[0]
+        assert all_ports[edge.source_port_id].node_id == "Outer__Inner__A"
+        assert all_ports[edge.target_port_id].node_id == "Outer__Inner__B"
