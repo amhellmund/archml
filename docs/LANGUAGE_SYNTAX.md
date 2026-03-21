@@ -460,9 +460,9 @@ component PaymentGateway {
 
 ## Multi-File Composition
 
-Large architectures are split across files. The `from ... import` statement brings specific named definitions from other files into scope. The `use` keyword places an imported entity into a system or parent component without redefining it. `use` always includes the entity type for clarity.
+Large architectures are split across files. The `from ... import` statement brings specific named definitions from other files into scope. The `use` keyword places an imported entity into a system or parent component without redefining it. `use` always includes the entity type for clarity (`use component`, `use system`, `use user`).
 
-Components, interfaces, types, and enums can all be defined at the top level of any `.archml` file — they do not need to be nested inside a system. This enables a one-file-per-component workflow where each component is self-contained and systems compose them by reference.
+Components, systems, users, interfaces, types, and enums can all be defined at the top level of any `.archml` file — they do not need to be nested inside a system. This enables a one-file-per-entity workflow where each entity is self-contained and systems compose them by reference.
 
 ### Explicit Imports
 
@@ -532,6 +532,7 @@ system Enterprise {
     use component OrderService
     use component PaymentService
     use component StockManager
+    use user Customer
 }
 ```
 
@@ -755,7 +756,7 @@ system ECommerce {
 | `$channel`      | Channel name in a `connect` statement; `$` prefix distinguishes channels from ports.                               |
 | `from`          | Introduces the source path in an import statement (`from path import Name`).                                       |
 | `import`        | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`).              |
-| `use`           | Places an imported entity into a system or component (e.g., `use component X`).                                    |
+| `use`           | Places an imported entity into a system or component (e.g., `use component X`, `use system X`, `use user X`).      |
 | `external`      | Marks a system, component, or user as outside the development boundary.                                            |
 | `tags`          | Arbitrary labels for filtering and view generation.                                                                |
 | `title`         | Human-readable display name.                                                                                       |
