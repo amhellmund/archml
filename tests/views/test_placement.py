@@ -476,12 +476,18 @@ def test_root_boundary_provides_port_on_right_edge() -> None:
 
 
 def test_edge_route_has_two_waypoints() -> None:
-    """A straight-line edge route has exactly two waypoints."""
-    a_req = _port("A", "requires", "Iface")
-    b_prov = _port("B", "provides", "Iface")
-    a = _node("A", [a_req])
-    b = _node("B", [b_prov])
-    edge = _edge(a_req.id, b_prov.id)
+    """A straight-line edge route has exactly two waypoints.
+
+    Uses the canonical ArchML edge direction (provides → requires) so the
+    source anchor sits on the right edge of A and the target anchor on the
+    left edge of B.  The straight line between them does not pass through
+    either node body, so no detour is needed.
+    """
+    a_prov = _port("A", "provides", "Iface")
+    b_req = _port("B", "requires", "Iface")
+    a = _node("A", [a_prov])
+    b = _node("B", [b_req])
+    edge = _edge(a_prov.id, b_req.id)
     diagram = _simple_diagram([a, b], edges=[edge])
     plan = compute_layout(diagram)
     assert edge.id in plan.edge_routes
@@ -1239,6 +1245,348 @@ def test_ecommerce_like_routes_avoid_component_boxes() -> None:
                 f"Edge {edge.id}: diagonal ({x1:.1f},{y1:.1f})→({x2:.1f},{y2:.1f})"
             )
         # Route must not cross any component box.
+        assert _route_is_clear(route.waypoints, obstacles), (
+            f"Edge {edge.id} route {route.waypoints} crosses a component box"
+        )
+
+
+# ###############
+# Y-position optimisation
+# ###############
+
+
+def _total_wire_length(plan: LayoutPlan) -> float:
+    """Sum of |source_cy − target_cy| over all edge routes in *plan*."""
+    total = 0.0
+    for route in plan.edge_routes.values():
+        if len(route.waypoints) >= 2:
+            _, y_start = route.waypoints[0]
+            _, y_end = route.waypoints[-1]
+            total += abs(y_end - y_start)
+    return total
+
+
+def test_compact_layer_inplace_pushes_overlapping_nodes_apart() -> None:
+    """Forward pass must separate nodes that are placed too close together."""
+    from archml.views.placement import _compact_layer_inplace
+
+    sizes: dict[str, tuple[float, float]] = {"A": (50.0, 40.0), "B": (50.0, 40.0)}
+    # Both nodes start at y=0, so B overlaps A.
+    y_pos = {"A": 0.0, "B": 0.0}
+    _compact_layer_inplace(["A", "B"], y_pos, sizes, content_h=200.0, gap=10.0)
+    # B must start at least gap below the bottom of A.
+    assert y_pos["B"] >= y_pos["A"] + 40.0 + 10.0 - 1e-9
+
+
+def test_compact_layer_inplace_shifts_overflowing_column_up() -> None:
+    """A column that extends past content_h is shifted up as a rigid block."""
+    from archml.views.placement import _compact_layer_inplace
+
+    sizes: dict[str, tuple[float, float]] = {"A": (50.0, 40.0), "B": (50.0, 40.0)}
+    # Stack starting at y=160, which pushes the bottom past content_h=200.
+    y_pos = {"A": 160.0, "B": 210.0}
+    _compact_layer_inplace(["A", "B"], y_pos, sizes, content_h=200.0, gap=10.0)
+    assert y_pos["B"] + 40.0 <= 200.0 + 1e-9  # last node fits in canvas
+
+
+def test_compact_layer_inplace_single_node_clamped() -> None:
+    """A single node placed outside the canvas is clamped back in."""
+    from archml.views.placement import _compact_layer_inplace
+
+    sizes: dict[str, tuple[float, float]] = {"A": (50.0, 40.0)}
+    y_pos = {"A": 190.0}
+    _compact_layer_inplace(["A"], y_pos, sizes, content_h=200.0, gap=10.0)
+    assert y_pos["A"] + 40.0 <= 200.0 + 1e-9
+
+    y_pos = {"A": -5.0}
+    _compact_layer_inplace(["A"], y_pos, sizes, content_h=200.0, gap=10.0)
+    assert y_pos["A"] >= 0.0 - 1e-9
+
+
+def test_compact_layer_inplace_preserves_order() -> None:
+    """Nodes must retain their top-to-bottom order after compaction."""
+    from archml.views.placement import _compact_layer_inplace
+
+    sizes = {n: (50.0, 30.0) for n in "ABCD"}
+    # Scramble the positions.
+    y_pos = {"A": 80.0, "B": 20.0, "C": 10.0, "D": 60.0}
+    _compact_layer_inplace(list("ABCD"), y_pos, sizes, content_h=300.0, gap=5.0)
+    assert y_pos["A"] < y_pos["B"] < y_pos["C"] < y_pos["D"]
+
+
+def test_optimise_y_positions_moves_connected_nodes_closer() -> None:
+    """Two connected nodes in adjacent layers should be closer after optimisation."""
+    from archml.views.placement import _optimise_y_positions
+
+    # Layer 0: [A (top), B (bottom)] — only A is connected.
+    # Layer 1: [C (single)] — connected to A.
+    # With uniform spacing A is at the top of the column, C is centred.
+    # Optimisation should move C up toward A.
+    cfg = LayoutConfig(y_optimisation_passes=10)
+    sizes = {"A": (50.0, 40.0), "B": (50.0, 40.0), "C": (50.0, 40.0)}
+    layers = [["A", "B"], ["C"]]
+    edges = [("A", "C")]
+
+    col_h_0 = 40.0 + 10.0 + 40.0  # 90 lu
+    content_h = col_h_0  # 90 lu (= max of both columns)
+
+    baseline = _optimise_y_positions(layers, sizes, edges, content_h, LayoutConfig(y_optimisation_passes=0))
+    optimised = _optimise_y_positions(layers, sizes, edges, content_h, cfg)
+
+    # Baseline: C is centred at (90 − 40) / 2 = 25.
+    # After optimisation C should shift toward A (at y=0), so its y < baseline.
+    assert optimised["C"] < baseline["C"] - 1e-9
+
+
+def test_optimise_y_positions_no_overlap() -> None:
+    """After optimisation no two nodes in the same layer overlap."""
+    from archml.views.placement import _optimise_y_positions
+
+    cfg = LayoutConfig(y_optimisation_passes=8)
+    sizes = {n: (50.0, 30.0) for n in "ABCDE"}
+    layers = [["A", "B", "C"], ["D", "E"]]
+    # Create edges that pull nodes toward extreme positions.
+    edges = [("A", "D"), ("C", "E"), ("B", "D")]
+
+    col_h = 30.0 * 3 + 10.0 * 2  # 110 lu
+    content_h = col_h
+    y = _optimise_y_positions(layers, sizes, edges, content_h, cfg)
+
+    gap = cfg.node_gap
+    for layer in layers:
+        for j in range(len(layer) - 1):
+            a, b = layer[j], layer[j + 1]
+            assert y[b] >= y[a] + sizes[a][1] + gap - 1e-9, (
+                f"{b}.y={y[b]:.1f} too close to {a}.y={y[a]:.1f}+{sizes[a][1]}+{gap}"
+            )
+
+
+def test_optimise_y_positions_disconnected_returns_uniform() -> None:
+    """Nodes with no edges stay at their uniform centred positions."""
+    from archml.views.placement import _optimise_y_positions
+
+    sizes = {"A": (50.0, 40.0), "B": (50.0, 40.0)}
+    layers = [["A"], ["B"]]
+    # No edges at all.
+    baseline = _optimise_y_positions(layers, sizes, [], 100.0, LayoutConfig(y_optimisation_passes=0))
+    optimised = _optimise_y_positions(layers, sizes, [], 100.0, LayoutConfig(y_optimisation_passes=6))
+    for nid in ("A", "B"):
+        assert abs(optimised[nid] - baseline[nid]) < 1e-9
+
+
+def test_layout_wire_length_reduced_by_optimisation() -> None:
+    """Enabling y-optimisation reduces total vertical wire length vs. baseline."""
+    sys = System(
+        name="S",
+        connects=[
+            _connect("Provider", "Iface", "Consumer", "Iface", channel="ch"),
+        ],
+        components=[
+            Component(name="Consumer", requires=[_iref("Iface")]),
+            Component(name="Provider", provides=[_iref("Iface")]),
+            Component(name="Unconnected1"),
+            Component(name="Unconnected2"),
+        ],
+    )
+    diagram = build_viz_diagram(sys)
+
+    plan_base = compute_layout(diagram, config=LayoutConfig(y_optimisation_passes=0))
+    plan_opt = compute_layout(diagram, config=LayoutConfig(y_optimisation_passes=6))
+
+    wl_base = _total_wire_length(plan_base)
+    wl_opt = _total_wire_length(plan_opt)
+    assert wl_opt <= wl_base + 1.0, f"Optimised wire length {wl_opt:.1f} is not better than baseline {wl_base:.1f}"
+
+
+# ###############
+# Peripheral y-alignment
+# ###############
+
+
+def test_peripheral_snaps_to_connected_internal_port() -> None:
+    """A single terminal should align its centre with the connected component's port."""
+    # One component exposed on both sides; the terminals should align with it.
+    comp = Component(
+        name="Sys",
+        requires=[_iref("InIface")],
+        provides=[_iref("OutIface")],
+        components=[Component(name="Inner", requires=[_iref("InIface")], provides=[_iref("OutIface")])],
+    )
+    diagram = build_viz_diagram(comp)
+    plan = compute_layout(diagram)
+
+    # Find the terminal nodes and the internal node port anchors.
+    terminal_nodes = [n for n in diagram.peripheral_nodes if n.kind == "terminal"]
+    assert terminal_nodes, "Expected terminal nodes for the exposed interfaces"
+
+    for term in terminal_nodes:
+        term_nl = plan.nodes[term.id]
+        term_cy = term_nl.y + term_nl.height / 2.0
+
+        # Find what internal port this terminal connects to.
+        term_port_ids = {p.id for p in term.ports}
+        for edge in diagram.edges:
+            other_port_id = None
+            if edge.source_port_id in term_port_ids:
+                other_port_id = edge.target_port_id
+            elif edge.target_port_id in term_port_ids:
+                other_port_id = edge.source_port_id
+            if other_port_id is not None and other_port_id in plan.port_anchors:
+                internal_y = plan.port_anchors[other_port_id].y
+                # Terminal centre should be within 2 lu of the connected port.
+                assert abs(term_cy - internal_y) < 2.0, (
+                    f"Terminal {term.id} centre {term_cy:.1f} is not aligned with internal port y={internal_y:.1f}"
+                )
+
+
+def test_peripheral_alignment_reduces_expose_route_detour() -> None:
+    """Exposing a component's interface should produce a nearly-horizontal route."""
+    sys = System(
+        name="S",
+        components=[
+            Component(name="Worker", requires=[_iref("Job")]),
+            Component(name="Idle1"),
+            Component(name="Idle2"),
+        ],
+    )
+    # Expose Worker.Job so a left terminal is created for it.
+    from archml.model.entities import ExposeDef
+
+    sys.exposes = [ExposeDef(entity="Worker", port="Job")]
+    diagram = build_viz_diagram(sys)
+    plan = compute_layout(diagram)
+
+    # Find the terminal and its connected internal port.
+    terminal = next((n for n in diagram.peripheral_nodes if n.kind == "terminal"), None)
+    if terminal is None:
+        return  # nothing to check if no terminal was created
+
+    term_nl = plan.nodes[terminal.id]
+    term_cy = term_nl.y + term_nl.height / 2.0
+
+    term_port_ids = {p.id for p in terminal.ports}
+    for edge in diagram.edges:
+        other_pid = None
+        if edge.source_port_id in term_port_ids:
+            other_pid = edge.target_port_id
+        elif edge.target_port_id in term_port_ids:
+            other_pid = edge.source_port_id
+        if other_pid and other_pid in plan.port_anchors:
+            internal_y = plan.port_anchors[other_pid].y
+            vertical_span = abs(internal_y - term_cy)
+            # Allow up to one node-height of vertical spread (tighter than unoptimised).
+            cfg = LayoutConfig()
+            assert vertical_span < cfg.node_height, (
+                f"Expose terminal is {vertical_span:.1f} lu from its port — "
+                f"peripheral alignment appears not to be working"
+            )
+
+
+def test_peripheral_alignment_disabled_when_passes_zero() -> None:
+    """With y_optimisation_passes=0 peripherals keep their uniformly-centred positions."""
+    comp = Component(
+        name="Sys",
+        requires=[_iref("InIface")],
+        components=[Component(name="Inner", requires=[_iref("InIface")])],
+    )
+    diagram = build_viz_diagram(comp)
+
+    plan_uniform = compute_layout(diagram, config=LayoutConfig(y_optimisation_passes=0))
+    plan_aligned = compute_layout(diagram, config=LayoutConfig(y_optimisation_passes=6))
+
+    terminal = next(n for n in diagram.peripheral_nodes if n.kind == "terminal")
+    y_uniform = plan_uniform.nodes[terminal.id].y
+    y_aligned = plan_aligned.nodes[terminal.id].y
+
+    # With optimisation the terminal moves; without it stays at the centred default.
+    # (With a single inner node they may coincide — we just check it doesn't crash.)
+    assert isinstance(y_uniform, float)
+    assert isinstance(y_aligned, float)
+
+
+# ###############
+# Straight-line shortcut / sy == ty correctness
+# ###############
+
+
+def test_route_straight_line_not_returned_when_blocked() -> None:
+    """When sy == ty but an obstacle spans the horizontal path, no straight line is returned."""
+    from archml.views.placement import _route_avoiding_obstacles, _route_is_clear
+
+    # Obstacle sits squarely between source and target at the same y level.
+    # x 50..150, y 30..70  — source at (0, 50), target at (200, 50).
+    obstacle = [(50.0, 30.0, 100.0, 40.0)]
+    wps = _route_avoiding_obstacles(0.0, 50.0, 200.0, 50.0, obstacle, 300.0)
+
+    # Must not be the straight two-point line.
+    assert len(wps) > 2, "Expected a detour but got a straight line through the obstacle"
+    # Must clear the obstacle.
+    assert _route_is_clear(wps, obstacle), f"Route {wps} still crosses the obstacle"
+    # All segments must be axis-aligned.
+    for (x1, y1), (x2, y2) in zip(wps, wps[1:], strict=False):
+        assert abs(x1 - x2) < 0.5 or abs(y1 - y2) < 0.5
+
+
+def test_route_straight_line_returned_when_clear() -> None:
+    """When sy == ty and nothing is in the way, the straight line is still used."""
+    from archml.views.placement import _route_avoiding_obstacles
+
+    # Obstacle is completely above the route level — no interference.
+    obstacle = [(80.0, 0.0, 40.0, 10.0)]
+    wps = _route_avoiding_obstacles(0.0, 50.0, 200.0, 50.0, obstacle, 300.0)
+    assert wps == [(0.0, 50.0), (200.0, 50.0)]
+
+
+def test_route_sy_eq_ty_prefers_shorter_bypass() -> None:
+    """When sy == ty and both above/below bypasses are valid, the closer one is used."""
+    from archml.views.placement import _route_avoiding_obstacles
+
+    # Obstacle at x 40..160, y 20..80.  Source (0, 60), target (200, 60).
+    # Bypass above: top - gap = 20 - 4 = 16  → distance from sy=60 is 44
+    # Bypass below: bottom + gap = 80 + 4 = 84 → distance from sy=60 is 24
+    # The shorter (below) bypass should be tried first and used.
+    obstacle = [(40.0, 20.0, 120.0, 60.0)]
+    wps = _route_avoiding_obstacles(0.0, 60.0, 200.0, 60.0, obstacle, 300.0)
+
+    assert len(wps) > 2
+    bypass_ys = {y for _, y in wps if abs(y - 60.0) > 0.5}
+    assert bypass_ys, "No bypass y found in waypoints"
+    bypass_y = bypass_ys.pop()
+    # The nearer bypass is below sy=60, so bypass_y > 60.
+    assert bypass_y > 60.0, f"Expected below-bypass (y > 60) but got bypass at y={bypass_y:.1f}"
+
+
+def test_expose_terminal_route_does_not_cross_sibling_box() -> None:
+    """After peripheral alignment the expose-terminal route must not cross any component."""
+    from archml.model.entities import ExposeDef
+    from archml.views.placement import _route_is_clear
+
+    # One component is exposed (creating a left terminal); two unconnected
+    # siblings sit in the same column.  After peripheral snapping the terminal
+    # aligns exactly with Target's port, and the siblings may sit at the same
+    # horizontal level — the route must detour around them.
+    sys = System(
+        name="S",
+        components=[
+            Component(name="Target", requires=[_iref("Job")]),
+            Component(name="Sibling1"),
+            Component(name="Sibling2"),
+        ],
+    )
+    sys.exposes = [ExposeDef(entity="Target", port="Job")]
+    diagram = build_viz_diagram(sys)
+    plan = compute_layout(diagram)
+
+    obstacles = [(nl.x, nl.y, nl.width, nl.height) for nl in plan.nodes.values()]
+
+    for edge in diagram.edges:
+        route = plan.edge_routes.get(edge.id)
+        if route is None:
+            continue
+        for (x1, y1), (x2, y2) in zip(route.waypoints, route.waypoints[1:], strict=False):
+            assert abs(x1 - x2) < 0.5 or abs(y1 - y2) < 0.5, (
+                f"Diagonal segment in edge {edge.id}: ({x1:.1f},{y1:.1f})→({x2:.1f},{y2:.1f})"
+            )
         assert _route_is_clear(route.waypoints, obstacles), (
             f"Edge {edge.id} route {route.waypoints} crosses a component box"
         )

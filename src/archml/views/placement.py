@@ -54,7 +54,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
-from archml.views.topology import VizBoundary, VizDiagram, VizNode, VizPort
+from archml.views.topology import VizBoundary, VizDiagram, VizEdge, VizNode, VizPort
 
 # ###############
 # Public Interface
@@ -126,6 +126,13 @@ class LayoutConfig:
             can reach their nodes.  All other routing decisions — corridor
             selection and bypass levels — treat non-source/non-target boxes as
             inflated by this amount on every side.
+        y_optimisation_passes: Number of iterative barycenter passes used to
+            optimise the vertical positions of nodes within each layer.  Each
+            pass moves every node toward the average y-centre of its connected
+            neighbours and then re-enforces non-overlap constraints.  More
+            passes give tighter alignment at the cost of slightly more
+            computation.  Set to ``0`` to fall back to the plain uniform-
+            spacing assignment.
     """
 
     node_width: float = 120.0
@@ -148,6 +155,7 @@ class LayoutConfig:
     boundary_title_font_ratio: float = 1.1
     diagram_margin: float = 4.0
     edge_margin: float = 8.0
+    y_optimisation_passes: int = 6
 
 
 @dataclass
@@ -386,6 +394,13 @@ class _Layouter:
             node_layouts[node.id] = nl
             _add_node_anchors(node, nl, port_anchors)
 
+        # --- Step 4c: snap peripheral nodes toward connected internal ports ---
+        # Now that all internal port anchors are known, move each peripheral's y
+        # to align with the port(s) it connects to.  This avoids large routing
+        # detours for cross-boundary edges such as expose terminals.
+        _optimise_peripheral_y(peripheral_left, node_layouts, port_anchors, diagram.edges, total_h, cfg)
+        _optimise_peripheral_y(peripheral_right, node_layouts, port_anchors, diagram.edges, total_h, cfg)
+
         # --- Step 5: edge routes (orthogonal, obstacle-aware) ---
         # All node boxes are treated as obstacles; boundary boxes are excluded
         # because edges route legitimately through boundary interiors.
@@ -515,15 +530,17 @@ def _compute_bnd_layout(
     content_w = max(content_w, min_w_for_title)
 
     # Assign relative positions (origin = interior top-left of this boundary).
+    # _optimise_y_positions starts from uniform centred spacing and then
+    # iteratively aligns each node toward the y-centre of its connected
+    # neighbours, which reduces wire-length and routing detours.
+    opt_y = _optimise_y_positions(ordered_layers, child_sizes, internal_edges, content_h, cfg)
     child_rects: dict[str, tuple[float, float, float, float]] = {}
     col_x = 0.0
-    for col, col_w, col_h in zip(ordered_layers, col_widths, col_heights, strict=True):
-        row_y = (content_h - col_h) / 2.0
+    for col, col_w in zip(ordered_layers, col_widths, strict=True):
         for cid in col:
             cw, ch = child_sizes[cid]
             x = col_x + (col_w - cw) / 2.0
-            child_rects[cid] = (x, row_y, cw, ch)
-            row_y += ch + cfg.node_gap
+            child_rects[cid] = (x, opt_y[cid], cw, ch)
         col_x += col_w + cfg.layer_gap
 
     return _BndLayoutResult(
@@ -771,6 +788,222 @@ def _barycenter_sort(
         return sum(nbrs) / len(nbrs) if nbrs else float(len(positions))
 
     return sorted(nodes, key=_key)
+
+
+# -------- y-position optimisation --------
+
+
+def _compact_layer_inplace(
+    layer: list[str],
+    y_pos: dict[str, float],
+    child_sizes: dict[str, tuple[float, float]],
+    content_h: float,
+    gap: float,
+) -> None:
+    """Enforce ordering and non-overlap within *layer*, updating *y_pos* in-place.
+
+    After a forward pass that pushes overlapping nodes downward, the column is
+    shifted up if it overflows the canvas, and then a backward pass pulls nodes
+    up to remove excess gaps introduced by the forward push.  The result is
+    guaranteed to:
+
+    * Preserve the input top-to-bottom order (no node passes another).
+    * Maintain at least *gap* between every pair of successive nodes.
+    * Keep all nodes within ``[0, content_h]``.
+
+    Args:
+        layer: Node IDs in their fixed top-to-bottom order.
+        y_pos: Current y-coordinate of each node's top edge; modified in-place.
+        child_sizes: ``(width, height)`` for each node.
+        content_h: Available vertical space (layout units).
+        gap: Minimum spacing between successive nodes.
+    """
+    n = len(layer)
+    if n == 0:
+        return
+    heights = [child_sizes[nid][1] for nid in layer]
+
+    # Forward pass: push nodes down to clear their predecessor.
+    for j in range(1, n):
+        lo = y_pos[layer[j - 1]] + heights[j - 1] + gap
+        if y_pos[layer[j]] < lo:
+            y_pos[layer[j]] = lo
+
+    # Shift the whole column up if the last node overflows the canvas.
+    overshoot = y_pos[layer[-1]] + heights[-1] - content_h
+    if overshoot > 0.0:
+        for nid in layer:
+            y_pos[nid] -= overshoot
+
+    # Backward pass: pull nodes up to remove unnecessarily large gaps that the
+    # forward pass may have introduced.
+    for j in range(n - 2, -1, -1):
+        hi = y_pos[layer[j + 1]] - heights[j] - gap
+        if y_pos[layer[j]] > hi:
+            y_pos[layer[j]] = hi
+
+    # Shift the whole column down if the top node went negative.
+    if y_pos[layer[0]] < 0.0:
+        shift = -y_pos[layer[0]]
+        for nid in layer:
+            y_pos[nid] += shift
+
+
+def _optimise_y_positions(
+    ordered_layers: list[list[str]],
+    child_sizes: dict[str, tuple[float, float]],
+    internal_edges: list[tuple[str, str]],
+    content_h: float,
+    cfg: LayoutConfig,
+) -> dict[str, float]:
+    """Compute y-positions that minimise total vertical wire length.
+
+    Given the fixed per-layer ordering produced by crossing minimisation,
+    iteratively moves each node toward the average y-centre of its connected
+    neighbours (barycenter step) and then re-enforces non-overlap constraints
+    via :func:`_compact_layer_inplace`.
+
+    The iteration reduces the length of routing detours by aligning connected
+    nodes as closely as the non-overlap constraints allow.  Nodes with no
+    connections are left at their initial uniformly-spaced positions.
+
+    Args:
+        ordered_layers: Column-by-column node ordering (from crossing
+            minimisation).
+        child_sizes: ``(width, height)`` for each node.
+        internal_edges: Directed edges within this boundary level.
+        content_h: Total available vertical space (= max column height).
+        cfg: Layout configuration; uses ``cfg.node_gap`` and
+            ``cfg.y_optimisation_passes``.
+
+    Returns:
+        Mapping from node ID to its top-y coordinate (relative to the
+        boundary content origin, layout units).
+    """
+    # Initialise with centred uniform spacing — same as the baseline approach.
+    y_pos: dict[str, float] = {}
+    for layer in ordered_layers:
+        heights = [child_sizes[nid][1] for nid in layer]
+        col_h = sum(heights) + max(0, len(heights) - 1) * cfg.node_gap
+        start_y = (content_h - col_h) / 2.0
+        y = start_y
+        for nid in layer:
+            y_pos[nid] = y
+            y += child_sizes[nid][1] + cfg.node_gap
+
+    if not internal_edges or cfg.y_optimisation_passes <= 0:
+        return y_pos
+
+    # Build a symmetric neighbour lookup (direction is irrelevant for y-alignment).
+    neighbours: dict[str, list[str]] = defaultdict(list)
+    for src, tgt in internal_edges:
+        neighbours[src].append(tgt)
+        neighbours[tgt].append(src)
+
+    # Damped iterative barycenter: move each node 50 % toward its ideal position
+    # so that the iteration converges smoothly rather than oscillating.
+    step = 0.5
+
+    for _ in range(cfg.y_optimisation_passes):
+        # Phase 1: compute ideal y for every node from *current* neighbour
+        # positions (snapshot before any updates to avoid order-dependent bias).
+        ideal: dict[str, float] = {}
+        for nid, cur_y in y_pos.items():
+            nbrs = [nb for nb in neighbours[nid] if nb in y_pos]
+            if nbrs:
+                my_h = child_sizes[nid][1]
+                nb_centres = [y_pos[nb] + child_sizes[nb][1] / 2.0 for nb in nbrs]
+                ideal[nid] = sum(nb_centres) / len(nb_centres) - my_h / 2.0
+            else:
+                ideal[nid] = cur_y  # no neighbours → stay put
+
+        # Phase 2: move each node toward its ideal position (damped).
+        for nid in y_pos:
+            y_pos[nid] = (1.0 - step) * y_pos[nid] + step * ideal[nid]
+
+        # Phase 3: re-enforce ordering and non-overlap within every layer.
+        for layer in ordered_layers:
+            _compact_layer_inplace(layer, y_pos, child_sizes, content_h, cfg.node_gap)
+
+    return y_pos
+
+
+def _optimise_peripheral_y(
+    peripherals: list[VizNode],
+    node_layouts: dict[str, NodeLayout],
+    port_anchors: dict[str, PortAnchor],
+    edges: list[VizEdge],
+    total_h: float,
+    cfg: LayoutConfig,
+) -> None:
+    """Snap each peripheral node toward the y-centre of its connected internal ports.
+
+    After all internal nodes have been positioned and their port anchors are
+    recorded in *port_anchors*, this adjusts every peripheral node's y so that
+    its centre aligns with the average y-coordinate of the internal port(s) it
+    connects to.  Peripheral nodes that carry no connections keep their initial
+    (uniformly centred) positions.
+
+    Non-overlap constraints are then re-enforced within the peripheral group
+    via :func:`_compact_layer_inplace`.  Both *node_layouts* and *port_anchors*
+    are updated in-place so that subsequent edge routing sees the new positions.
+
+    Args:
+        peripherals: Left or right peripheral nodes in their stacking order.
+        node_layouts: Current layout mapping (modified in-place).
+        port_anchors: Current port-anchor mapping (modified in-place).
+        edges: All diagram edges (used to find peripheral↔internal connections).
+        total_h: Full canvas height including diagram margins.
+        cfg: Layout configuration.
+    """
+    if not peripherals or cfg.y_optimisation_passes <= 0:
+        return
+
+    # Collect the port IDs that belong to *any* peripheral so that we can
+    # distinguish "internal" ports from "peripheral" ports when scanning edges.
+    all_peri_port_ids: set[str] = {p.id for pn in peripherals for p in pn.ports}
+
+    # For each peripheral, find all y-coordinates of connected internal ports.
+    ideal_ys: dict[str, list[float]] = defaultdict(list)
+    for pn in peripherals:
+        peri_ids = {p.id for p in pn.ports}
+        for edge in edges:
+            if edge.source_port_id in peri_ids:
+                tgt = port_anchors.get(edge.target_port_id)
+                if tgt is not None and edge.target_port_id not in all_peri_port_ids:
+                    ideal_ys[pn.id].append(tgt.y)
+            if edge.target_port_id in peri_ids:
+                src = port_anchors.get(edge.source_port_id)
+                if src is not None and edge.source_port_id not in all_peri_port_ids:
+                    ideal_ys[pn.id].append(src.y)
+
+    # Build the mutable y_pos table; snap each connected peripheral to its target.
+    y_pos: dict[str, float] = {pn.id: node_layouts[pn.id].y for pn in peripherals}
+    peri_sizes: dict[str, tuple[float, float]] = {
+        pn.id: (node_layouts[pn.id].width, node_layouts[pn.id].height) for pn in peripherals
+    }
+    for pn in peripherals:
+        ys = ideal_ys[pn.id]
+        if ys:
+            ideal_cy = sum(ys) / len(ys)
+            y_pos[pn.id] = ideal_cy - peri_sizes[pn.id][1] / 2.0
+
+    # Re-enforce non-overlap within the peripheral group.
+    # _compact_layer_inplace uses [0, content_h]; shift by diagram_margin so
+    # the compact step operates in the correct coordinate range.
+    m = cfg.diagram_margin
+    for nid in y_pos:
+        y_pos[nid] -= m
+    _compact_layer_inplace([pn.id for pn in peripherals], y_pos, peri_sizes, total_h - 2.0 * m, cfg.node_gap)
+    for nid in y_pos:
+        y_pos[nid] += m
+
+    # Write updated positions back and recompute port anchors.
+    for pn in peripherals:
+        old = node_layouts[pn.id]
+        new_nl = NodeLayout(node_id=pn.id, x=old.x, y=y_pos[pn.id], width=old.width, height=old.height)
+        node_layouts[pn.id] = new_nl
+        _add_node_anchors(pn, new_nl, port_anchors)
 
 
 # -------- text-aware sizing helpers --------
@@ -1070,14 +1303,17 @@ def _route_avoiding_obstacles(
     Tries progressively more complex polylines until one clears every obstacle
     rectangle in *obstacles*:
 
-    1. **Straight line** — when source and target share the same y position.
+    1. **Straight line** — when source and target share the same y and the
+       path is obstacle-free.
     2. **Simple Z-route** (4 waypoints) — one vertical segment in the first
        free corridor that allows a clear horizontal return to the target.
     3. **Double-Z route** (6 waypoints) — uses two vertical corridors (one
        near the source, one near the target) bridged by a horizontal bypass
-       level above or below all obstacles between them.
-    4. **Midpoint fallback** — always axis-aligned; may visually overlap an
-       obstacle only when the layout contains no usable routing channels.
+       level; the candidate closest to the midpoint of *sy* and *ty* is tried
+       first so the detour is as short as possible.
+    4. **Midpoint fallback** — when sy ≈ ty and no double-Z cleared, routes
+       via the nearest bypass level to avoid collapsing to a straight line
+       that would re-enter an obstacle.
 
     Args:
         sx: x-coordinate of the source port anchor (right edge of source node).
@@ -1096,29 +1332,48 @@ def _route_avoiding_obstacles(
         An ordered list of ``(x, y)`` waypoints forming a valid orthogonal
         polyline (all segments are horizontal or vertical).
     """
-    if abs(sy - ty) < 0.5:
-        return [(sx, sy), (tx, ty)]
-
     # Inflate all non-source/non-target obstacles by the visual margin so that
     # every subsequent corridor, clearance, and bypass calculation naturally
     # keeps routes at least *margin* layout units away from those boxes.
+    # Inflation must happen before the sy ≈ ty check so the straight-line
+    # candidate is evaluated against the same inflated geometry as all other
+    # route attempts.
     obs = _inflate_obstacles(obstacles, sx, tx, margin)
+
+    # Attempt 0: straight line — only when sy ≈ ty AND the path is clear.
+    # Do not return unconditionally: after peripheral alignment sy can equal ty
+    # exactly while an intermediate component sits on the same horizontal level,
+    # making the straight line visually cross that component.
+    if abs(sy - ty) < 0.5:
+        wps: list[tuple[float, float]] = [(sx, sy), (tx, ty)]
+        if _route_is_clear(wps, obs):
+            return wps
+        # Blocked — fall through so the double-Z finds a detour.
 
     cxs = _free_corridor_xs(sx, tx, obs)
 
     # Attempt 1: simple Z-route — find a corridor where the whole 3-segment
     # path clears every (inflated) obstacle.
+    # When sy == ty every simple Z degenerates to the same blocked horizontal,
+    # so these will all fail and control reaches the double-Z below.
     for cx in cxs:
-        wps: list[tuple[float, float]] = [(sx, sy), (cx, sy), (cx, ty), (tx, ty)]
+        wps = [(sx, sy), (cx, sy), (cx, ty), (tx, ty)]
         if _route_is_clear(wps, obs):
             return wps
 
     # Attempt 2: double-Z route — first corridor for the vertical leg near the
     # source, last corridor for the vertical leg near the target, with a
-    # horizontal bypass at a level outside all intermediate obstacles.
+    # horizontal bypass outside all intermediate obstacles.
+    # Sort bypass candidates by distance from the midpoint of sy and ty so the
+    # shortest detour is tried first.
     cx1 = cxs[0] if cxs else (sx + tx) / 2.0
     cx2 = cxs[-1] if cxs else (sx + tx) / 2.0
-    for by in _bypass_levels(cx1, cx2, obs, total_height, gap):
+    mid_y = (sy + ty) / 2.0
+    bypass_candidates = sorted(
+        _bypass_levels(cx1, cx2, obs, total_height, gap),
+        key=lambda by: abs(by - mid_y),
+    )
+    for by in bypass_candidates:
         if cx1 != cx2:
             wps = [(sx, sy), (cx1, sy), (cx1, by), (cx2, by), (cx2, ty), (tx, ty)]
         else:
@@ -1127,6 +1382,15 @@ def _route_avoiding_obstacles(
         if _route_is_clear(wps, obs):
             return wps
 
-    # Fallback: midpoint Z — guaranteed axis-aligned, safe when no free corridor exists.
+    # Fallback: midpoint Z.  When sy ≈ ty this degenerates to a straight line,
+    # so first try a bypass-based detour to keep the route obstacle-free.
     mid_x = (sx + tx) / 2.0
+    if abs(sy - ty) < 0.5:
+        for by in sorted(
+            _bypass_levels(mid_x, mid_x, obs, total_height, gap),
+            key=lambda by: abs(by - mid_y),
+        ):
+            wps = [(sx, sy), (mid_x, sy), (mid_x, by), (tx, by), (tx, ty)]
+            if _route_is_clear(wps, obs):
+                return wps
     return [(sx, sy), (mid_x, sy), (mid_x, ty), (tx, ty)]
