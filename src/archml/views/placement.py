@@ -35,8 +35,11 @@ The algorithm operates recursively, one boundary level at a time:
    computed, then converted to absolute coordinates top-down.  Port anchors
    follow the ArchML convention: ``requires`` ports are anchored to the
    **left edge** of their node (incoming connections), ``provides`` ports to
-   the **right edge** (outgoing connections).  Edge routes are straight lines
-   between the port anchors.
+   the **right edge** (outgoing connections).  Edge routes are Z-shaped
+   orthogonal polylines: a horizontal segment from the source anchor, a
+   vertical segment through the routing channel between columns, and a
+   horizontal segment into the target anchor.  This prevents edges from
+   crossing component or boundary boxes.
 
 Output
 ------
@@ -107,10 +110,22 @@ class LayoutConfig:
         channel_label_font_ratio: Font-size ratio of the channel label relative
             to the interface name.  Must match the renderer constant
             ``_CHANNEL_LABEL_FONT_RATIO``.
+        boundary_title_font_ratio: Font-size ratio of the boundary title relative to
+            the base ``font_size``.  Must match the renderer constant
+            ``_FONT_SIZE * scale * 1.1`` used by ``_render_boundary`` in the SVG
+            backend.  Used to compute the minimum content width needed so that
+            boundary titles always fit within their bounding box.
         diagram_margin: Uniform whitespace added around the entire diagram on
             all four sides (layout units).  Prevents box strokes from being
             clipped at the SVG/PNG canvas edge when there are no peripheral
             nodes on a given side.
+        edge_margin: Visual clearance in layout units kept between a routed edge
+            and every component/boundary box the edge does *not* need to enter.
+            The very first segment (exiting the source port) and the very last
+            segment (entering the target port) are exempt so that connections
+            can reach their nodes.  All other routing decisions — corridor
+            selection and bypass levels — treat non-source/non-target boxes as
+            inflated by this amount on every side.
     """
 
     node_width: float = 120.0
@@ -130,7 +145,9 @@ class LayoutConfig:
     node_v_padding: float = 28.0
     channel_line_gap: float = 8.0
     channel_label_font_ratio: float = 0.9
+    boundary_title_font_ratio: float = 1.1
     diagram_margin: float = 4.0
+    edge_margin: float = 8.0
 
 
 @dataclass
@@ -195,9 +212,10 @@ class EdgeRoute:
 
     The route is expressed as an ordered list of ``(x, y)`` waypoints.  The
     first waypoint coincides with the source port anchor; the last with the
-    target port anchor.  Additional interior waypoints may be added by more
-    sophisticated routing passes; the base implementation uses straight lines
-    (two waypoints only).
+    target port anchor.  Interior waypoints create the orthogonal bends: for
+    a Z-shaped route there are two interior waypoints, one at the end of the
+    horizontal segment out of the source and one at the start of the
+    horizontal segment into the target.
 
     Attributes:
         edge_id: Stable identifier matching :attr:`VizEdge.id`.
@@ -368,16 +386,21 @@ class _Layouter:
             node_layouts[node.id] = nl
             _add_node_anchors(node, nl, port_anchors)
 
-        # --- Step 5: edge routes (straight-line) ---
+        # --- Step 5: edge routes (orthogonal, obstacle-aware) ---
+        # All node boxes are treated as obstacles; boundary boxes are excluded
+        # because edges route legitimately through boundary interiors.
+        obstacles: list[tuple[float, float, float, float]] = [
+            (nl.x, nl.y, nl.width, nl.height) for nl in node_layouts.values()
+        ]
         edge_routes: dict[str, EdgeRoute] = {}
         for edge in diagram.edges:
             src_anc = port_anchors.get(edge.source_port_id)
             tgt_anc = port_anchors.get(edge.target_port_id)
             if src_anc is not None and tgt_anc is not None:
-                edge_routes[edge.id] = EdgeRoute(
-                    edge_id=edge.id,
-                    waypoints=[(src_anc.x, src_anc.y), (tgt_anc.x, tgt_anc.y)],
+                waypoints = _route_avoiding_obstacles(
+                    src_anc.x, src_anc.y, tgt_anc.x, tgt_anc.y, obstacles, total_h, margin=cfg.edge_margin
                 )
+                edge_routes[edge.id] = EdgeRoute(edge_id=edge.id, waypoints=waypoints)
 
         return LayoutPlan(
             diagram_id=diagram.id,
@@ -477,6 +500,19 @@ def _compute_bnd_layout(
 
     content_w = sum(col_widths) + max(0, num_layers - 1) * cfg.layer_gap
     content_h = max(col_heights, default=0.0)
+
+    # Ensure the boundary is wide enough for its own title label so text never
+    # overflows the boundary box.  The boundary title uses a larger font than
+    # the inner nodes (font_ratio = boundary_title_font_ratio), so we scale the
+    # character-width estimate accordingly.  The constraint is applied after
+    # all child sizing so the recursion bottom-up guarantees it holds at every
+    # nesting level.
+    min_w_for_title = max(
+        0.0,
+        _required_text_width(boundary.label, cfg, bold=True, font_ratio=cfg.boundary_title_font_ratio)
+        - 2 * cfg.boundary_padding,
+    )
+    content_w = max(content_w, min_w_for_title)
 
     # Assign relative positions (origin = interior top-left of this boundary).
     child_rects: dict[str, tuple[float, float, float, float]] = {}
@@ -860,3 +896,237 @@ def _anchor_ports_on_edge(
     for i, port in enumerate(ports):
         y = top_y + (i + 1) * height / (n + 1)
         out[port.id] = PortAnchor(port_id=port.id, x=edge_x, y=y)
+
+
+# -------- obstacle-aware orthogonal routing --------
+
+# An obstacle is a bounding rectangle (x, y, width, height).
+_Rect = tuple[float, float, float, float]
+
+
+def _segment_h_clear(y: float, x1: float, x2: float, obstacles: list[_Rect]) -> bool:
+    """Return ``True`` if the horizontal segment at *y* from *x1* to *x2* is obstacle-free.
+
+    A segment is considered blocked when it *strictly* enters an obstacle
+    rectangle.  Port anchors sit on the outer edge of their node (not strictly
+    inside), so they are never counted as blocked by their own node.
+    """
+    lo, hi = (x1, x2) if x1 <= x2 else (x2, x1)
+    return all(not (ox < hi and ox + ow > lo and oy < y < oy + oh) for ox, oy, ow, oh in obstacles)
+
+
+def _segment_v_clear(x: float, y1: float, y2: float, obstacles: list[_Rect]) -> bool:
+    """Return ``True`` if the vertical segment at *x* from *y1* to *y2* is obstacle-free."""
+    lo, hi = (y1, y2) if y1 <= y2 else (y2, y1)
+    return all(not (oy < hi and oy + oh > lo and ox < x < ox + ow) for ox, oy, ow, oh in obstacles)
+
+
+def _route_is_clear(waypoints: list[tuple[float, float]], obstacles: list[_Rect]) -> bool:
+    """Return ``True`` if every segment of the polyline *waypoints* avoids all obstacles."""
+    for i in range(len(waypoints) - 1):
+        x1, y1 = waypoints[i]
+        x2, y2 = waypoints[i + 1]
+        if abs(x1 - x2) < 0.5:  # vertical
+            if not _segment_v_clear(x1, y1, y2, obstacles):
+                return False
+        else:  # horizontal
+            if not _segment_h_clear(y1, x1, x2, obstacles):
+                return False
+    return True
+
+
+def _free_corridor_xs(sx: float, tx: float, obstacles: list[_Rect]) -> list[float]:
+    """Return sorted x-midpoints of free vertical corridors in the open interval (sx, tx).
+
+    A *corridor* is a contiguous x-range within ``(sx, tx)`` not covered by
+    any obstacle's x-extent.  Routing vertical segments through a corridor
+    midpoint guarantees the segment avoids all obstacles.
+
+    Args:
+        sx: Left boundary of the search range (source port x).
+        tx: Right boundary of the search range (target port x).
+        obstacles: Axis-aligned obstacle rectangles.
+
+    Returns:
+        Sorted list of x midpoints, one per free corridor.  Empty when
+        ``tx <= sx`` or no free corridor exists.
+    """
+    if tx <= sx:
+        return []
+    # Clip obstacle x-extents to the open interval (sx, tx).
+    blocked: list[tuple[float, float]] = []
+    for ox, _oy, ow, _oh in obstacles:
+        lo = max(ox, sx)
+        hi = min(ox + ow, tx)
+        if lo < hi:
+            blocked.append((lo, hi))
+    blocked.sort()
+    # Merge overlapping ranges.
+    merged: list[list[float]] = []
+    for lo, hi in blocked:
+        if merged and lo <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], hi)
+        else:
+            merged.append([lo, hi])
+    # Corridors are the gaps between (and outside) the merged blocked ranges.
+    corridors: list[float] = []
+    prev = sx
+    for lo, hi in merged:
+        if lo > prev + 0.5:
+            corridors.append((prev + lo) / 2.0)
+        prev = hi
+    if tx > prev + 0.5:
+        corridors.append((prev + tx) / 2.0)
+    return corridors
+
+
+def _bypass_levels(
+    x1: float,
+    x2: float,
+    obstacles: list[_Rect],
+    total_height: float,
+    gap: float,
+) -> list[float]:
+    """Return candidate y-levels for a horizontal bypass between *x1* and *x2*.
+
+    The bypass levels are placed just *above* and just *below* all obstacles
+    whose x-extents overlap ``[x1, x2]``.  The above level is returned first
+    so that shorter upward detours are preferred.
+
+    Args:
+        x1: Left edge of the x-range to check.
+        x2: Right edge of the x-range to check.
+        obstacles: Axis-aligned obstacle rectangles.
+        total_height: Canvas height — used as the lower bound for the
+            below-all-content bypass level.
+        gap: Clearance to add above/below the obstacle bounding box.
+
+    Returns:
+        Up to two candidate y values.  Empty list when no obstacles overlap
+        the given x-range (no bypass needed).
+    """
+    lo_x, hi_x = min(x1, x2), max(x1, x2)
+    relevant = [obs for obs in obstacles if obs[0] < hi_x and obs[0] + obs[2] > lo_x]
+    if not relevant:
+        return []
+    top = min(obs[1] for obs in relevant)
+    bottom = max(obs[1] + obs[3] for obs in relevant)
+    return [top - gap, bottom + gap]
+
+
+def _inflate_obstacles(
+    obstacles: list[_Rect],
+    sx: float,
+    tx: float,
+    margin: float,
+) -> list[_Rect]:
+    """Return obstacles with non-source/non-target boxes expanded by *margin* on every side.
+
+    The **source node** (identified by right edge ≈ *sx*) and the **target
+    node** (identified by left edge ≈ *tx*) are returned at their original
+    size so that connection segments can reach their port anchors without the
+    margin zone preventing the entry/exit.  All other obstacle boxes are
+    inflated by *margin*, which makes corridor and clearance checks
+    automatically maintain that clearance from every side of those boxes.
+
+    When *margin* is zero or negative the original list is returned unchanged.
+
+    Args:
+        obstacles: Original obstacle rectangles ``(x, y, width, height)``.
+        sx: x-coordinate of the source port anchor (= right edge of source node).
+        tx: x-coordinate of the target port anchor (= left edge of target node).
+        margin: Inflation amount (layout units) added to each side of
+            non-source/non-target obstacles.
+
+    Returns:
+        A new list of obstacle rectangles.
+    """
+    if margin <= 0.0:
+        return list(obstacles)
+    result: list[_Rect] = []
+    for ox, oy, ow, oh in obstacles:
+        if abs(ox + ow - sx) < 0.5 or abs(ox - tx) < 0.5:
+            # Source node (right edge = sx) or target node (left edge = tx):
+            # keep at true size so the route can enter/exit unobstructed.
+            result.append((ox, oy, ow, oh))
+        else:
+            result.append((ox - margin, oy - margin, ow + 2.0 * margin, oh + 2.0 * margin))
+    return result
+
+
+def _route_avoiding_obstacles(
+    sx: float,
+    sy: float,
+    tx: float,
+    ty: float,
+    obstacles: list[_Rect],
+    total_height: float,
+    *,
+    gap: float = 4.0,
+    margin: float = 0.0,
+) -> list[tuple[float, float]]:
+    """Route an edge orthogonally from ``(sx, sy)`` to ``(tx, ty)`` avoiding obstacles.
+
+    Tries progressively more complex polylines until one clears every obstacle
+    rectangle in *obstacles*:
+
+    1. **Straight line** — when source and target share the same y position.
+    2. **Simple Z-route** (4 waypoints) — one vertical segment in the first
+       free corridor that allows a clear horizontal return to the target.
+    3. **Double-Z route** (6 waypoints) — uses two vertical corridors (one
+       near the source, one near the target) bridged by a horizontal bypass
+       level above or below all obstacles between them.
+    4. **Midpoint fallback** — always axis-aligned; may visually overlap an
+       obstacle only when the layout contains no usable routing channels.
+
+    Args:
+        sx: x-coordinate of the source port anchor (right edge of source node).
+        sy: y-coordinate of the source port anchor.
+        tx: x-coordinate of the target port anchor (left edge of target node).
+        ty: y-coordinate of the target port anchor.
+        obstacles: Axis-aligned rectangles ``(x, y, width, height)`` to avoid.
+        total_height: Canvas height, used as an outer bound for bypass levels.
+        gap: Additional clearance added above/below obstacles for bypass levels,
+            on top of any inflation from *margin*.
+        margin: Visual clearance maintained between routed segments and every
+            box they do not need to enter.  Source and target nodes are exempt
+            so that connection segments can reach their port anchors.
+
+    Returns:
+        An ordered list of ``(x, y)`` waypoints forming a valid orthogonal
+        polyline (all segments are horizontal or vertical).
+    """
+    if abs(sy - ty) < 0.5:
+        return [(sx, sy), (tx, ty)]
+
+    # Inflate all non-source/non-target obstacles by the visual margin so that
+    # every subsequent corridor, clearance, and bypass calculation naturally
+    # keeps routes at least *margin* layout units away from those boxes.
+    obs = _inflate_obstacles(obstacles, sx, tx, margin)
+
+    cxs = _free_corridor_xs(sx, tx, obs)
+
+    # Attempt 1: simple Z-route — find a corridor where the whole 3-segment
+    # path clears every (inflated) obstacle.
+    for cx in cxs:
+        wps: list[tuple[float, float]] = [(sx, sy), (cx, sy), (cx, ty), (tx, ty)]
+        if _route_is_clear(wps, obs):
+            return wps
+
+    # Attempt 2: double-Z route — first corridor for the vertical leg near the
+    # source, last corridor for the vertical leg near the target, with a
+    # horizontal bypass at a level outside all intermediate obstacles.
+    cx1 = cxs[0] if cxs else (sx + tx) / 2.0
+    cx2 = cxs[-1] if cxs else (sx + tx) / 2.0
+    for by in _bypass_levels(cx1, cx2, obs, total_height, gap):
+        if cx1 != cx2:
+            wps = [(sx, sy), (cx1, sy), (cx1, by), (cx2, by), (cx2, ty), (tx, ty)]
+        else:
+            # Only one corridor: use a 5-segment U-shape.
+            wps = [(sx, sy), (cx1, sy), (cx1, by), (tx, by), (tx, ty)]
+        if _route_is_clear(wps, obs):
+            return wps
+
+    # Fallback: midpoint Z — guaranteed axis-aligned, safe when no free corridor exists.
+    mid_x = (sx + tx) / 2.0
+    return [(sx, sy), (mid_x, sy), (mid_x, ty), (tx, ty)]

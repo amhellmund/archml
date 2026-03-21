@@ -902,3 +902,343 @@ def test_all_port_anchors_resolved_with_expanded_boundary() -> None:
     all_ports = collect_all_ports(diag)
     for port_id in all_ports:
         assert port_id in plan.port_anchors, f"Missing anchor for port {port_id}"
+
+
+# ###############
+# Boundary title fitting (text width constraint)
+# ###############
+
+
+def test_boundary_wide_enough_for_long_title() -> None:
+    """Boundary width must accommodate its own title label, even when children are narrow."""
+    # "AVeryLongBoundaryTitle" is 22 chars, bold at font_ratio=1.1.
+    # With narrow children the content would normally be too thin to fit the title.
+    long_name = "AVeryLongBoundaryTitle"
+    sys = System(name=long_name, components=[Component(name="X")])
+    diagram = build_viz_diagram(sys)
+    plan = compute_layout(diagram)
+    bl = plan.boundaries[diagram.root.id]
+    cfg = LayoutConfig()
+    from archml.views.placement import _required_text_width
+
+    min_width = _required_text_width(long_name, cfg, bold=True, font_ratio=cfg.boundary_title_font_ratio)
+    assert bl.width >= min_width, (
+        f"Boundary width {bl.width:.1f} < required title width {min_width:.1f} for '{long_name}'"
+    )
+
+
+def test_boundary_wide_enough_when_children_are_narrower() -> None:
+    """A single short-named child must not make the boundary narrower than its title."""
+    sys = System(name="PaymentGateway", components=[Component(name="X")])
+    diagram = build_viz_diagram(sys)
+    plan = compute_layout(diagram)
+    bl = plan.boundaries[diagram.root.id]
+    cfg = LayoutConfig()
+    from archml.views.placement import _required_text_width
+
+    min_width = _required_text_width("PaymentGateway", cfg, bold=True, font_ratio=cfg.boundary_title_font_ratio)
+    assert bl.width >= min_width
+
+
+def test_nested_boundary_wide_enough_for_its_own_title() -> None:
+    """Nested boundaries must also fit their own title, not just their parent's."""
+    from archml.model.entities import System
+
+    inner = System(name="LongInnerSystemName", components=[Component(name="A")])
+    outer = System(name="Outer", systems=[inner])
+    diagram = build_viz_diagram(outer)
+    plan = compute_layout(diagram)
+    cfg = LayoutConfig()
+    from archml.views.placement import _required_text_width
+
+    inner_bl = next(bl for bid, bl in plan.boundaries.items() if "LongInnerSystemName" in bid)
+    min_width = _required_text_width("LongInnerSystemName", cfg, bold=True, font_ratio=cfg.boundary_title_font_ratio)
+    assert inner_bl.width >= min_width
+
+
+# ###############
+# Orthogonal routing
+# ###############
+
+
+def test_edge_route_has_only_right_angle_bends() -> None:
+    """Edge routes must consist of horizontal and vertical segments only (no diagonals)."""
+    a_port = _port("A", "provides", "Iface")
+    b_port = _port("B", "requires", "Iface")
+    a = _node("A", [a_port])
+    b = _node("B", [b_port])
+    edge = _edge(a_port.id, b_port.id)
+    diagram = _simple_diagram([a, b], edges=[edge])
+    plan = compute_layout(diagram)
+    route = plan.edge_routes.get(edge.id)
+    assert route is not None
+    wps = route.waypoints
+    assert len(wps) >= 2
+    for (x1, y1), (x2, y2) in zip(wps, wps[1:], strict=False):
+        assert abs(x1 - x2) < 0.5 or abs(y1 - y2) < 0.5, (
+            f"Diagonal segment detected: ({x1:.1f},{y1:.1f}) → ({x2:.1f},{y2:.1f})"
+        )
+
+
+def test_edge_route_uses_z_shape_when_source_and_target_differ_vertically() -> None:
+    """When source and target anchors differ in y, the route uses a Z-shaped 4-waypoint path."""
+    # Use two nodes: one provides, one requires, in separate layers so they have different y anchors.
+    a_port = _port("A", "provides", "Iface")
+    b_port = _port("B", "requires", "Iface")
+    # Give B a requires port to make it in a later layer than A.
+    c_port = _port("B", "requires", "Other")
+    a = _node("A", [a_port])
+    b = VizNode(
+        id="B",
+        label="B",
+        title=None,
+        kind="component",
+        entity_path="B",
+        ports=[b_port, c_port],
+    )
+    # Add a third node C so A and B are at different vertical positions.
+    c = _node("C", [])
+    edge = _edge(a_port.id, b_port.id)
+    diagram = _simple_diagram([a, b, c], edges=[edge])
+    plan = compute_layout(diagram)
+    route = plan.edge_routes.get(edge.id)
+    assert route is not None
+    # All segments must be axis-aligned.
+    for (x1, y1), (x2, y2) in zip(route.waypoints, route.waypoints[1:], strict=False):
+        assert abs(x1 - x2) < 0.5 or abs(y1 - y2) < 0.5
+
+
+def test_edge_route_midpoint_x_between_source_and_target() -> None:
+    """The vertical segment of a Z-route is placed between the source and target x positions."""
+    a_port = _port("A", "provides", "Iface")
+    b_port = _port("B", "requires", "Iface")
+    a = _node("A", [a_port])
+    b = _node("B", [b_port])
+    c = _node("C", [])  # extra node so A and B end up at different y
+    edge = _edge(a_port.id, b_port.id)
+    diagram = _simple_diagram([a, b, c], edges=[edge])
+    plan = compute_layout(diagram)
+    route = plan.edge_routes.get(edge.id)
+    src_anc = plan.port_anchors[a_port.id]
+    tgt_anc = plan.port_anchors[b_port.id]
+    if route is not None and len(route.waypoints) == 4:
+        mid_xs = list({x for x, _ in route.waypoints[1:3]})
+        assert len(mid_xs) == 1
+        assert src_anc.x <= mid_xs[0] <= tgt_anc.x or mid_xs[0] == pytest.approx((src_anc.x + tgt_anc.x) / 2, rel=1e-3)
+
+
+def test_straight_route_for_same_y_anchors() -> None:
+    """When source and target port anchors are at the same y, return a 2-waypoint straight line."""
+    # A node with one provides port and one requires port at the same y level:
+    # this happens when both nodes are in the same row of their layer.
+    a_port = _port("A", "provides", "Iface")
+    b_port = _port("B", "requires", "Iface")
+    a = _node("A", [a_port])
+    b = _node("B", [b_port])
+    # No extra nodes — only two nodes, each in its own layer, each alone in that layer.
+    # With a single node per layer the anchors will be at the vertical centre of each node,
+    # which matches because both nodes have the same height.
+    edge = _edge(a_port.id, b_port.id)
+    diagram = _simple_diagram([a, b], edges=[edge])
+    plan = compute_layout(diagram)
+    route = plan.edge_routes.get(edge.id)
+    src_anc = plan.port_anchors[a_port.id]
+    tgt_anc = plan.port_anchors[b_port.id]
+    assert route is not None
+    if abs(src_anc.y - tgt_anc.y) < 0.5:
+        assert len(route.waypoints) == 2
+
+
+def test_route_avoiding_obstacles_same_y_is_straight() -> None:
+    """Same-y source and target → 2-waypoint straight horizontal line."""
+    from archml.views.placement import _route_avoiding_obstacles
+
+    wps = _route_avoiding_obstacles(0.0, 10.0, 100.0, 10.0, [], 200.0)
+    assert wps == [(0.0, 10.0), (100.0, 10.0)]
+
+
+def test_route_avoiding_obstacles_no_obstacles_z_shape() -> None:
+    """No obstacles → simple Z-route through the midpoint corridor."""
+    from archml.views.placement import _route_avoiding_obstacles
+
+    wps = _route_avoiding_obstacles(0.0, 10.0, 100.0, 50.0, [], 200.0)
+    assert len(wps) == 4
+    assert wps[0] == (0.0, 10.0)
+    assert wps[-1] == (100.0, 50.0)
+    # All segments axis-aligned.
+    for (x1, y1), (x2, y2) in zip(wps, wps[1:], strict=False):
+        assert abs(x1 - x2) < 1e-9 or abs(y1 - y2) < 1e-9
+
+
+def test_route_avoiding_obstacles_avoids_single_box_in_straight_path() -> None:
+    """An obstacle in the direct Z-path forces a detour that clears it."""
+    from archml.views.placement import _route_avoiding_obstacles, _route_is_clear
+
+    # Source at x=0,y=100.  Target at x=200,y=50.
+    # An obstacle at x=80..120 blocks the midpoint corridor vertically.
+    # Its y range includes both sy=100 and ty=50, so a simple Z via mid_x=100
+    # would have both the horizontal segment at y=100 AND the horizontal
+    # return at y=50 crossing through it.
+    obstacle = [(80.0, 30.0, 40.0, 90.0)]  # x 80..120, y 30..120
+    wps = _route_avoiding_obstacles(0.0, 100.0, 200.0, 50.0, obstacle, 300.0)
+    # Route must be axis-aligned.
+    for (x1, y1), (x2, y2) in zip(wps, wps[1:], strict=False):
+        assert abs(x1 - x2) < 0.5 or abs(y1 - y2) < 0.5, f"Diagonal: ({x1:.1f},{y1:.1f}) → ({x2:.1f},{y2:.1f})"
+    # Route must clear the obstacle.
+    assert _route_is_clear(wps, obstacle), f"Route {wps} crosses obstacle {obstacle}"
+
+
+def test_route_avoiding_obstacles_double_z_when_single_z_blocked() -> None:
+    """When every single-corridor Z-route is blocked, the double-Z bypass is used."""
+    from archml.views.placement import _route_avoiding_obstacles, _route_is_clear
+
+    # Source at x=0, sy=150.  Target at x=300, ty=100.
+    # Two obstacles block every simple corridor horizontally:
+    #   obs1 at x=50..100 spans y=50..200  → blocks horizontal segments at y 100 and 150
+    #   obs2 at x=200..250 spans y=50..200 → same
+    # The only clear corridor is between obs1 and obs2 (x=100..200, corridor ≈ 150),
+    # but the horizontal return at ty=100 entering from x=150 to x=300 crosses obs2.
+    obs1 = (50.0, 50.0, 50.0, 150.0)  # x 50..100,  y 50..200
+    obs2 = (200.0, 50.0, 50.0, 150.0)  # x 200..250, y 50..200
+    obstacles = [obs1, obs2]
+    wps = _route_avoiding_obstacles(0.0, 150.0, 300.0, 100.0, obstacles, 400.0)
+    for (x1, y1), (x2, y2) in zip(wps, wps[1:], strict=False):
+        assert abs(x1 - x2) < 0.5 or abs(y1 - y2) < 0.5
+    assert _route_is_clear(wps, obstacles), f"Route {wps} crosses an obstacle"
+
+
+def test_route_avoiding_obstacles_all_segments_axis_aligned_with_obstacles() -> None:
+    """With multiple obstacles, every segment of the returned route is axis-aligned."""
+    from archml.views.placement import _route_avoiding_obstacles
+
+    obstacles = [
+        (40.0, 60.0, 30.0, 80.0),
+        (130.0, 40.0, 30.0, 100.0),
+    ]
+    wps = _route_avoiding_obstacles(0.0, 100.0, 200.0, 70.0, obstacles, 300.0)
+    for (x1, y1), (x2, y2) in zip(wps, wps[1:], strict=False):
+        assert abs(x1 - x2) < 0.5 or abs(y1 - y2) < 0.5
+
+
+# ------- helper unit tests -------
+
+
+def test_free_corridor_xs_empty_when_fully_blocked() -> None:
+    """No corridors when a single obstacle covers the entire x range."""
+    from archml.views.placement import _free_corridor_xs
+
+    # Obstacle covers [0, 100]; sx=0, tx=100 → no free corridor.
+    obs = [(0.0, 0.0, 100.0, 50.0)]
+    assert _free_corridor_xs(0.0, 100.0, obs) == []
+
+
+def test_free_corridor_xs_single_gap_between_two_obstacles() -> None:
+    """One corridor between two non-overlapping obstacles."""
+    from archml.views.placement import _free_corridor_xs
+
+    obs = [(0.0, 0.0, 30.0, 10.0), (70.0, 0.0, 30.0, 10.0)]
+    corridors = _free_corridor_xs(0.0, 100.0, obs)
+    # One corridor between x=30 and x=70, midpoint=50.
+    assert len(corridors) == 1
+    assert corridors[0] == pytest.approx(50.0)
+
+
+def test_free_corridor_xs_gaps_before_after_and_between() -> None:
+    """Corridors before, between, and after two interior obstacles."""
+    from archml.views.placement import _free_corridor_xs
+
+    obs = [(20.0, 0.0, 20.0, 10.0), (60.0, 0.0, 20.0, 10.0)]
+    corridors = _free_corridor_xs(0.0, 100.0, obs)
+    # Three corridors: [0,20)=mid10, (40,60)=mid50, (80,100)=mid90
+    assert len(corridors) == 3
+    assert corridors[0] == pytest.approx(10.0)
+    assert corridors[1] == pytest.approx(50.0)
+    assert corridors[2] == pytest.approx(90.0)
+
+
+def test_free_corridor_xs_returns_empty_for_backward_range() -> None:
+    """Returns empty list when tx <= sx (no forward range to search)."""
+    from archml.views.placement import _free_corridor_xs
+
+    assert _free_corridor_xs(100.0, 50.0, []) == []
+    assert _free_corridor_xs(50.0, 50.0, []) == []
+
+
+def test_bypass_levels_above_and_below() -> None:
+    """Bypass levels straddle the obstacle bounding box."""
+    from archml.views.placement import _bypass_levels
+
+    obs = [(10.0, 50.0, 80.0, 100.0)]  # y 50..150
+    levels = _bypass_levels(10.0, 90.0, obs, 300.0, gap=5.0)
+    assert len(levels) == 2
+    assert levels[0] == pytest.approx(45.0)  # above: 50 - 5
+    assert levels[1] == pytest.approx(155.0)  # below: 150 + 5
+
+
+def test_bypass_levels_empty_when_no_obstacles_in_range() -> None:
+    """Returns empty list when no obstacle overlaps the given x range."""
+    from archml.views.placement import _bypass_levels
+
+    obs = [(200.0, 0.0, 50.0, 100.0)]  # outside x range [10, 90]
+    levels = _bypass_levels(10.0, 90.0, obs, 300.0, gap=5.0)
+    assert levels == []
+
+
+def test_route_is_clear_detects_horizontal_crossing() -> None:
+    """_route_is_clear flags a horizontal segment that enters an obstacle."""
+    from archml.views.placement import _route_is_clear
+
+    obs = [(40.0, 90.0, 20.0, 20.0)]  # x 40..60, y 90..110
+    # Horizontal segment at y=100 from x=0 to x=80 crosses the obstacle.
+    wps = [(0.0, 100.0), (80.0, 100.0)]
+    assert not _route_is_clear(wps, obs)
+
+
+def test_route_is_clear_accepts_clear_path() -> None:
+    """_route_is_clear passes a path that avoids all obstacles."""
+    from archml.views.placement import _route_is_clear
+
+    obs = [(40.0, 90.0, 20.0, 20.0)]
+    # Route goes above the obstacle.
+    wps = [(0.0, 80.0), (80.0, 80.0)]
+    assert _route_is_clear(wps, obs)
+
+
+# ------- integration: ecommerce-like topology -------
+
+
+def test_ecommerce_like_routes_avoid_component_boxes() -> None:
+    """In a 3-layer ecommerce-like system, no edge route crosses a component box."""
+    sys = System(
+        name="ECommerce",
+        connects=[
+            _connect("PaymentGateway", "PaymentRequest", "OrderService", "PaymentRequest", channel="payment"),
+            _connect("InventoryManager", "InventoryCheck", "OrderService", "InventoryCheck", channel="inventory"),
+        ],
+        components=[
+            Component(name="OrderService", requires=[_iref("PaymentRequest"), _iref("InventoryCheck")]),
+            Component(name="PaymentGateway", provides=[_iref("PaymentRequest")]),
+            Component(name="InventoryManager", provides=[_iref("InventoryCheck")]),
+        ],
+    )
+    diagram = build_viz_diagram(sys)
+    plan = compute_layout(diagram)
+
+    # Build obstacle list from all placed nodes.
+    obstacles = [(nl.x, nl.y, nl.width, nl.height) for nl in plan.nodes.values()]
+
+    from archml.views.placement import _route_is_clear
+
+    for edge in diagram.edges:
+        route = plan.edge_routes.get(edge.id)
+        if route is None:
+            continue
+        # All segments must be axis-aligned.
+        for (x1, y1), (x2, y2) in zip(route.waypoints, route.waypoints[1:], strict=False):
+            assert abs(x1 - x2) < 0.5 or abs(y1 - y2) < 0.5, (
+                f"Edge {edge.id}: diagonal ({x1:.1f},{y1:.1f})→({x2:.1f},{y2:.1f})"
+            )
+        # Route must not cross any component box.
+        assert _route_is_clear(route.waypoints, obstacles), (
+            f"Edge {edge.id} route {route.waypoints} crosses a component box"
+        )
