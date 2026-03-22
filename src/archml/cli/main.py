@@ -105,19 +105,6 @@ def main() -> None:
             "Omit for full depth (default)."
         ),
     )
-    visualize_parser.add_argument(
-        "--backend",
-        choices=["auto", "svg", "png", "diagrams"],
-        default="auto",
-        help=(
-            "Rendering backend to use. "
-            "'auto' (default): select from the output file extension (.png → PNG, otherwise SVG). "
-            "'svg': force SVG output via the built-in SVG backend. "
-            "'png': force PNG output via the Pillow backend. "
-            "'diagrams': use the diagrams Python package (Graphviz-based; "
-            "output format from extension, defaults to SVG)."
-        ),
-    )
 
     # sync-remote subcommand
     subparsers.add_parser(
@@ -300,7 +287,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
 def _cmd_visualize(args: argparse.Namespace) -> int:
     """Handle the visualize subcommand."""
-    from archml.views.layout_graphviz import compute_layout
+    from archml.views.layout import compute_layout
     from archml.views.resolver import EntityNotFoundError, resolve_entity
     from archml.views.topology import build_viz_diagram, build_viz_diagram_all
     from archml.workspace.config import LocalPathImport
@@ -357,26 +344,15 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         viz_diagram = build_viz_diagram(entity, depth=depth)
-    backend = getattr(args, "backend", "auto")
-    if backend == "diagrams":
-        from archml.views.backend.diagrams_pkg import render_diagrams_pkg
+    try:
+        layout_plan = compute_layout(viz_diagram)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
-        render_diagrams_pkg(viz_diagram, output_path)
-    else:
-        try:
-            layout_plan = compute_layout(viz_diagram)
-        except RuntimeError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 1
+    from archml.views.diagram import render_diagram
 
-        if backend == "png" or (backend == "auto" and output_path.suffix.lower() == ".png"):
-            from archml.views.backend.png import render_png
-
-            render_png(viz_diagram, layout_plan, output_path)
-        else:
-            from archml.views.backend.diagram import render_diagram
-
-            render_diagram(viz_diagram, layout_plan, output_path)
+    render_diagram(viz_diagram, layout_plan, output_path)
 
     print(f"Diagram written to '{output_path}'.")
     return 0

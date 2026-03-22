@@ -9,7 +9,7 @@ component types (:class:`LayoutConfig`, :class:`NodeLayout`,
 sizing and routing helpers used by the Graphviz layout backend.
 
 The actual layout computation is done by
-:func:`~archml.views.layout_graphviz.compute_layout`.
+:func:`~archml.views.layout.compute_layout`.
 """
 
 from __future__ import annotations
