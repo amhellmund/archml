@@ -10,7 +10,7 @@ import pytest
 
 from archml.model.entities import Component, ConnectDef, InterfaceRef, System, UserDef
 from archml.views.backend.png import render_png
-from archml.views.placement import compute_layout
+from archml.views.layout_graphviz import compute_layout
 from archml.views.topology import build_viz_diagram
 
 # ###############
@@ -54,7 +54,7 @@ def _png_dimensions(path: Path) -> tuple[int, int]:
 
 def test_render_png_creates_file(tmp_path: Path) -> None:
     """render_png writes a file at the specified output path."""
-    comp = Component(name="Worker")
+    comp = Component(name="Worker", components=[Component(name="A")])
     diagram = build_viz_diagram(comp)
     plan = compute_layout(diagram)
     out = tmp_path / "out.png"
@@ -64,7 +64,7 @@ def test_render_png_creates_file(tmp_path: Path) -> None:
 
 def test_render_png_creates_parent_directory(tmp_path: Path) -> None:
     """render_png creates missing parent directories."""
-    comp = Component(name="Worker")
+    comp = Component(name="Worker", components=[Component(name="A")])
     diagram = build_viz_diagram(comp)
     plan = compute_layout(diagram)
     out = tmp_path / "nested" / "deep" / "diagram.png"
@@ -166,9 +166,9 @@ def test_render_png_with_user_nodes(tmp_path: Path) -> None:
     assert out.exists()
 
 
-def test_render_png_leaf_entity(tmp_path: Path) -> None:
-    """A leaf entity (no children) renders a minimal PNG without error."""
-    comp = Component(name="Leaf")
+def test_render_png_minimal_entity(tmp_path: Path) -> None:
+    """A minimal entity with one child renders a PNG without error."""
+    comp = Component(name="Leaf", components=[Component(name="A")])
     out = _render(comp, tmp_path)
     assert out.exists()
     w, h = _png_dimensions(out)

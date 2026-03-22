@@ -119,7 +119,7 @@ _MINIMAL_WORKSPACE = "name: src\nbuild-directory: .archml-build\nsource-imports:
 def test_check_with_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """check exits with code 0 and reports no files when workspace has none."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -133,7 +133,7 @@ def test_check_with_valid_archml_file(
     """check discovers .archml files, compiles them, and reports success."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -150,7 +150,7 @@ def test_check_reports_compile_error(
     """check exits with code 1 when a .archml file has a parse error."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "bad.archml").write_text("component {}")  # missing name
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -174,7 +174,7 @@ def test_check_reports_validation_errors(
         "  component A { provides J }\n"
         "}\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -189,7 +189,7 @@ def test_check_uses_workspace_yaml_build_dir(
         "name: src\nbuild-directory: custom-build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
     (tmp_path / "arch.archml").write_text("interface Signal { field v: Int }\ncomponent A { provides Signal }\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -204,7 +204,7 @@ def test_check_invalid_workspace_yaml(
     """check exits with code 1 when .archml-workspace.yaml is invalid."""
     (tmp_path / ".archml-workspace.yaml").write_text("bad yaml: [unterminated\n")
     (tmp_path / "arch.archml").write_text("component A {}\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -214,7 +214,7 @@ def test_check_invalid_workspace_yaml(
 
 def test_check_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """check exits with error code 1 when no workspace file is found anywhere in the tree."""
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -228,7 +228,7 @@ def test_check_autodetects_workspace_in_parent_directory(
     (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
     subdir = tmp_path / "src" / "components"
     subdir.mkdir(parents=True)
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(subdir)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(subdir)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -239,7 +239,7 @@ def test_check_autodetects_workspace_in_parent_directory(
 def test_check_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """check exits with error code 1 when directory does not exist."""
     missing = tmp_path / "nonexistent"
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(missing)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(missing)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -253,7 +253,7 @@ def test_check_reports_parse_error(
     """check exits with code 1 and prints error message on parse failure."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "bad.archml").write_text("component {}\n")  # missing name
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -279,7 +279,7 @@ def test_check_with_workspace_yaml_and_local_source_import(
     )
     (tmp_path / "app.archml").write_text("from mylib/iface import MyIface\ncomponent C { requires MyIface }\n")
 
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -294,7 +294,7 @@ def test_check_with_workspace_yaml_invalid_config(
 ) -> None:
     """check exits with code 1 when .archml-workspace.yaml is invalid."""
     (tmp_path / ".archml-workspace.yaml").write_text("invalid: yaml: [broken\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -319,7 +319,7 @@ def test_check_excludes_build_directory_from_scan(
     build_dir.mkdir()
     (build_dir / "fake.archml").write_text("component {}\n")  # invalid — missing name
 
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -334,7 +334,7 @@ def test_check_fails_if_workspace_config_has_no_source_imports(
 ) -> None:
     """check exits with code 1 when workspace config has no source-imports."""
     (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -347,7 +347,7 @@ def test_check_fails_if_workspace_config_has_no_source_imports(
 
 def test_serve_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve exits with error code 1 when no workspace file is found anywhere in the tree."""
-    monkeypatch.setattr(sys, "argv", ["archml", "serve", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "serve", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -358,7 +358,7 @@ def test_serve_autodetects_workspace_in_parent_directory(tmp_path: Path, monkeyp
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     subdir = tmp_path / "src" / "components"
     subdir.mkdir(parents=True)
-    monkeypatch.setattr(sys, "argv", ["archml", "serve", str(subdir)])
+    monkeypatch.setattr(sys, "argv", ["archml", "serve", "--workspace", str(subdir)])
     mock_app = MagicMock()
     with (
         patch("archml.webui.app.create_app", return_value=mock_app),
@@ -372,7 +372,7 @@ def test_serve_autodetects_workspace_in_parent_directory(tmp_path: Path, monkeyp
 def test_serve_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve exits with error code 1 when directory does not exist."""
     missing = tmp_path / "nonexistent"
-    monkeypatch.setattr(sys, "argv", ["archml", "serve", str(missing)])
+    monkeypatch.setattr(sys, "argv", ["archml", "serve", "--workspace", str(missing)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -381,7 +381,7 @@ def test_serve_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: py
 def test_serve_launches_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """serve creates and runs the web app when workspace exists."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    monkeypatch.setattr(sys, "argv", ["archml", "serve", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "serve", "--workspace", str(tmp_path)])
     mock_app = MagicMock()
     with (
         patch("archml.webui.app.create_app", return_value=mock_app),
@@ -398,7 +398,7 @@ def test_serve_custom_host_and_port(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         sys,
         "argv",
-        ["archml", "serve", "--host", "0.0.0.0", "--port", "9000", str(tmp_path)],
+        ["archml", "serve", "--host", "0.0.0.0", "--port", "9000", "--workspace", str(tmp_path)],
     )
     mock_app = MagicMock()
     with (
@@ -416,7 +416,7 @@ def test_serve_custom_host_and_port(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_visualize_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """visualize exits with error code 1 when directory does not exist."""
     missing = tmp_path / "nonexistent"
-    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", str(missing)])
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", "--workspace", str(missing)])
 
 
 # -------- sync-remote tests --------
@@ -426,7 +426,7 @@ _COMMIT_40 = "a" * 40
 
 def test_sync_remote_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """sync-remote exits with code 1 when no workspace file is found."""
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -435,7 +435,7 @@ def test_sync_remote_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.M
 def test_sync_remote_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """sync-remote exits with code 1 when directory does not exist."""
     missing = tmp_path / "nonexistent"
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(missing)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(missing)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -443,7 +443,7 @@ def test_sync_remote_fails_if_directory_does_not_exist(tmp_path: Path, monkeypat
 
 def test_visualize_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """visualize exits with error code 1 when no workspace file is found."""
-    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -452,7 +452,7 @@ def test_visualize_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.Mon
 def test_visualize_fails_if_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """visualize exits with error code 1 when no .archml files are found."""
     (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -466,7 +466,7 @@ def test_visualize_fails_if_entity_not_found(
     """visualize exits with error code 1 when entity path is not found."""
     (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
     (tmp_path / "arch.archml").write_text("component Worker {}\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "NonExistent", "out.png", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "NonExistent", "out.png", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit):
         main()
 
@@ -478,7 +478,7 @@ def test_sync_remote_autodetects_workspace_in_parent(
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     subdir = tmp_path / "src" / "components"
     subdir.mkdir(parents=True)
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(subdir)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(subdir)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -492,7 +492,7 @@ def test_sync_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     (tmp_path / ".archml-workspace.yaml").write_text(
         "name: src\nbuild-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -507,7 +507,7 @@ def test_sync_remote_fails_without_lockfile(tmp_path: Path, monkeypatch: pytest.
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -525,7 +525,7 @@ def test_sync_remote_fails_if_repo_not_in_lockfile(
         "    revision: main\n"
     )
     (tmp_path / ".archml-lockfile.yaml").write_text("locked-revisions: []\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -551,7 +551,7 @@ def test_sync_remote_skips_repo_already_at_pinned_commit(
         f"    revision: main\n"
         f"    commit: {_COMMIT_40}\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with (
         patch("archml.workspace.git_ops.get_current_commit", return_value=_COMMIT_40),
         pytest.raises(SystemExit) as exc_info,
@@ -580,7 +580,7 @@ def test_sync_remote_clones_repo(
         f"    revision: main\n"
         f"    commit: {_COMMIT_40}\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with (
         patch("archml.workspace.git_ops.get_current_commit", return_value=None),
         patch("archml.workspace.git_ops.clone_at_commit") as mock_clone,
@@ -615,7 +615,7 @@ def test_sync_remote_reports_error_on_clone_failure(
         f"    revision: main\n"
         f"    commit: {_COMMIT_40}\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with (
         patch("archml.workspace.git_ops.get_current_commit", return_value=None),
         patch("archml.workspace.git_ops.clone_at_commit", side_effect=GitError("network error")),
@@ -636,7 +636,7 @@ def test_visualize_succeeds_with_mocked_svg_renderer(
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text("component Worker {}\n")
     out_file = tmp_path / "diagram.svg"
-    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), "--workspace", str(tmp_path)])
     with patch("archml.views.backend.diagram.render_diagram") as mock_render, pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -654,7 +654,7 @@ def test_visualize_succeeds_with_mocked_png_renderer(
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text("component Worker {}\n")
     out_file = tmp_path / "diagram.png"
-    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), "--workspace", str(tmp_path)])
     with patch("archml.views.backend.png.render_png") as mock_render, pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -680,7 +680,7 @@ def test_sync_remote_uses_custom_sync_directory(tmp_path: Path, monkeypatch: pyt
         f"    revision: main\n"
         f"    commit: {_COMMIT_40}\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with (
         patch("archml.workspace.git_ops.get_current_commit", return_value=None),
         patch("archml.workspace.git_ops.clone_at_commit") as mock_clone,
@@ -700,7 +700,7 @@ def test_sync_remote_uses_custom_sync_directory(tmp_path: Path, monkeypatch: pyt
 
 def test_update_remote_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """update-remote exits with code 1 when no workspace file is found."""
-    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -709,7 +709,7 @@ def test_update_remote_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest
 def test_update_remote_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """update-remote exits with code 1 when directory does not exist."""
     missing = tmp_path / "nonexistent"
-    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(missing)])
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(missing)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
@@ -722,7 +722,7 @@ def test_update_remote_autodetects_workspace_in_parent(
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     subdir = tmp_path / "src" / "components"
     subdir.mkdir(parents=True)
-    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(subdir)])
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(subdir)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -736,7 +736,7 @@ def test_update_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.Monkey
     (tmp_path / ".archml-workspace.yaml").write_text(
         "name: src\nbuild-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -752,7 +752,7 @@ def test_update_remote_creates_lockfile_from_branch(tmp_path: Path, monkeypatch:
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
     with (
         patch("archml.workspace.git_ops.resolve_commit", return_value=resolved_commit),
         pytest.raises(SystemExit) as exc_info,
@@ -780,7 +780,7 @@ def test_update_remote_pins_commit_hash_without_network(tmp_path: Path, monkeypa
         "    git-repository: https://example.com/lib\n"
         f"    revision: {_COMMIT_40}\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
     with (
         patch("archml.workspace.git_ops.resolve_commit") as mock_resolve,
         pytest.raises(SystemExit) as exc_info,
@@ -813,7 +813,7 @@ def test_update_remote_updates_existing_lockfile(tmp_path: Path, monkeypatch: py
         f"    revision: main\n"
         f"    commit: '{old_commit}'\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
     with (
         patch("archml.workspace.git_ops.resolve_commit", return_value=new_commit),
         pytest.raises(SystemExit) as exc_info,
@@ -840,7 +840,7 @@ def test_update_remote_exits_1_on_resolution_failure(
         "    git-repository: https://example.com/lib\n"
         "    revision: nonexistent-branch\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
     with (
         patch("archml.workspace.git_ops.resolve_commit", side_effect=GitError("not found")),
         pytest.raises(SystemExit) as exc_info,
@@ -875,7 +875,7 @@ def test_check_command_uses_synced_remote_repos(
     (tmp_path / "app.archml").write_text(
         "from @payments/api/types import PaymentAPI\ncomponent C { requires PaymentAPI }\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -909,7 +909,7 @@ def test_check_command_loads_remote_repo_mnemonics(
     (tmp_path / "app.archml").write_text(
         "from @payments/lib/types import PaymentType\ncomponent C { requires PaymentType }\n"
     )
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
@@ -936,7 +936,7 @@ def test_check_command_warns_on_invalid_remote_workspace_yaml(
     )
     # Local file with no imports from @payments — compilation succeeds despite bad remote config.
     (tmp_path / "app.archml").write_text("component C {}\n")
-    monkeypatch.setattr(sys, "argv", ["archml", "check", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     # Still succeeds: invalid remote config just produces a warning, not a hard error.

@@ -25,6 +25,17 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
 
+    # Shared parent parser for the workspace directory option, used by all
+    # subcommands that operate on an existing workspace.
+    _workspace_parent = argparse.ArgumentParser(add_help=False)
+    _workspace_parent.add_argument(
+        "--workspace",
+        "-C",
+        default=".",
+        metavar="DIR",
+        help="Directory containing the ArchML workspace (default: current directory)",
+    )
+
     # init subcommand
     init_parser = subparsers.add_parser(
         "init",
@@ -41,29 +52,19 @@ def main() -> None:
     )
 
     # check subcommand
-    check_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "check",
+        parents=[_workspace_parent],
         help="Check the consistency of the architecture",
         description="Validate architecture files for consistency errors.",
-    )
-    check_parser.add_argument(
-        "directory",
-        nargs="?",
-        default=".",
-        help="Directory containing the ArchML workspace (default: current directory)",
     )
 
     # serve subcommand
     serve_parser = subparsers.add_parser(
         "serve",
+        parents=[_workspace_parent],
         help="Launch the interactive architecture viewer",
         description="Launch a web-based UI for interactively viewing the architecture.",
-    )
-    serve_parser.add_argument(
-        "directory",
-        nargs="?",
-        default=".",
-        help="Directory containing the ArchML workspace (default: current directory)",
     )
     serve_parser.add_argument(
         "--port",
@@ -80,6 +81,7 @@ def main() -> None:
     # visualize subcommand
     visualize_parser = subparsers.add_parser(
         "visualize",
+        parents=[_workspace_parent],
         help="Generate a diagram for a system or component",
         description="Render a box diagram for the specified architecture entity.",
     )
@@ -90,12 +92,6 @@ def main() -> None:
     visualize_parser.add_argument(
         "output",
         help="Output file path for the rendered diagram (e.g. 'diagram.png')",
-    )
-    visualize_parser.add_argument(
-        "directory",
-        nargs="?",
-        default=".",
-        help="Directory containing the ArchML workspace (default: current directory)",
     )
     visualize_parser.add_argument(
         "--depth",
@@ -109,37 +105,40 @@ def main() -> None:
             "Omit for full depth (default)."
         ),
     )
+    visualize_parser.add_argument(
+        "--backend",
+        choices=["auto", "svg", "png", "diagrams"],
+        default="auto",
+        help=(
+            "Rendering backend to use. "
+            "'auto' (default): select from the output file extension (.png → PNG, otherwise SVG). "
+            "'svg': force SVG output via the built-in SVG backend. "
+            "'png': force PNG output via the Pillow backend. "
+            "'diagrams': use the diagrams Python package (Graphviz-based; "
+            "output format from extension, defaults to SVG)."
+        ),
+    )
 
     # sync-remote subcommand
-    sync_remote_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "sync-remote",
+        parents=[_workspace_parent],
         help="Download configured remote git repositories",
         description=(
             "Download remote git repositories listed in the workspace configuration "
             "to the configured sync directory at the commits pinned in the lockfile."
         ),
     )
-    sync_remote_parser.add_argument(
-        "directory",
-        nargs="?",
-        default=".",
-        help="Directory containing the ArchML workspace (default: current directory)",
-    )
 
     # update-remote subcommand
-    update_remote_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "update-remote",
+        parents=[_workspace_parent],
         help="Update remote git repository commits in the lockfile",
         description=(
             "Resolve branch or tag references to their latest commit SHAs and "
             "write the results to the lockfile. Commit-hash revisions are pinned as-is."
         ),
-    )
-    update_remote_parser.add_argument(
-        "directory",
-        nargs="?",
-        default=".",
-        help="Directory containing the ArchML workspace (default: current directory)",
     )
 
     args = parser.parse_args()
@@ -212,7 +211,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
     """Handle the check subcommand."""
     from archml.workspace.config import GitPathImport, LocalPathImport, find_workspace_root
 
-    directory = Path(args.directory).resolve()
+    directory = Path(args.workspace).resolve()
 
     if not directory.exists():
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
@@ -301,12 +300,12 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
 def _cmd_visualize(args: argparse.Namespace) -> int:
     """Handle the visualize subcommand."""
-    from archml.views.placement import compute_layout
+    from archml.views.layout_graphviz import compute_layout
     from archml.views.resolver import EntityNotFoundError, resolve_entity
     from archml.views.topology import build_viz_diagram, build_viz_diagram_all
     from archml.workspace.config import LocalPathImport
 
-    directory = Path(args.directory).resolve()
+    directory = Path(args.workspace).resolve()
 
     if not directory.exists():
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
@@ -358,16 +357,26 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         viz_diagram = build_viz_diagram(entity, depth=depth)
-    layout_plan = compute_layout(viz_diagram)
+    backend = getattr(args, "backend", "auto")
+    if backend == "diagrams":
+        from archml.views.backend.diagrams_pkg import render_diagrams_pkg
 
-    if output_path.suffix.lower() == ".png":
-        from archml.views.backend.png import render_png
-
-        render_png(viz_diagram, layout_plan, output_path)
+        render_diagrams_pkg(viz_diagram, output_path)
     else:
-        from archml.views.backend.diagram import render_diagram
+        try:
+            layout_plan = compute_layout(viz_diagram)
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
 
-        render_diagram(viz_diagram, layout_plan, output_path)
+        if backend == "png" or (backend == "auto" and output_path.suffix.lower() == ".png"):
+            from archml.views.backend.png import render_png
+
+            render_png(viz_diagram, layout_plan, output_path)
+        else:
+            from archml.views.backend.diagram import render_diagram
+
+            render_diagram(viz_diagram, layout_plan, output_path)
 
     print(f"Diagram written to '{output_path}'.")
     return 0
@@ -377,7 +386,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     """Handle the serve subcommand."""
     from archml.workspace.config import find_workspace_root
 
-    directory = Path(args.directory).resolve()
+    directory = Path(args.workspace).resolve()
 
     if not directory.exists():
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
@@ -411,7 +420,7 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
     from archml.workspace.git_ops import GitError, clone_at_commit, get_current_commit
     from archml.workspace.lockfile import LOCKFILE_NAME, LockfileError, load_lockfile
 
-    directory = Path(args.directory).resolve()
+    directory = Path(args.workspace).resolve()
 
     if not directory.exists():
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
@@ -506,7 +515,7 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
         save_lockfile,
     )
 
-    directory = Path(args.directory).resolve()
+    directory = Path(args.workspace).resolve()
 
     if not directory.exists():
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)

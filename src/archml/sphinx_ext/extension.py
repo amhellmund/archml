@@ -175,7 +175,7 @@ def _generate_diagram(env: Any, root_entity: str, depth: int | None) -> Path:
     """
     from archml.compiler.build import CompilerError, SourceImportKey, compile_files
     from archml.views.backend.diagram import render_diagram
-    from archml.views.placement import compute_layout
+    from archml.views.layout_graphviz import compute_layout
     from archml.views.resolver import EntityNotFoundError, resolve_entity
     from archml.views.topology import build_viz_diagram
     from archml.workspace.config import LocalPathImport, WorkspaceConfigError, load_workspace_config
