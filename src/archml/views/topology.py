@@ -376,7 +376,8 @@ def build_viz_diagram(
         _term_id = f"terminal.{_dir_tag}.{_iref_label(_exp_ref)}"
         if _term_id not in _seen_expose_terminal_ids:
             _seen_expose_terminal_ids.add(_term_id)
-            peripheral_nodes.append(_make_terminal_node(_exp_ref, _exp_dir, kind="interface"))
+            _ch = _find_channel_for_port(entity.name, _exp_dir, _exp_ref.name, _ext_connects)
+            peripheral_nodes.append(_make_terminal_node(_exp_ref, _exp_dir, kind="interface", title=_ch))
 
     # --- Edges ---
     edges: list[VizEdge] = []

@@ -37,8 +37,8 @@ from pathlib import Path
 from archml.views.placement import BoundaryLayout, LayoutPlan, NodeLayout
 from archml.views.topology import BoundaryKind, NodeKind, VizBoundary, VizDiagram, VizNode
 
-# Mapping: topology id → (entity_path, kind_str)
-_EntityInfoMap = dict[str, tuple[str, str]]
+# Mapping: topology id → (entity_path, kind_str, channel_name | None)
+_EntityInfoMap = dict[str, tuple[str, str, str | None]]
 
 # ###############
 # Public Interface
@@ -507,25 +507,24 @@ def _collect_entity_info(diagram: VizDiagram) -> _EntityInfoMap:
     _walk_boundary_info(diagram.root, result)
     for node in diagram.peripheral_nodes:
         if node.entity_path:
-            result[node.id] = (node.entity_path, node.kind)
+            result[node.id] = (node.entity_path, node.kind, None)
         elif node.kind in ("terminal", "interface") and node.label:
-            # Use the interface name as a stand-in entity_path for click routing.
-            result[node.id] = (node.label, node.kind)
+            # Use the interface name as entity_path; title holds the channel name when known.
+            result[node.id] = (node.label, node.kind, node.title)
     return result
 
 
 def _walk_boundary_info(boundary: VizBoundary, result: _EntityInfoMap) -> None:
     """Recursively collect entity info from a boundary and its children."""
     if boundary.entity_path:
-        result[boundary.id] = (boundary.entity_path, boundary.kind)
+        result[boundary.id] = (boundary.entity_path, boundary.kind, None)
     for child in boundary.children:
         if isinstance(child, VizNode):
             if child.entity_path:
-                result[child.id] = (child.entity_path, child.kind)
+                result[child.id] = (child.entity_path, child.kind, None)
             elif child.kind == "channel" and child.label:
-                # Channel nodes have no entity_path; use the interface name (title)
-                # so the sidebar can look up and display the interface definition.
-                result[child.id] = (child.title or child.label, child.kind)
+                # Channel nodes: entity_path = interface name (title), channel = label.
+                result[child.id] = (child.title or child.label, child.kind, child.label)
         else:
             _walk_boundary_info(child, result)
 
@@ -559,13 +558,17 @@ def _build_svg_interactive(
     defs = ET.SubElement(svg, "defs")
 
     def _entity_group(parent: ET.Element, eid: str, kind_str: str) -> ET.Element:
-        ep, ek = entity_info.get(eid, ("", kind_str))
+        ep, ek, ch = entity_info.get(eid, ("", kind_str, None))
         if ep:
-            return ET.SubElement(
-                parent,
-                "g",
-                {"class": "archml-entity", "data-entity-path": ep, "data-entity-kind": ek, "style": "cursor:pointer"},
-            )
+            attrs: dict[str, str] = {
+                "class": "archml-entity",
+                "data-entity-path": ep,
+                "data-entity-kind": ek,
+                "style": "cursor:pointer",
+            }
+            if ch:
+                attrs["data-channel"] = ch
+            return ET.SubElement(parent, "g", attrs)
         return parent
 
     # Root boundary

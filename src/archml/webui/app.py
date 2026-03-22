@@ -33,11 +33,9 @@ from archml.workspace.config import LocalPathImport, WorkspaceConfigError, load_
 
 _DEPTH_OPTIONS = [
     {"label": "Full depth", "value": "full"},
-    {"label": "0 — root only", "value": "0"},
-    {"label": "1 — direct children", "value": "1"},
-    {"label": "2", "value": "2"},
-    {"label": "3", "value": "3"},
-    {"label": "4", "value": "4"},
+    {"label": "0 - root only", "value": "0"},
+    {"label": "1 - children", "value": "1"},
+    {"label": "2 - grand children", "value": "2"},
 ]
 
 
@@ -344,9 +342,10 @@ def _register_callbacks(app: dash.Dash, arch_files: dict[str, ArchFile]) -> None
 
         # Interface terminal or channel — entity_path holds the interface name.
         if kind in ("terminal", "interface", "channel"):
+            channel: str | None = selected.get("channel") or None
             iface = _find_interface_def(arch_files, entity_path)
             if iface:
-                return _render_interface_details(iface)
+                return _render_interface_details(iface, channel=channel)
             return dmc.Text(f"Interface '{entity_path}' not found.", size="sm", c="dimmed")
 
         # Component / System / User → look up by qualified_name
@@ -414,7 +413,7 @@ def _render_entity_details(entity: Component | System | UserDef, kind: str) -> l
     return items
 
 
-def _render_interface_details(iface: InterfaceDef) -> list:
+def _render_interface_details(iface: InterfaceDef, *, channel: str | None = None) -> list:
     """Render the right sidebar content for an interface definition."""
     heading = iface.name + (f" @{iface.version}" if iface.version else "")
 
@@ -460,6 +459,10 @@ def _render_interface_details(iface: InterfaceDef) -> list:
             )
             if field.description:
                 items.append(dmc.Text(field.description, size="xs", c="dimmed", mb=4, ml="md"))
+
+    if channel:
+        items.append(dmc.Divider(label="Channels", labelPosition="left", my="xs"))
+        items.append(dmc.Text(f"${channel}", size="sm", style={"fontFamily": "monospace"}))
 
     return items
 

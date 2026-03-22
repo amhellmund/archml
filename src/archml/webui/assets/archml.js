@@ -74,7 +74,8 @@
         if (t) {
             window._archmlClicked = {
                 entity_path: t.getAttribute("data-entity-path") || "",
-                kind: t.getAttribute("data-entity-kind") || ""
+                kind: t.getAttribute("data-entity-kind") || "",
+                channel: t.getAttribute("data-channel") || ""
             };
         } else {
             window._archmlClicked = null;
