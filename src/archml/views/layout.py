@@ -183,7 +183,15 @@ def _write_cluster(
     )
     if phantom_boundaries and boundary.id in phantom_boundaries:
         pid = _dot_id(_phantom_id(boundary.id))
-        lines.append(f"{indent}  {pid} [style=invis,width=0,height=0,fixedsize=true];")
+        # Empty clusters (no real children) need a non-zero phantom so Graphviz
+        # gives the cluster a usable bounding box; otherwise only the label is
+        # measured and the box is far too short.
+        if boundary.children:
+            lines.append(f"{indent}  {pid} [style=invis,width=0,height=0,fixedsize=true];")
+        else:
+            lines.append(
+                f'{indent}  {pid} [style=invis,width="{node_w_in:.4f}",height="{node_h_in:.4f}",fixedsize=true];'
+            )
     for child in boundary.children:
         if isinstance(child, VizNode):
             nid = _dot_id(child.id)

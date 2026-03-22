@@ -235,6 +235,8 @@ class VizDiagram:
 def build_viz_diagram(
     entity: Component | System,
     depth: int | None = None,
+    *,
+    global_connects: list[ConnectDef] | None = None,
 ) -> VizDiagram:
     """Build a :class:`VizDiagram` topology from a model entity.
 
@@ -350,10 +352,13 @@ def build_viz_diagram(
 
     # --- Peripheral nodes (terminal interface anchors at the diagram boundary) ---
     peripheral_nodes: list[VizNode] = []
+    _ext_connects = global_connects or []
     for ref in entity.requires:
-        peripheral_nodes.append(_make_terminal_node(ref, "requires"))
+        ch = _find_channel_for_port(entity.name, "requires", ref.name, _ext_connects)
+        peripheral_nodes.append(_make_terminal_node(ref, "requires", title=ch))
     for ref in entity.provides:
-        peripheral_nodes.append(_make_terminal_node(ref, "provides"))
+        ch = _find_channel_for_port(entity.name, "provides", ref.name, _ext_connects)
+        peripheral_nodes.append(_make_terminal_node(ref, "provides", title=ch))
     # Expose-based terminals: create a terminal for each exposed port so that
     # the boundary's external interface is visible even when the entity has no
     # direct requires/provides declarations (e.g. Order uses only expose).
@@ -784,6 +789,7 @@ def _make_terminal_node(
     direction: Literal["requires", "provides"],
     *,
     kind: NodeKind = "terminal",
+    title: str | None = None,
 ) -> VizNode:
     """Create a terminal :class:`VizNode` for the focus entity's own interface port.
 
@@ -819,7 +825,7 @@ def _make_terminal_node(
     return VizNode(
         id=node_id,
         label=label,
-        title=None,
+        title=title,
         kind=kind,
         entity_path="",
         ports=[port],
@@ -1127,6 +1133,31 @@ def _collect_boundary_ports(boundary: VizBoundary, result: dict[str, VizPort]) -
         else:
             for p in child.ports:
                 result[p.id] = p
+
+
+def _find_channel_for_port(
+    entity_name: str,
+    direction: Literal["requires", "provides"],
+    interface_name: str,
+    connects: list[ConnectDef],
+) -> str | None:
+    """Return the channel name wiring *entity_name*'s *interface_name* port, or ``None``.
+
+    Scans *connects* for a statement that references *entity_name* on the
+    side matching *direction* and carries a named channel.  The port is
+    matched by name when specified; when the connect omits the port qualifier
+    (e.g. ``connect A -> $ch -> B``) any single-interface entity will match.
+    """
+    for conn in connects:
+        if conn.channel is None:
+            continue
+        if direction == "provides" and conn.src_entity == entity_name:
+            if conn.src_port is None or conn.src_port == interface_name:
+                return conn.channel
+        if direction == "requires" and conn.dst_entity == entity_name:
+            if conn.dst_port is None or conn.dst_port == interface_name:
+                return conn.channel
+    return None
 
 
 def _should_expand(entity: Component | System | UserDef) -> bool:
