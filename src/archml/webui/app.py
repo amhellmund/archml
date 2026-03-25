@@ -12,8 +12,9 @@ import dash_mantine_components as dmc
 from dash import Input, Output, clientside_callback, dcc, html
 
 from archml.compiler.build import CompilerError, SourceImportKey, compile_files
-from archml.model.entities import ArchFile, Component, InterfaceDef, System, UserDef
+from archml.model.entities import ArchFile, ArtifactDef, Component, EnumDef, InterfaceDef, System, TypeDef, UserDef
 from archml.model.types import (
+    FieldDef,
     ListTypeRef,
     MapTypeRef,
     NamedTypeRef,
@@ -345,7 +346,7 @@ def _register_callbacks(app: dash.Dash, arch_files: dict[str, ArchFile]) -> None
             channel: str | None = selected.get("channel") or None
             iface = _find_interface_def(arch_files, entity_path)
             if iface:
-                return _render_interface_details(iface, channel=channel)
+                return _render_interface_details(iface, arch_files, channel=channel)
             return dmc.Text(f"Interface '{entity_path}' not found.", size="sm", c="dimmed")
 
         # Component / System / User → look up by qualified_name
@@ -413,7 +414,12 @@ def _render_entity_details(entity: Component | System | UserDef, kind: str) -> l
     return items
 
 
-def _render_interface_details(iface: InterfaceDef, *, channel: str | None = None) -> list:
+def _render_interface_details(
+    iface: InterfaceDef,
+    arch_files: dict[str, ArchFile],
+    *,
+    channel: str | None = None,
+) -> list:
     """Render the right sidebar content for an interface definition."""
     heading = iface.name + (f" @{iface.version}" if iface.version else "")
 
@@ -446,19 +452,7 @@ def _render_interface_details(iface: InterfaceDef, *, channel: str | None = None
     if iface.fields:
         items.append(dmc.Divider(label="Fields", labelPosition="left", my="xs"))
         for field in iface.fields:
-            type_str = _format_type_ref(field.type)
-            items.append(
-                dmc.Group(
-                    [
-                        dmc.Text(field.name, size="sm", fw=500, style={"fontFamily": "monospace", "flex": 1}),
-                        dmc.Text(type_str, size="xs", c="dimmed", style={"fontFamily": "monospace"}),
-                    ],
-                    justify="space-between",
-                    mb=2,
-                )
-            )
-            if field.description:
-                items.append(dmc.Text(field.description, size="xs", c="dimmed", mb=4, ml="md"))
+            items.extend(_render_field_row(field, arch_files, seen=frozenset()))
 
     if channel:
         items.append(dmc.Divider(label="Channels", labelPosition="left", my="xs"))
@@ -584,3 +578,199 @@ def _format_type_ref(type_ref: TypeRef) -> str:
     if isinstance(type_ref, NamedTypeRef):
         return type_ref.name
     return "unknown"
+
+
+def _extract_named_ref(type_ref: TypeRef) -> NamedTypeRef | None:
+    """Extract the innermost NamedTypeRef from a possibly-wrapped composite type."""
+    if isinstance(type_ref, NamedTypeRef):
+        return type_ref
+    if isinstance(type_ref, ListTypeRef):
+        return _extract_named_ref(type_ref.element_type)
+    if isinstance(type_ref, OptionalTypeRef):
+        return _extract_named_ref(type_ref.inner_type)
+    if isinstance(type_ref, MapTypeRef):
+        return _extract_named_ref(type_ref.value_type)
+    return None
+
+
+def _find_typedef(arch_files: dict[str, ArchFile], name: str) -> TypeDef | None:
+    """Search all arch files for a TypeDef with the given name."""
+    for af in arch_files.values():
+        for td in af.types:
+            if td.name == name:
+                return td
+    return None
+
+
+def _find_enumdef(arch_files: dict[str, ArchFile], name: str) -> EnumDef | None:
+    """Search all arch files for an EnumDef with the given name."""
+    for af in arch_files.values():
+        for ed in af.enums:
+            if ed.name == name:
+                return ed
+    return None
+
+
+def _find_artifactdef(arch_files: dict[str, ArchFile], name: str) -> ArtifactDef | None:
+    """Search all arch files for an ArtifactDef with the given name."""
+    for af in arch_files.values():
+        for ad in af.artifacts:
+            if ad.name == name:
+                return ad
+    return None
+
+
+def _render_field_row(
+    field: FieldDef,
+    arch_files: dict[str, ArchFile],
+    seen: frozenset[str],
+) -> list:
+    """Render a single field row with an optional expandable nested type panel."""
+    type_str = _format_type_ref(field.type)
+    rows: list = [
+        dmc.Group(
+            [
+                dmc.Text(field.name, size="sm", fw=500, style={"fontFamily": "monospace", "flex": 1}),
+                dmc.Text(type_str, size="xs", c="dimmed", style={"fontFamily": "monospace"}),
+            ],
+            justify="space-between",
+            mb=2,
+        )
+    ]
+    if field.description:
+        rows.append(dmc.Text(field.description, size="xs", c="dimmed", mb=4, ml="md"))
+
+    expansion = _render_type_expansion(field.type, arch_files, seen)
+    if expansion is not None:
+        rows.append(expansion)
+
+    return rows
+
+
+def _render_type_expansion(
+    type_ref: TypeRef,
+    arch_files: dict[str, ArchFile],
+    seen: frozenset[str],
+) -> dmc.Accordion | None:
+    """Return a collapsed dmc.Accordion panel for a resolvable named type, or None."""
+    named = _extract_named_ref(type_ref)
+    if named is None or named.name in seen:
+        return None
+
+    name = named.name
+    new_seen = seen | {name}
+
+    typedef = _find_typedef(arch_files, name)
+    if typedef is not None:
+        return _typedef_accordion(typedef, arch_files, new_seen)
+
+    enumdef = _find_enumdef(arch_files, name)
+    if enumdef is not None:
+        return _enumdef_accordion(enumdef)
+
+    artifactdef = _find_artifactdef(arch_files, name)
+    if artifactdef is not None:
+        return _artifactdef_accordion(artifactdef)
+
+    return None
+
+
+def _typedef_accordion(
+    typedef: TypeDef,
+    arch_files: dict[str, ArchFile],
+    seen: frozenset[str],
+) -> dmc.Accordion:
+    """Accordion panel showing a TypeDef's fields, with recursive expansion."""
+    header = typedef.title or typedef.name
+    field_rows: list = []
+    if typedef.description:
+        field_rows.append(dmc.Text(typedef.description, size="xs", c="dimmed", mb=4))
+    for field in typedef.fields:
+        field_rows.extend(_render_field_row(field, arch_files, seen))
+
+    return dmc.Accordion(
+        dmc.AccordionItem(
+            [
+                dmc.AccordionControl(
+                    dmc.Text(header, size="xs", style={"fontFamily": "monospace"}),
+                    style={"paddingLeft": 8, "paddingTop": 2, "paddingBottom": 2},
+                ),
+                dmc.AccordionPanel(
+                    field_rows or [dmc.Text("(no fields)", size="xs", c="dimmed")],
+                    style={"paddingLeft": 12},
+                ),
+            ],
+            value=typedef.name,
+        ),
+        variant="contained",
+        mb=4,
+        styles={"item": {"borderLeft": "2px solid #dee2e6"}},
+    )
+
+
+def _enumdef_accordion(enumdef: EnumDef) -> dmc.Accordion:
+    """Accordion panel showing an EnumDef's values."""
+    header = enumdef.title or enumdef.name
+    value_rows: list = []
+    if enumdef.description:
+        value_rows.append(dmc.Text(enumdef.description, size="xs", c="dimmed", mb=4))
+    for v in enumdef.values:
+        value_rows.append(dmc.Text(f"• {v}", size="xs", style={"fontFamily": "monospace"}))
+
+    return dmc.Accordion(
+        dmc.AccordionItem(
+            [
+                dmc.AccordionControl(
+                    dmc.Text(header, size="xs", style={"fontFamily": "monospace"}),
+                    style={"paddingLeft": 8, "paddingTop": 2, "paddingBottom": 2},
+                ),
+                dmc.AccordionPanel(
+                    value_rows or [dmc.Text("(no values)", size="xs", c="dimmed")],
+                    style={"paddingLeft": 12},
+                ),
+            ],
+            value=enumdef.name,
+        ),
+        variant="contained",
+        mb=4,
+        styles={"item": {"borderLeft": "2px solid #dee2e6"}},
+    )
+
+
+def _artifactdef_accordion(artifact: ArtifactDef) -> dmc.Accordion:
+    """Accordion panel showing an ArtifactDef's spec and metadata."""
+    header = artifact.title or artifact.name
+    content: list = []
+    if artifact.description:
+        content.append(dmc.Text(artifact.description, size="xs", c="dimmed", mb=4))
+    if artifact.spec:
+        content.append(
+            dmc.Code(artifact.spec, style={"fontSize": 11, "whiteSpace": "pre-wrap", "display": "block"}, mb=4)
+        )
+    if artifact.ref_url:
+        content.append(dmc.Text(artifact.ref_url, size="xs", c="blue", style={"fontFamily": "monospace"}))
+
+    return dmc.Accordion(
+        dmc.AccordionItem(
+            [
+                dmc.AccordionControl(
+                    dmc.Group(
+                        [
+                            dmc.Text(header, size="xs", style={"fontFamily": "monospace"}),
+                            dmc.Badge("artifact", size="xs", color="violet", variant="outline"),
+                        ],
+                        gap=4,
+                    ),
+                    style={"paddingLeft": 8, "paddingTop": 2, "paddingBottom": 2},
+                ),
+                dmc.AccordionPanel(
+                    content or [dmc.Text("(no spec)", size="xs", c="dimmed")],
+                    style={"paddingLeft": 12},
+                ),
+            ],
+            value=artifact.name,
+        ),
+        variant="contained",
+        mb=4,
+        styles={"item": {"borderLeft": "2px solid #a855f7"}},
+    )
