@@ -5,7 +5,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -342,74 +342,6 @@ def test_check_fails_if_workspace_config_has_no_source_imports(
     assert "Error" in captured.err
 
 
-# -------- serve tests --------
-
-
-def test_serve_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """serve exits with error code 1 when no workspace file is found anywhere in the tree."""
-    monkeypatch.setattr(sys, "argv", ["archml", "serve", "--workspace", str(tmp_path)])
-    with pytest.raises(SystemExit) as exc_info:
-        main()
-    assert exc_info.value.code == 1
-
-
-def test_serve_autodetects_workspace_in_parent_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """serve finds the workspace by walking up from a subdirectory."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    subdir = tmp_path / "src" / "components"
-    subdir.mkdir(parents=True)
-    monkeypatch.setattr(sys, "argv", ["archml", "serve", "--workspace", str(subdir)])
-    mock_app = MagicMock()
-    with (
-        patch("archml.webui.app.create_app", return_value=mock_app),
-        pytest.raises(SystemExit) as exc_info,
-    ):
-        main()
-    assert exc_info.value.code == 0
-    mock_app.run.assert_called_once()
-
-
-def test_serve_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """serve exits with error code 1 when directory does not exist."""
-    missing = tmp_path / "nonexistent"
-    monkeypatch.setattr(sys, "argv", ["archml", "serve", "--workspace", str(missing)])
-    with pytest.raises(SystemExit) as exc_info:
-        main()
-    assert exc_info.value.code == 1
-
-
-def test_serve_launches_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """serve creates and runs the web app when workspace exists."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    monkeypatch.setattr(sys, "argv", ["archml", "serve", "--workspace", str(tmp_path)])
-    mock_app = MagicMock()
-    with (
-        patch("archml.webui.app.create_app", return_value=mock_app),
-        pytest.raises(SystemExit) as exc_info,
-    ):
-        main()
-    assert exc_info.value.code == 0
-    mock_app.run.assert_called_once_with(host="127.0.0.1", port=8050, debug=False)
-
-
-def test_serve_custom_host_and_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """serve passes custom host and port to the app."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["archml", "serve", "--host", "0.0.0.0", "--port", "9000", "--workspace", str(tmp_path)],
-    )
-    mock_app = MagicMock()
-    with (
-        patch("archml.webui.app.create_app", return_value=mock_app),
-        pytest.raises(SystemExit) as exc_info,
-    ):
-        main()
-    assert exc_info.value.code == 0
-    mock_app.run.assert_called_once_with(host="0.0.0.0", port=9000, debug=False)
-
-
 # -------- visualize tests --------
 
 
@@ -417,6 +349,146 @@ def test_visualize_fails_if_directory_does_not_exist(tmp_path: Path, monkeypatch
     """visualize exits with error code 1 when directory does not exist."""
     missing = tmp_path / "nonexistent"
     monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", "--workspace", str(missing)])
+
+
+# -------- export tests --------
+
+_VIEWER_TEMPLATE = '<!-- ARCHML_DATA_PLACEHOLDER --><div id="archml-app"></div>'
+
+
+def _fake_template_path(tmp_path: Path) -> Path:
+    """Write a minimal viewer template in tmp_path and return its path."""
+    p = tmp_path / "archml-viewer-template.html"
+    p.write_text(_VIEWER_TEMPLATE)
+    return p
+
+
+def test_export_exits_zero_and_writes_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """export exits 0 and creates the output HTML file."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
+    output = tmp_path / "out.html"
+    fake_template = _fake_template_path(tmp_path)
+
+    monkeypatch.setattr(sys, "argv", ["archml", "export", "--output", str(output), "--workspace", str(tmp_path)])
+    with patch("archml.cli.main._template_path", return_value=fake_template), pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    assert output.exists()
+
+
+def test_export_output_contains_data_script_tag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """export embeds a <script id="archml-data"> tag in the HTML output."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
+    output = tmp_path / "out.html"
+    fake_template = _fake_template_path(tmp_path)
+
+    monkeypatch.setattr(sys, "argv", ["archml", "export", "--output", str(output), "--workspace", str(tmp_path)])
+    with patch("archml.cli.main._template_path", return_value=fake_template), pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    content = output.read_text()
+    assert 'id="archml-data"' in content
+
+
+def test_export_output_contains_valid_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """export embeds valid JSON with version, files, and entities keys."""
+    import json
+    import re
+
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text("system S { component A {} component B {} }\n")
+    output = tmp_path / "out.html"
+    fake_template = _fake_template_path(tmp_path)
+
+    monkeypatch.setattr(sys, "argv", ["archml", "export", "--output", str(output), "--workspace", str(tmp_path)])
+    with patch("archml.cli.main._template_path", return_value=fake_template), pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+    content = output.read_text()
+    match = re.search(r'<script id="archml-data" type="application/json">(.*?)</script>', content, re.DOTALL)
+    assert match is not None
+    data = json.loads(match.group(1))
+    assert data["version"] == "1"
+    assert "files" in data
+    assert "entities" in data
+
+
+def test_export_default_output_filename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """export uses architecture.html as the default output filename."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text("component A {}\n")
+    fake_template = _fake_template_path(tmp_path)
+
+    monkeypatch.setattr(sys, "argv", ["archml", "export", "--workspace", str(tmp_path)])
+    monkeypatch.chdir(tmp_path)
+    with patch("archml.cli.main._template_path", return_value=fake_template), pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    assert (tmp_path / "architecture.html").exists()
+
+
+def test_export_fails_without_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """export exits with code 1 when no workspace yaml is found."""
+    output = tmp_path / "out.html"
+    monkeypatch.setattr(sys, "argv", ["archml", "export", "--output", str(output), "--workspace", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_export_fails_if_directory_does_not_exist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """export exits with code 1 when the workspace directory does not exist."""
+    missing = tmp_path / "nonexistent"
+    monkeypatch.setattr(sys, "argv", ["archml", "export", "--output", "out.html", "--workspace", str(missing)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_export_fails_without_built_template(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """export exits with code 1 when the viewer template does not exist."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text("component A {}\n")
+    output = tmp_path / "out.html"
+    missing_template = tmp_path / "archml-viewer-template.html"  # does not exist
+
+    monkeypatch.setattr(sys, "argv", ["archml", "export", "--output", str(output), "--workspace", str(tmp_path)])
+    with (
+        patch("archml.cli.main._template_path", return_value=missing_template),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Warning" in captured.err
 
 
 # -------- sync-remote tests --------

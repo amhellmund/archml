@@ -1152,12 +1152,12 @@ def _find_channel_for_port(
     for conn in connects:
         if conn.channel is None:
             continue
-        if direction == "provides" and conn.src_entity == entity_name:
-            if conn.src_port is None or conn.src_port == interface_name:
-                return conn.channel
-        if direction == "requires" and conn.dst_entity == entity_name:
-            if conn.dst_port is None or conn.dst_port == interface_name:
-                return conn.channel
+        port_matches_src = conn.src_port is None or conn.src_port == interface_name
+        if direction == "provides" and conn.src_entity == entity_name and port_matches_src:
+            return conn.channel
+        port_matches_dst = conn.dst_port is None or conn.dst_port == interface_name
+        if direction == "requires" and conn.dst_entity == entity_name and port_matches_dst:
+            return conn.channel
     return None
 
 

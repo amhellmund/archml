@@ -1,0 +1,21 @@
+{
+  "name": "archml-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && vite build --config vite.singlefile.config.ts",
+    "build:lib": "vite build",
+    "build:html": "vite build --config vite.singlefile.config.ts",
+    "dev": "vite"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vite-plugin-singlefile": "^2.0.0"
+  },
+  "dependencies": {
+    "@viz-js/viz": "^3.4.0"
+  }
+}

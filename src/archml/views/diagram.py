@@ -143,8 +143,6 @@ _LABEL_PADDING = 6.0  # horizontal padding inside node for text clip region
 
 # Channel / interface node layout — must match LayoutConfig defaults.
 _CHANNEL_STROKE_DASH = "5,3"
-_CHANNEL_LINE_GAP = 8.0  # explicit gap (layout units) between the two text lines
-_CHANNEL_LABEL_FONT_RATIO = 0.9  # channel-label font size relative to interface-name font size
 
 # Arrowhead geometry (layout units, before scaling).
 _ARROW_LEN = 9.0
@@ -369,56 +367,26 @@ def _render_node(
     cx = _f(nl.x + nl.width / 2, scale)
     cy_mid = nl.y + nl.height / 2
 
-    if kind == "channel" or kind in ("terminal", "interface"):
-        # Two-line layout: bold interface name above, smaller italic secondary label below.
-        # For channel nodes: top = title (interface name), bottom = $label (channel name).
-        # For terminal/interface nodes: top = label (interface name),
-        #   bottom = $title (channel name) when known, otherwise "exposed".
-        if kind == "channel":
-            iface_name = title if title is not None else label
-            secondary = f"${label}"
-        else:
-            iface_name = label
-            secondary = f"${title}" if title is not None else "exposed"
-        fs = _FONT_SIZE
-        fs_small = _FONT_SIZE * _CHANNEL_LABEL_FONT_RATIO
-        gap = _CHANNEL_LINE_GAP
-        # Centre the content block (line1 + gap + line2) around cy_mid.
-        # With dominant-baseline="middle" the y coordinate is the visual line centre.
-        line1_y = cy_mid - (fs_small + gap) / 2
-        line2_y = cy_mid + (fs + gap) / 2
-        text_top = ET.SubElement(
+    if kind in ("channel", "terminal", "interface"):
+        # Single-line: interface name bold and centred.
+        # For channel nodes the interface name is in title (falls back to label).
+        iface_name = (title or "") if kind == "channel" else label
+        text = ET.SubElement(
             svg,
             "text",
             {
                 "x": cx,
-                "y": _f(line1_y, scale),
+                "y": _f(cy_mid, scale),
                 "text-anchor": "middle",
                 "dominant-baseline": "middle",
                 "font-family": _FONT_FAMILY,
-                "font-size": str(int(fs * scale)),
+                "font-size": str(int(_FONT_SIZE * scale)),
                 "font-weight": "bold",
                 "fill": _TEXT_COLOUR,
                 "clip-path": f"url(#{clip_id})",
             },
         )
-        text_top.text = iface_name
-        text_bot = ET.SubElement(
-            svg,
-            "text",
-            {
-                "x": cx,
-                "y": _f(line2_y, scale),
-                "text-anchor": "middle",
-                "dominant-baseline": "middle",
-                "font-family": _FONT_FAMILY,
-                "font-size": str(int(fs_small * scale)),
-                "font-style": "italic",
-                "fill": _TEXT_COLOUR,
-                "clip-path": f"url(#{clip_id})",
-            },
-        )
-        text_bot.text = secondary
+        text.text = iface_name
     else:
         text_attrs: dict[str, str] = {
             "x": cx,

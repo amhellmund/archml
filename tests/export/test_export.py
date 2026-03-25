@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import json
 
+from archml.export import build_viewer_payload
 from archml.model.entities import ArchFile, Component, System
-from archml.views.export import build_viewer_payload
 
 # ###############
 # Helpers

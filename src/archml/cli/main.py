@@ -59,25 +59,6 @@ def main() -> None:
         description="Validate architecture files for consistency errors.",
     )
 
-    # serve subcommand
-    serve_parser = subparsers.add_parser(
-        "serve",
-        parents=[_workspace_parent],
-        help="Launch the interactive architecture viewer",
-        description="Launch a web-based UI for interactively viewing the architecture.",
-    )
-    serve_parser.add_argument(
-        "--port",
-        type=int,
-        default=8050,
-        help="Port to run the server on (default: 8050)",
-    )
-    serve_parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Host to bind the server to (default: 127.0.0.1)",
-    )
-
     # visualize subcommand
     visualize_parser = subparsers.add_parser(
         "visualize",
@@ -104,6 +85,21 @@ def main() -> None:
             "For 'all': 0 = top-level entities as opaque boxes, 1 = expanded one level, etc. "
             "Omit for full depth (default)."
         ),
+    )
+
+    # export subcommand
+    export_parser = subparsers.add_parser(
+        "export",
+        parents=[_workspace_parent],
+        help="Export the architecture as a standalone HTML viewer",
+        description="Generate a self-contained HTML file with the interactive architecture viewer.",
+    )
+    export_parser.add_argument(
+        "--output",
+        "-o",
+        default="architecture.html",
+        metavar="FILE",
+        help="Output file path (default: architecture.html)",
     )
 
     # sync-remote subcommand
@@ -143,16 +139,21 @@ def main() -> None:
 _DEFAULT_BUILD_DIR = ".archml-build"
 
 
+def _template_path() -> Path:
+    """Return the path to the bundled viewer HTML template."""
+    return Path(__file__).parent.parent / "static" / "archml-viewer-template.html"
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     """Dispatch to the appropriate subcommand handler."""
     if args.command == "init":
         return _cmd_init(args)
     if args.command == "check":
         return _cmd_check(args)
-    if args.command == "serve":
-        return _cmd_serve(args)
     if args.command == "visualize":
         return _cmd_visualize(args)
+    if args.command == "export":
+        return _cmd_export(args)
     if args.command == "sync-remote":
         return _cmd_sync_remote(args)
     if args.command == "update-remote":
@@ -343,7 +344,8 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
         except EntityNotFoundError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
-        viz_diagram = build_viz_diagram(entity, depth=depth)
+        global_connects = [c for af in compiled.values() for c in af.connects]
+        viz_diagram = build_viz_diagram(entity, depth=depth, global_connects=global_connects)
     try:
         layout_plan = compute_layout(viz_diagram)
     except RuntimeError as exc:
@@ -358,9 +360,18 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_serve(args: argparse.Namespace) -> int:
-    """Handle the serve subcommand."""
-    from archml.workspace.config import find_workspace_root
+def _cmd_export(args: argparse.Namespace) -> int:
+    """Handle the export subcommand."""
+    from archml.export import build_viewer_payload
+    from archml.workspace.config import LocalPathImport
+
+    template_path = _template_path()
+    if not template_path.exists():
+        print(
+            "Warning: JS viewer not built. Run 'python tools/build_js.py' first.",
+            file=sys.stderr,
+        )
+        return 1
 
     directory = Path(args.workspace).resolve()
 
@@ -371,22 +382,45 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     workspace_yaml = directory / ".archml-workspace.yaml"
 
     if not workspace_yaml.exists():
-        root = find_workspace_root(directory)
-        if root is None:
-            print(
-                f"Error: no ArchML workspace found at '{directory}' or any parent directory."
-                "Run 'archml init' to initialize a workspace.",
-                file=sys.stderr,
-            )
-            return 1
-        directory = root
-        workspace_yaml = directory / ".archml-workspace.yaml"
+        print(
+            f"Error: no ArchML workspace found at '{directory}'. Run 'archml init' to initialize a workspace.",
+            file=sys.stderr,
+        )
+        return 1
 
-    from archml.webui.app import create_app
+    try:
+        config = load_workspace_config(workspace_yaml)
+    except WorkspaceConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
-    print(f"Serving architecture view at http://{args.host}:{args.port}/")
-    app = create_app(directory=directory)
-    app.run(host=args.host, port=args.port, debug=False)
+    build_dir = directory / config.build_directory
+
+    source_import_map: dict[SourceImportKey, Path] = {}
+    for imp in config.source_imports:
+        if isinstance(imp, LocalPathImport):
+            source_import_map[SourceImportKey(config.name, imp.name)] = (directory / imp.local_path).resolve()
+
+    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents]
+    if not archml_files:
+        print("No .archml files found in the workspace.", file=sys.stderr)
+        return 1
+
+    try:
+        compiled = compile_files(archml_files, build_dir, source_import_map)
+    except CompilerError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    payload_json = build_viewer_payload(compiled)
+
+    template = template_path.read_text(encoding="utf-8")
+    data_tag = f'<script id="archml-data" type="application/json">{payload_json}</script>'
+    html = template.replace("<!-- ARCHML_DATA_PLACEHOLDER -->", data_tag)
+
+    output_path = Path(args.output)
+    output_path.write_text(html, encoding="utf-8")
+    print(f"Architecture viewer written to '{output_path}'.")
     return 0
 
 

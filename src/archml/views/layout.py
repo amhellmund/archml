@@ -26,11 +26,11 @@ from archml.views.placement import (
     LayoutPlan,
     NodeLayout,
     PortAnchor,
-    _add_boundary_anchors,  # type: ignore[attr-defined]
-    _add_node_anchors,  # type: ignore[attr-defined]
-    _effective_inner_size,  # type: ignore[attr-defined]
-    _effective_peripheral_size,  # type: ignore[attr-defined]
-    _route_avoiding_obstacles,  # type: ignore[attr-defined]
+    _add_boundary_anchors,
+    _add_node_anchors,
+    _effective_inner_size,
+    _effective_peripheral_size,
+    _route_avoiding_obstacles,
 )
 from archml.views.topology import VizBoundary, VizDiagram, VizNode
 
