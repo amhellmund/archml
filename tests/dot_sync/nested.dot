@@ -1,0 +1,18 @@
+digraph G {
+  rankdir=LR;
+  compound=true;
+  graph [nodesep="0.5556",ranksep="1.1111",pad="1.1111"];
+  node [shape=box,fixedsize=true,label=""];
+  subgraph "cluster_App" {
+    graph [label="App",labelloc="t",fontsize="16.5",margin="40.00"];
+    subgraph "cluster_App__Front" {
+      graph [label="Front",labelloc="t",fontsize="16.5",margin="40.00"];
+      "App__Front__Ui" [width="1.6667",height="1.1111",fixedsize=true,shape=box,label=""];
+    }
+    subgraph "cluster_App__Back" {
+      graph [label="Back",labelloc="t",fontsize="16.5",margin="40.00"];
+      "App__Back__Api" [width="1.6667",height="1.1111",fixedsize=true,shape=box,label=""];
+    }
+  }
+  "App__Front__Ui" -> "App__Back__Api" [id="edge.App__Front__Ui.prov.IFace--App__Back__Api.req.IFace",minlen=2];
+}

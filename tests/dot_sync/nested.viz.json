@@ -1,0 +1,90 @@
+{
+  "id": "diagram.App",
+  "title": "App",
+  "description": null,
+  "root": {
+    "id": "App",
+    "label": "App",
+    "title": null,
+    "kind": "system",
+    "entity_path": "App",
+    "description": null,
+    "tags": [],
+    "ports": [],
+    "children": [
+      {
+        "id": "App__Front",
+        "label": "Front",
+        "title": null,
+        "kind": "system",
+        "entity_path": "App::Front",
+        "description": null,
+        "tags": [],
+        "ports": [],
+        "children": [
+          {
+            "id": "App__Front__Ui",
+            "label": "Ui",
+            "title": null,
+            "kind": "component",
+            "entity_path": "App::Front::Ui",
+            "description": null,
+            "tags": [],
+            "ports": [
+              {
+                "id": "App__Front__Ui.prov.IFace",
+                "node_id": "App__Front__Ui",
+                "interface_name": "IFace",
+                "interface_version": null,
+                "direction": "provides",
+                "description": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "App__Back",
+        "label": "Back",
+        "title": null,
+        "kind": "system",
+        "entity_path": "App::Back",
+        "description": null,
+        "tags": [],
+        "ports": [],
+        "children": [
+          {
+            "id": "App__Back__Api",
+            "label": "Api",
+            "title": null,
+            "kind": "component",
+            "entity_path": "App::Back::Api",
+            "description": null,
+            "tags": [],
+            "ports": [
+              {
+                "id": "App__Back__Api.req.IFace",
+                "node_id": "App__Back__Api",
+                "interface_name": "IFace",
+                "interface_version": null,
+                "direction": "requires",
+                "description": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "peripheral_nodes": [],
+  "edges": [
+    {
+      "id": "edge.App__Front__Ui.prov.IFace--App__Back__Api.req.IFace",
+      "source_port_id": "App__Front__Ui.prov.IFace",
+      "target_port_id": "App__Back__Api.req.IFace",
+      "label": "IFace",
+      "interface_name": "IFace",
+      "interface_version": null
+    }
+  ]
+}

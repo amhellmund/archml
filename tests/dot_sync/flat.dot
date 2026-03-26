@@ -1,0 +1,12 @@
+digraph G {
+  rankdir=LR;
+  compound=true;
+  graph [nodesep="0.5556",ranksep="1.1111",pad="1.1111"];
+  node [shape=box,fixedsize=true,label=""];
+  subgraph "cluster_Svc" {
+    graph [label="Svc",labelloc="t",fontsize="16.5",margin="40.00"];
+    "Svc__Alpha" [width="1.6667",height="1.1111",fixedsize=true,shape=box,label=""];
+    "Svc__Beta" [width="1.6667",height="1.1111",fixedsize=true,shape=box,label=""];
+  }
+  "Svc__Alpha" -> "Svc__Beta" [id="edge.Svc__Alpha.prov.IFace--Svc__Beta.req.IFace",minlen=1];
+}

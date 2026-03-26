@@ -1,0 +1,67 @@
+{
+  "id": "diagram.Api",
+  "title": "Api",
+  "description": null,
+  "root": {
+    "id": "Api",
+    "label": "Api",
+    "title": null,
+    "kind": "component",
+    "entity_path": "Api",
+    "description": null,
+    "tags": [],
+    "ports": [],
+    "children": [
+      {
+        "id": "Api__Worker",
+        "label": "Worker",
+        "title": null,
+        "kind": "component",
+        "entity_path": "Api::Worker",
+        "description": null,
+        "tags": [],
+        "ports": [
+          {
+            "id": "Api__Worker.prov.Response",
+            "node_id": "Api__Worker",
+            "interface_name": "Response",
+            "interface_version": null,
+            "direction": "provides",
+            "description": null
+          }
+        ]
+      }
+    ]
+  },
+  "peripheral_nodes": [
+    {
+      "id": "terminal.prov.Response",
+      "label": "Response",
+      "title": null,
+      "kind": "interface",
+      "entity_path": "",
+      "description": null,
+      "tags": [],
+      "ports": [
+        {
+          "id": "terminal.prov.Response.port",
+          "node_id": "terminal.prov.Response",
+          "interface_name": "Response",
+          "interface_version": null,
+          "direction": "requires",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge.Api__Worker.prov.Response--terminal.prov.Response.port",
+      "source_port_id": "Api__Worker.prov.Response",
+      "target_port_id": "terminal.prov.Response.port",
+      "label": "Response",
+      "interface_name": "Response",
+      "interface_version": null
+    }
+  ]
+}

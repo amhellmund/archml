@@ -1,0 +1,12 @@
+digraph G {
+  rankdir=LR;
+  compound=true;
+  graph [nodesep="0.5556",ranksep="1.1111",pad="1.1111"];
+  node [shape=box,fixedsize=true,label=""];
+  subgraph "cluster_Api" {
+    graph [label="Api",labelloc="t",fontsize="16.5",margin="40.00"];
+    "Api__Worker" [width="1.6667",height="1.1111",fixedsize=true,shape=box,label=""];
+  }
+  "terminal.prov.Response" [width="1.3889",height="0.9444",fixedsize=true,shape=box,label=""];
+  "Api__Worker" -> "terminal.prov.Response" [id="edge.Api__Worker.prov.Response--terminal.prov.Response.port",minlen=3];
+}

@@ -1,0 +1,66 @@
+{
+  "id": "diagram.Svc",
+  "title": "Svc",
+  "description": null,
+  "root": {
+    "id": "Svc",
+    "label": "Svc",
+    "title": null,
+    "kind": "component",
+    "entity_path": "Svc",
+    "description": null,
+    "tags": [],
+    "ports": [],
+    "children": [
+      {
+        "id": "Svc__Alpha",
+        "label": "Alpha",
+        "title": null,
+        "kind": "component",
+        "entity_path": "Svc::Alpha",
+        "description": null,
+        "tags": [],
+        "ports": [
+          {
+            "id": "Svc__Alpha.prov.IFace",
+            "node_id": "Svc__Alpha",
+            "interface_name": "IFace",
+            "interface_version": null,
+            "direction": "provides",
+            "description": null
+          }
+        ]
+      },
+      {
+        "id": "Svc__Beta",
+        "label": "Beta",
+        "title": null,
+        "kind": "component",
+        "entity_path": "Svc::Beta",
+        "description": null,
+        "tags": [],
+        "ports": [
+          {
+            "id": "Svc__Beta.req.IFace",
+            "node_id": "Svc__Beta",
+            "interface_name": "IFace",
+            "interface_version": null,
+            "direction": "requires",
+            "description": null
+          }
+        ]
+      }
+    ]
+  },
+  "peripheral_nodes": [],
+  "edges": [
+    {
+      "id": "edge.Svc__Alpha.prov.IFace--Svc__Beta.req.IFace",
+      "source_port_id": "Svc__Alpha.prov.IFace",
+      "target_port_id": "Svc__Beta.req.IFace",
+      "label": "IFace",
+      "interface_name": "IFace",
+      "interface_version": null
+    }
+  ]
+}

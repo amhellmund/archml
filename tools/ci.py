@@ -19,6 +19,7 @@ STEPS: list[tuple[str, list[str]]] = [
     ("Lint", ["uv", "run", "ruff", "check", "src/", "tests/"]),
     ("Type check", ["uv", "run", "ty", "check", "src/"]),
     ("Tests", ["uv", "run", "pytest", "--cov=archml", "--cov-report=term-missing"]),
+    ("JS tests", ["npm", "--prefix", "src/archml/export/js", "test"]),
     ("Build", ["uv", "build"]),
 ]
 
