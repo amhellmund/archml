@@ -32,9 +32,6 @@ from pathlib import Path
 from archml.views.placement import BoundaryLayout, LayoutPlan, NodeLayout
 from archml.views.topology import BoundaryKind, NodeKind, VizBoundary, VizDiagram, VizNode
 
-# Mapping: topology id → (entity_path, kind_str, channel_name | None)
-_EntityInfoMap = dict[str, tuple[str, str, str | None]]
-
 # ###############
 # Public Interface
 # ###############
@@ -66,34 +63,6 @@ def render_diagram(
     """
     svg = _build_svg(diagram, plan, scale)
     _write_svg(svg, output_path)
-
-
-def render_diagram_to_svg_string(
-    diagram: VizDiagram,
-    plan: LayoutPlan,
-    *,
-    scale: float = 1.0,
-) -> str:
-    """Render *diagram* to an SVG string with interactive ``data-entity-path`` attributes.
-
-    Returns the SVG markup as a Unicode string (no XML declaration) suitable
-    for inline embedding in HTML.  Nodes and boundaries that correspond to
-    named architecture entities carry ``data-entity-path`` and
-    ``data-entity-kind`` attributes and the CSS class ``archml-entity`` so
-    that a JavaScript frontend can identify click targets.
-
-    Args:
-        diagram: The topology to render.
-        plan: The pre-computed layout plan.
-        scale: Coordinate multiplier (default 1.0).
-
-    Returns:
-        The SVG document as a Unicode string without an XML declaration.
-    """
-    entity_info = _collect_entity_info(diagram)
-    svg = _build_svg_interactive(diagram, plan, scale, entity_info)
-    ET.indent(svg, space="  ")
-    return ET.tostring(svg, encoding="unicode")
 
 
 # ################
@@ -482,129 +451,3 @@ def _write_svg(svg: ET.Element, output_path: Path) -> None:
     with output_path.open("w", encoding="utf-8") as fh:
         fh.write('<?xml version="1.0" encoding="utf-8"?>\n')
         tree.write(fh, encoding="unicode", xml_declaration=False)
-
-
-def _collect_entity_info(diagram: VizDiagram) -> _EntityInfoMap:
-    """Build a mapping from topology ID to (entity_path, kind_str) for every element.
-
-    For terminal nodes (which carry ``entity_path=""`` in the topology), the
-    interface name (``node.label``) is used as the entity_path so that they
-    are still reachable as click targets.
-    """
-    result: _EntityInfoMap = {}
-    _walk_boundary_info(diagram.root, result)
-    for node in diagram.peripheral_nodes:
-        if node.entity_path:
-            result[node.id] = (node.entity_path, node.kind, None)
-        elif node.kind in ("terminal", "interface") and node.label:
-            # Use the interface name as entity_path; title holds the channel name when known.
-            result[node.id] = (node.label, node.kind, node.title)
-    return result
-
-
-def _walk_boundary_info(boundary: VizBoundary, result: _EntityInfoMap) -> None:
-    """Recursively collect entity info from a boundary and its children."""
-    if boundary.entity_path:
-        result[boundary.id] = (boundary.entity_path, boundary.kind, None)
-    for child in boundary.children:
-        if isinstance(child, VizNode):
-            if child.entity_path:
-                result[child.id] = (child.entity_path, child.kind, None)
-            elif child.kind == "channel" and child.label:
-                # Channel nodes: entity_path = interface name (title), channel = label.
-                result[child.id] = (child.title or child.label, child.kind, child.label)
-        else:
-            _walk_boundary_info(child, result)
-
-
-def _build_svg_interactive(
-    diagram: VizDiagram,
-    plan: LayoutPlan,
-    scale: float,
-    entity_info: _EntityInfoMap,
-) -> ET.Element:
-    """Build SVG element tree with ``archml-entity`` group wrappers for interactive use."""
-    tw = plan.total_width * scale
-    th = plan.total_height * scale
-
-    svg = ET.Element(
-        "svg",
-        {
-            "xmlns": "http://www.w3.org/2000/svg",
-            "viewBox": f"0 0 {tw:.2f} {th:.2f}",
-            "width": f"{tw:.2f}",
-            "height": f"{th:.2f}",
-        },
-    )
-
-    # Style element (embedded CSS).
-    css = _load_diagram_css()
-    if css:
-        style = ET.SubElement(svg, "style")
-        style.text = css
-
-    ET.SubElement(
-        svg,
-        "rect",
-        {
-            "x": "0",
-            "y": "0",
-            "width": f"{tw:.2f}",
-            "height": f"{th:.2f}",
-            "fill": _FILL_BACKGROUND,
-            "class": "archml-bg",
-        },
-    )
-
-    defs = ET.SubElement(svg, "defs")
-
-    def _entity_group(parent: ET.Element, eid: str, kind_str: str) -> ET.Element:
-        ep, ek, ch = entity_info.get(eid, ("", kind_str, None))
-        if ep:
-            attrs: dict[str, str] = {
-                "class": "archml-entity",
-                "data-entity-path": ep,
-                "data-entity-kind": ek,
-                "style": "cursor:pointer",
-            }
-            if ch:
-                attrs["data-channel"] = ch
-            return ET.SubElement(parent, "g", attrs)
-        return parent
-
-    # Root boundary
-    if diagram.root.id != "all":
-        root_bl = plan.boundaries.get(diagram.root.id)
-        if root_bl is not None:
-            grp = _entity_group(svg, diagram.root.id, diagram.root.kind)
-            _render_boundary(grp, diagram.root.label, root_bl, scale, kind=diagram.root.kind)
-
-    # Nested boundaries (BFS order, outermost first)
-    nested: list[VizBoundary] = []
-    _collect_nested_boundaries(diagram.root, nested)
-    for bnd in nested:
-        if bnd.id in plan.boundaries:
-            grp = _entity_group(svg, bnd.id, bnd.kind)
-            _render_boundary(grp, bnd.label, plan.boundaries[bnd.id], scale, kind=bnd.kind)
-
-    # Node metadata
-    node_meta: dict[str, tuple[str, str | None, NodeKind | None]] = {}
-    _collect_node_meta(diagram.root, node_meta)
-    for node in diagram.peripheral_nodes:
-        node_meta[node.id] = (node.label, node.title, node.kind)
-
-    # Nodes
-    for node_id, nl in plan.nodes.items():
-        label, title, kind = node_meta.get(node_id, (node_id, None, None))
-        clip_id = _make_clip_id(node_id)
-        _add_node_clip(defs, clip_id, nl, scale)
-        grp = _entity_group(svg, node_id, kind or "")
-        _render_node(grp, label, title, nl, kind, scale, clip_id)
-
-    # Edges
-    for edge in diagram.edges:
-        route = plan.edge_routes.get(edge.id)
-        if route is not None:
-            _render_edge(svg, route.waypoints, edge.label, scale)
-
-    return svg
