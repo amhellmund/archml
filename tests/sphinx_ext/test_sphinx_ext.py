@@ -633,7 +633,7 @@ def test_explorer_directive_run_uri_relative_to_doc_in_subdir(tmp_path: Path) ->
 
 
 def test_explorer_directive_width_optimized_embeds_flag(tmp_path: Path) -> None:
-    """width-optimized option causes widthOptimized to appear in the generated HTML payload."""
+    """width-optimized option injects widthOptimized:true into the JSON payload."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
 
@@ -642,11 +642,12 @@ def test_explorer_directive_width_optimized_embeds_flag(tmp_path: Path) -> None:
 
     assert isinstance(result[0], nodes.raw)
     html_path = tmp_path / "_archml_explorer" / "index.html"
-    assert "widthOptimized" in html_path.read_text(encoding="utf-8")
+    # The compact JSON payload contains "widthOptimized":true only when the flag is set.
+    assert '"widthOptimized":true' in html_path.read_text(encoding="utf-8")
 
 
 def test_explorer_directive_without_width_optimized_no_flag(tmp_path: Path) -> None:
-    """Without width-optimized option, widthOptimized is absent from the generated HTML payload."""
+    """Without width-optimized option, widthOptimized:true is absent from the JSON payload."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
 
@@ -654,26 +655,26 @@ def test_explorer_directive_without_width_optimized_no_flag(tmp_path: Path) -> N
     directive.run()
 
     html_path = tmp_path / "_archml_explorer" / "index.html"
-    assert "widthOptimized" not in html_path.read_text(encoding="utf-8")
+    assert '"widthOptimized":true' not in html_path.read_text(encoding="utf-8")
 
 
 def test_generate_explorer_html_width_optimized_embeds_flag(tmp_path: Path) -> None:
-    """_generate_explorer_html with width_optimized=True embeds widthOptimized in the HTML."""
+    """_generate_explorer_html with width_optimized=True injects widthOptimized:true into the payload."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     html_path = _generate_explorer_html(env, width_optimized=True)
 
-    assert "widthOptimized" in html_path.read_text(encoding="utf-8")
+    assert '"widthOptimized":true' in html_path.read_text(encoding="utf-8")
 
 
 def test_generate_explorer_html_default_no_width_optimized_flag(tmp_path: Path) -> None:
-    """_generate_explorer_html without width_optimized does not embed widthOptimized."""
+    """_generate_explorer_html without width_optimized does not inject widthOptimized:true."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     html_path = _generate_explorer_html(env)
 
-    assert "widthOptimized" not in html_path.read_text(encoding="utf-8")
+    assert '"widthOptimized":true' not in html_path.read_text(encoding="utf-8")
