@@ -5,7 +5,6 @@
 #   system 'ECommerce': 'requires ExternalFeed' refers to unknown interface 'ExternalFeed'
 
 component OrderService {
-    title = "Order Service"
     requires OrderRequest
     requires InventoryCheck
     provides OrderConfirmation

@@ -73,13 +73,13 @@ def test_file_keys_preserved() -> None:
 
 def test_full_arch_file_content_serialised() -> None:
     """ArchFile fields are included in each file entry."""
-    comp = Component(name="Worker", title="Background Worker", qualified_name="Worker")
+    comp = Component(name="Worker", description="Background worker", qualified_name="Worker")
     compiled = {"f": ArchFile(components=[comp])}
     data = _parse(build_viewer_payload(compiled))
     file_data = data["files"]["f"]
     assert "components" in file_data
     assert file_data["components"][0]["name"] == "Worker"
-    assert file_data["components"][0]["title"] == "Background Worker"
+    assert file_data["components"][0]["description"] == "Background worker"
 
 
 # -------- entity index --------
@@ -170,20 +170,12 @@ def test_external_component_kind() -> None:
 # -------- entity metadata --------
 
 
-def test_entity_title_included() -> None:
-    """Entity title is included in the index entry."""
-    sys = System(name="S", qualified_name="S", title="My System")
-    data = _parse(build_viewer_payload(_files(S=sys)))
-    entry = next(e for e in data["entities"] if e["qualified_name"] == "S")
-    assert entry["title"] == "My System"
-
-
-def test_entity_title_none_when_absent() -> None:
-    """title is null in JSON when not set on the entity."""
+def test_entity_keys_in_index() -> None:
+    """Each entity entry has exactly qualified_name, kind, and file_key keys."""
     sys = System(name="S", qualified_name="S")
     data = _parse(build_viewer_payload(_files(S=sys)))
     entry = next(e for e in data["entities"] if e["qualified_name"] == "S")
-    assert entry["title"] is None
+    assert set(entry.keys()) == {"qualified_name", "kind", "file_key"}
 
 
 def test_entity_file_key_matches() -> None:

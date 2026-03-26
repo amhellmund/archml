@@ -9,7 +9,7 @@ type Order {
     field order_id: String
     field status: OrderStatus
     field items: List<OrderItem>
-    field amount: Decimal
+    field amount: Float
 }
 
 interface Response {

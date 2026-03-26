@@ -38,9 +38,9 @@ class TokenType(enum.Enum):
     IMPORT = "import"
     USE = "use"
     EXTERNAL = "external"
-    TAGS = "tags"
-    TITLE = "title"
     DESCRIPTION = "description"
+    VARIANT = "variant"
+    VARIANTS = "variants"
     TRUE = "true"
     FALSE = "false"
 
@@ -150,9 +150,9 @@ _KEYWORDS: dict[str, TokenType] = {
     "import": TokenType.IMPORT,
     "use": TokenType.USE,
     "external": TokenType.EXTERNAL,
-    "tags": TokenType.TAGS,
-    "title": TokenType.TITLE,
     "description": TokenType.DESCRIPTION,
+    "variant": TokenType.VARIANT,
+    "variants": TokenType.VARIANTS,
     "true": TokenType.TRUE,
     "false": TokenType.FALSE,
 }

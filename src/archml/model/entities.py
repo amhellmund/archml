@@ -21,11 +21,15 @@ class InterfaceRef(BaseModel):
     The optional ``port_name`` holds the explicit port alias assigned with the
     ``as`` keyword (e.g. ``requires PaymentRequest as pay_in``).  When absent
     the effective port name defaults to the interface name.
+
+    ``variants`` lists the variant names for which this port is active.  An
+    empty list means the port is baseline (present in all variants).
     """
 
     name: str
     version: str | None = None
     port_name: str | None = None
+    variants: list[str] = _Field(default_factory=list)
     line: int = 0
 
 
@@ -34,9 +38,7 @@ class EnumDef(BaseModel):
 
     name: str
     values: list[str] = _Field(default_factory=list)
-    title: str | None = None
     description: str | None = None
-    tags: list[str] = _Field(default_factory=list)
     line: int = 0
 
 
@@ -45,9 +47,7 @@ class TypeDef(BaseModel):
 
     name: str
     fields: list[FieldDef] = _Field(default_factory=list)
-    title: str | None = None
     description: str | None = None
-    tags: list[str] = _Field(default_factory=list)
     line: int = 0
 
 
@@ -57,9 +57,7 @@ class InterfaceDef(BaseModel):
     name: str
     version: str | None = None
     fields: list[FieldDef] = _Field(default_factory=list)
-    title: str | None = None
     description: str | None = None
-    tags: list[str] = _Field(default_factory=list)
     qualified_name: str = ""
     line: int = 0
 
@@ -73,7 +71,6 @@ class ArtifactDef(BaseModel):
     """
 
     name: str
-    title: str | None = None
     description: str | None = None
     spec: str | None = None
     ref_url: str | None = None
@@ -97,6 +94,9 @@ class ConnectDef(BaseModel):
 
     For a port on the current scope's own boundary (no entity qualifier),
     ``src_entity`` / ``dst_entity`` is ``None``.
+
+    ``variants`` lists the variant names for which this connection is active.
+    An empty list means the connection is baseline (present in all variants).
     """
 
     src_entity: str | None = None
@@ -104,18 +104,23 @@ class ConnectDef(BaseModel):
     channel: str | None = None
     dst_entity: str | None = None
     dst_port: str | None = None
+    variants: list[str] = _Field(default_factory=list)
     line: int = 0
 
 
 class ExposeDef(BaseModel):
     """An ``expose`` statement promoting a sub-entity's port to the enclosing boundary.
 
-    ``expose Entity.port_name [as new_name]``
+    ``expose Entity.port_name [as new_name] [{ variants = [...] }]``
+
+    ``variants`` lists the variant names for which this exposure is active.
+    An empty list means the exposure is baseline (present in all variants).
     """
 
     entity: str
     port: str
     as_name: str | None = None
+    variants: list[str] = _Field(default_factory=list)
     line: int = 0
 
 
@@ -127,9 +132,8 @@ class UserDef(BaseModel):
     """
 
     name: str
-    title: str | None = None
     description: str | None = None
-    tags: list[str] = _Field(default_factory=list)
+    variants: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
     is_external: bool = False
@@ -141,9 +145,8 @@ class Component(BaseModel):
     """A module with declared interface bindings and optional nested sub-components."""
 
     name: str
-    title: str | None = None
     description: str | None = None
-    tags: list[str] = _Field(default_factory=list)
+    variants: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
     interfaces: list[InterfaceDef] = _Field(default_factory=list)
@@ -160,9 +163,8 @@ class System(BaseModel):
     """A group of components (or sub-systems) working toward a shared goal."""
 
     name: str
-    title: str | None = None
     description: str | None = None
-    tags: list[str] = _Field(default_factory=list)
+    variants: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
     interfaces: list[InterfaceDef] = _Field(default_factory=list)
@@ -188,6 +190,7 @@ class ImportDeclaration(BaseModel):
 class ArchFile(BaseModel):
     """Top-level model representing the parsed contents of a single .archml file."""
 
+    variant_declarations: list[str] = _Field(default_factory=list)
     imports: list[ImportDeclaration] = _Field(default_factory=list)
     enums: list[EnumDef] = _Field(default_factory=list)
     types: list[TypeDef] = _Field(default_factory=list)

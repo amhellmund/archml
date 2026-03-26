@@ -22,7 +22,6 @@ class PrimitiveType(Enum):
     STRING = "String"
     INT = "Int"
     FLOAT = "Float"
-    DECIMAL = "Decimal"
     BOOL = "Bool"
     BYTES = "Bytes"
     TIMESTAMP = "Timestamp"

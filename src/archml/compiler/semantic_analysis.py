@@ -59,6 +59,7 @@ def analyze(
     resolved_imports: dict[str, ArchFile] | None = None,
     file_key: str | None = None,
     filename: str | None = None,
+    known_variants: set[str] | None = None,
 ) -> list[SemanticError]:
     """Perform semantic analysis on a parsed ArchFile.
 
@@ -109,13 +110,44 @@ def analyze(
             ``qualified_name`` values in this file.
         filename: Optional source file path for error messages. When provided,
             all returned :class:`SemanticError` instances include the file path.
+        known_variants: Optional set of all declared variant names across the
+            build. When provided, every variant name referenced anywhere in
+            the file is validated against this set.
 
     Returns:
         A list of :class:`SemanticError` instances. An empty list means no
         semantic errors were found.
     """
     _assign_qualified_names(arch_file, file_key=file_key)
-    return _SemanticAnalyzer(arch_file, resolved_imports, filename).analyze()
+    errors = _SemanticAnalyzer(arch_file, resolved_imports, filename).analyze()
+    if known_variants is not None:
+        errors.extend(check_variant_names(arch_file, known_variants, filename))
+    return errors
+
+
+def check_variant_names(
+    arch_file: ArchFile,
+    known_variants: set[str],
+    filename: str | None = None,
+) -> list[SemanticError]:
+    """Check that all variant names referenced in *arch_file* are declared.
+
+    Recursively walks every entity in the file and validates each name in its
+    ``variants`` list against *known_variants*.  Use this for the build-level
+    global pass after all files have been compiled and the full variant set is
+    known.
+
+    Args:
+        arch_file: The parsed ArchFile to check.
+        known_variants: The set of all variant names declared across the build.
+        filename: Optional source file path for error messages.
+
+    Returns:
+        A list of :class:`SemanticError` instances.
+    """
+    errors: list[SemanticError] = []
+    _collect_variant_errors(arch_file, known_variants, filename, errors)
+    return errors
 
 
 # ################
@@ -1085,3 +1117,105 @@ def _check_user(
         )
     errors.extend(_check_port_names(ctx, user.requires, user.provides, filename))
     return errors
+
+
+def _variant_errors(
+    variants: list[str],
+    known_variants: set[str],
+    ctx: str,
+    filename: str | None,
+    line: int | None = None,
+) -> list[SemanticError]:
+    """Return errors for any variant name in *variants* not in *known_variants*."""
+    errors: list[SemanticError] = []
+    for name in variants:
+        if name not in known_variants:
+            errors.append(
+                SemanticError(
+                    message=f"{ctx}: variant '{name}' is not declared",
+                    filename=filename,
+                    line=line,
+                )
+            )
+    return errors
+
+
+def _collect_variant_errors_component(
+    comp: Component,
+    known_variants: set[str],
+    filename: str | None,
+    errors: list[SemanticError],
+) -> None:
+    """Recursively collect variant name errors for a component and its children."""
+    ctx = f"component '{comp.name}'"
+    errors.extend(_variant_errors(comp.variants, known_variants, ctx, filename, comp.line))
+    for ref in comp.requires:
+        errors.extend(_variant_errors(ref.variants, known_variants, f"{ctx} requires '{ref.name}'", filename, ref.line))
+    for ref in comp.provides:
+        errors.extend(_variant_errors(ref.variants, known_variants, f"{ctx} provides '{ref.name}'", filename, ref.line))
+    for conn in comp.connects:
+        errors.extend(_variant_errors(conn.variants, known_variants, f"{ctx} connect", filename, conn.line))
+    for exp in comp.exposes:
+        errors.extend(_variant_errors(exp.variants, known_variants, f"{ctx} expose", filename, exp.line))
+    for sub in comp.components:
+        _collect_variant_errors_component(sub, known_variants, filename, errors)
+
+
+def _collect_variant_errors_system(
+    system: System,
+    known_variants: set[str],
+    filename: str | None,
+    errors: list[SemanticError],
+) -> None:
+    """Recursively collect variant name errors for a system and its children."""
+    ctx = f"system '{system.name}'"
+    errors.extend(_variant_errors(system.variants, known_variants, ctx, filename, system.line))
+    for ref in system.requires:
+        errors.extend(_variant_errors(ref.variants, known_variants, f"{ctx} requires '{ref.name}'", filename, ref.line))
+    for ref in system.provides:
+        errors.extend(_variant_errors(ref.variants, known_variants, f"{ctx} provides '{ref.name}'", filename, ref.line))
+    for conn in system.connects:
+        errors.extend(_variant_errors(conn.variants, known_variants, f"{ctx} connect", filename, conn.line))
+    for exp in system.exposes:
+        errors.extend(_variant_errors(exp.variants, known_variants, f"{ctx} expose", filename, exp.line))
+    for comp in system.components:
+        _collect_variant_errors_component(comp, known_variants, filename, errors)
+    for sub in system.systems:
+        _collect_variant_errors_system(sub, known_variants, filename, errors)
+    for user in system.users:
+        ctx_u = f"user '{user.name}'"
+        errors.extend(_variant_errors(user.variants, known_variants, ctx_u, filename, user.line))
+        for ref in user.requires:
+            errors.extend(
+                _variant_errors(ref.variants, known_variants, f"{ctx_u} requires '{ref.name}'", filename, ref.line)
+            )
+        for ref in user.provides:
+            errors.extend(
+                _variant_errors(ref.variants, known_variants, f"{ctx_u} provides '{ref.name}'", filename, ref.line)
+            )
+
+
+def _collect_variant_errors(
+    arch_file: ArchFile,
+    known_variants: set[str],
+    filename: str | None,
+    errors: list[SemanticError],
+) -> None:
+    """Walk the entire ArchFile and collect variant name errors."""
+    for conn in arch_file.connects:
+        errors.extend(_variant_errors(conn.variants, known_variants, "top-level connect", filename, conn.line))
+    for comp in arch_file.components:
+        _collect_variant_errors_component(comp, known_variants, filename, errors)
+    for system in arch_file.systems:
+        _collect_variant_errors_system(system, known_variants, filename, errors)
+    for user in arch_file.users:
+        ctx = f"user '{user.name}'"
+        errors.extend(_variant_errors(user.variants, known_variants, ctx, filename, user.line))
+        for ref in user.requires:
+            errors.extend(
+                _variant_errors(ref.variants, known_variants, f"{ctx} requires '{ref.name}'", filename, ref.line)
+            )
+        for ref in user.provides:
+            errors.extend(
+                _variant_errors(ref.variants, known_variants, f"{ctx} provides '{ref.name}'", filename, ref.line)
+            )

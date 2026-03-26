@@ -12,18 +12,17 @@ enum OrderStatus {
 type OrderItem {
     field product_id: String
     field quantity: Int
-    field unit_price: Decimal
+    field unit_price: Float
 }
 
 # Unversioned interface
 interface OrderRequest {
-    title = "Order Creation Request"
     description = "Payload for placing a new customer order."
 
     field order_id: String
     field customer_id: String
     field items: List<OrderItem>
-    field total_amount: Decimal {
+    field total_amount: Float {
         description = "Grand total including tax and shipping."
         schema = "Positive decimal value."
     }
@@ -35,18 +34,16 @@ interface OrderRequest {
 
 # Versioned interface v2 (adds shipping_method)
 interface OrderRequest @v2 {
-    title = "Order Creation Request v2"
 
     field order_id: String
     field customer_id: String
     field items: List<OrderItem>
-    field total_amount: Decimal
+    field total_amount: Float
     field currency: String
     field shipping_method: String
 }
 
 interface OrderConfirmation {
-    title = "Order Confirmation"
 
     field order_id: String
     field status: OrderStatus
@@ -56,7 +53,7 @@ interface OrderConfirmation {
 
 interface PaymentRequest {
     field order_id: String
-    field amount: Decimal
+    field amount: Float
     field currency: String
 }
 

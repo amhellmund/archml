@@ -88,8 +88,6 @@ class TestKeywords:
             ("import", TokenType.IMPORT),
             ("use", TokenType.USE),
             ("external", TokenType.EXTERNAL),
-            ("tags", TokenType.TAGS),
-            ("title", TokenType.TITLE),
             ("description", TokenType.DESCRIPTION),
             ("true", TokenType.TRUE),
             ("false", TokenType.FALSE),
@@ -209,8 +207,8 @@ class TestSymbols:
         ]
 
     def test_equals_in_assignment(self) -> None:
-        types = _types('title = "Hello"')
-        assert types == [TokenType.TITLE, TokenType.EQUALS, TokenType.STRING]
+        types = _types('description = "Hello"')
+        assert types == [TokenType.DESCRIPTION, TokenType.EQUALS, TokenType.STRING]
 
     def test_at_symbol(self) -> None:
         types = _types("@v2")
@@ -763,11 +761,11 @@ class TestStructuralPatterns:
             TokenType.RBRACE,
         ]
 
-    def test_tags_assignment(self) -> None:
-        source = 'tags = ["critical", "pci-scope"]'
+    def test_variants_assignment(self) -> None:
+        source = 'variants = ["cloud", "on_premise"]'
         types = _types(source)
         assert types == [
-            TokenType.TAGS,
+            TokenType.VARIANTS,
             TokenType.EQUALS,
             TokenType.LBRACKET,
             TokenType.STRING,
@@ -775,13 +773,6 @@ class TestStructuralPatterns:
             TokenType.STRING,
             TokenType.RBRACKET,
         ]
-
-    def test_title_assignment(self) -> None:
-        source = 'title = "Order Service"'
-        types = _types(source)
-        values = _values(source)
-        assert types == [TokenType.TITLE, TokenType.EQUALS, TokenType.STRING]
-        assert values == ["title", "=", "Order Service"]
 
     def test_description_assignment(self) -> None:
         source = 'description = "Accepts and validates customer orders."'
@@ -911,12 +902,11 @@ class TestFullExample:
         source = """
             # Interface definition
             interface OrderRequest {
-                title = "Order Creation Request"
                 description = "Payload for submitting a new customer order."
 
                 field order_id: String
                 field items: List<OrderItem>
-                field total_amount: Decimal {
+                field total_amount: Float {
                     description = "Grand total including tax and shipping."
                     schema = "Positive decimal value."
                 }
@@ -929,16 +919,12 @@ class TestFullExample:
         assert tokens[1].value == "OrderRequest"
         # Verify the STRING values
         string_values = [t.value for t in tokens if t.type == TokenType.STRING]
-        assert "Order Creation Request" in string_values
         assert "Payload for submitting a new customer order." in string_values
 
     def test_system_with_connect(self) -> None:
         source = """
             system ECommerce {
-                title = "E-Commerce Platform"
-
                 component PaymentGateway {
-                    tags = ["critical", "pci-scope"]
                     provides PaymentRequest
                 }
 
@@ -964,3 +950,51 @@ class TestFullExample:
         # 'Int' is an identifier, not a number
         assert tokens[3].type == TokenType.IDENTIFIER
         assert tokens[3].value == "Int"
+
+
+# ###############
+# Variant Keywords
+# ###############
+
+
+class TestVariantKeywords:
+    """Tests for the variant and variants keyword tokens."""
+
+    def test_variant_keyword(self) -> None:
+        assert _types("variant") == [TokenType.VARIANT]
+
+    def test_variants_keyword(self) -> None:
+        assert _types("variants") == [TokenType.VARIANTS]
+
+    def test_variant_in_declaration(self) -> None:
+        types = _types("variant cloud")
+        assert types == [TokenType.VARIANT, TokenType.IDENTIFIER]
+
+    def test_variants_in_declaration(self) -> None:
+        types = _types("variants cloud, on_premise")
+        assert types == [
+            TokenType.VARIANTS,
+            TokenType.IDENTIFIER,
+            TokenType.COMMA,
+            TokenType.IDENTIFIER,
+        ]
+
+    def test_variant_in_attribute(self) -> None:
+        types = _types('variants = ["cloud"]')
+        assert types == [
+            TokenType.VARIANTS,
+            TokenType.EQUALS,
+            TokenType.LBRACKET,
+            TokenType.STRING,
+            TokenType.RBRACKET,
+        ]
+
+    def test_variant_not_identifier(self) -> None:
+        tokens = _tokens_no_eof("variant")
+        assert tokens[0].type == TokenType.VARIANT
+        assert tokens[0].value == "variant"
+
+    def test_variants_not_identifier(self) -> None:
+        tokens = _tokens_no_eof("variants")
+        assert tokens[0].type == TokenType.VARIANTS
+        assert tokens[0].value == "variants"

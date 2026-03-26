@@ -267,7 +267,7 @@ enum PaymentMethod {
 type OrderItem {
     field product_id: String
     field quantity: Int
-    field unit_price: Decimal
+    field unit_price: Float
 }
 
 interface OrderRequest {
@@ -291,7 +291,7 @@ interface OrderConfirmation {
 
 interface PaymentRequest {
     field order_id: String
-    field amount: Decimal
+    field amount: Float
     field currency: String
 }
 
@@ -409,7 +409,7 @@ system Outer {
         source = """
 from services import OrderService
 
-interface PaymentRequest { field amount: Decimal }
+interface PaymentRequest { field amount: Float }
 
 system ECommerce {
     use component OrderService

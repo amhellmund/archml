@@ -76,12 +76,11 @@ def test_root_boundary_coloncolon_replaced_by_double_underscore() -> None:
     assert diag.root.id == "X__Y__A"
 
 
-def test_root_boundary_label_and_title() -> None:
-    """Root boundary label is the entity mnemonic; title is the human name."""
-    comp = Component(name="order_service", title="Order Service")
+def test_root_boundary_label() -> None:
+    """Root boundary label is the entity name."""
+    comp = Component(name="order_service")
     diag = build_viz_diagram(comp)
     assert diag.root.label == "order_service"
-    assert diag.root.title == "Order Service"
 
 
 def test_root_boundary_kind_component() -> None:
@@ -102,10 +101,10 @@ def test_root_boundary_description_propagated() -> None:
     assert diag.root.description == "Does things"
 
 
-def test_root_boundary_tags_propagated() -> None:
-    comp = Component(name="C", tags=["critical", "pci"])
+def test_root_boundary_tags_empty() -> None:
+    comp = Component(name="C")
     diag = build_viz_diagram(comp)
-    assert diag.root.tags == ["critical", "pci"]
+    assert diag.root.tags == []
 
 
 # ###############
@@ -119,13 +118,7 @@ def test_diagram_id_prefixed() -> None:
     assert diag.id == "diagram.Worker"
 
 
-def test_diagram_title_from_entity_title() -> None:
-    comp = Component(name="w", title="Worker")
-    diag = build_viz_diagram(comp)
-    assert diag.title == "Worker"
-
-
-def test_diagram_title_falls_back_to_name() -> None:
+def test_diagram_title_from_entity_name() -> None:
     comp = Component(name="Worker")
     diag = build_viz_diagram(comp)
     assert diag.title == "Worker"
@@ -193,13 +186,12 @@ def test_child_node_entity_path() -> None:
     assert node.entity_path == "Parent::Alpha"
 
 
-def test_child_node_description_and_tags() -> None:
-    child = Component(name="C", description="desc", tags=["t1"])
+def test_child_node_description() -> None:
+    child = Component(name="C", description="desc")
     parent = System(name="S", components=[child])
     diag = build_viz_diagram(parent)
     node = next(n for n in diag.root.children if isinstance(n, VizNode))
     assert node.description == "desc"
-    assert node.tags == ["t1"]
 
 
 def test_leaf_entity_has_no_children() -> None:
@@ -699,32 +691,26 @@ def test_ecommerce_system_topology() -> None:
     """Integration test building a topology for the canonical e-commerce example."""
     order_svc = Component(
         name="OrderService",
-        title="Order Service",
         requires=[_iref("PaymentRequest"), _iref("InventoryCheck")],
         provides=[_iref("OrderConfirmation")],
     )
     payment_gw = Component(
         name="PaymentGateway",
-        title="Payment Gateway",
-        tags=["critical", "pci-scope"],
         provides=[_iref("PaymentRequest")],
         requires=[_iref("StripePayment")],
     )
     stripe = Component(
         name="StripeAPI",
-        title="Stripe Payment API",
         is_external=True,
         provides=[_iref("StripePayment")],
     )
     inventory = Component(
         name="InventoryManager",
-        title="Inventory Manager",
         provides=[_iref("InventoryCheck")],
     )
 
     ecommerce = System(
         name="ECommerce",
-        title="E-Commerce Platform",
         connects=[
             _connect("PaymentGateway", "PaymentRequest", "OrderService", "PaymentRequest", channel="payment"),
             _connect("InventoryManager", "InventoryCheck", "OrderService", "InventoryCheck", channel="inventory"),

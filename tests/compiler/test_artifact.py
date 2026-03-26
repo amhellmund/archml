@@ -75,7 +75,6 @@ class TestPrimitiveTypeRefs:
             PrimitiveType.STRING,
             PrimitiveType.INT,
             PrimitiveType.FLOAT,
-            PrimitiveType.DECIMAL,
             PrimitiveType.BOOL,
             PrimitiveType.BYTES,
             PrimitiveType.TIMESTAMP,
@@ -202,17 +201,14 @@ class TestEnumDef:
                 EnumDef(
                     name="Status",
                     values=["Active", "Inactive"],
-                    title="Status Enum",
                     description="Describes activation state.",
-                    tags=["core"],
                 )
             ]
         )
         result = _roundtrip(af)
         assert result.enums[0].name == "Status"
         assert result.enums[0].values == ["Active", "Inactive"]
-        assert result.enums[0].title == "Status Enum"
-        assert result.enums[0].tags == ["core"]
+        assert result.enums[0].description == "Describes activation state."
 
 
 class TestComponents:
@@ -221,9 +217,7 @@ class TestComponents:
             components=[
                 Component(
                     name="MyComp",
-                    title="My Component",
                     description="Does things.",
-                    tags=["important"],
                     requires=[InterfaceRef(name="Input")],
                     provides=[InterfaceRef(name="Output")],
                     is_external=False,
@@ -233,7 +227,6 @@ class TestComponents:
         result = _roundtrip(af)
         comp = result.components[0]
         assert comp.name == "MyComp"
-        assert comp.title == "My Component"
         assert comp.requires[0].name == "Input"
         assert comp.provides[0].name == "Output"
         assert not comp.is_external
@@ -314,7 +307,6 @@ class TestSystems:
             systems=[
                 System(
                     name="MySys",
-                    title="My System",
                     is_external=True,
                 )
             ]
@@ -322,7 +314,6 @@ class TestSystems:
         result = _roundtrip(af)
         sys = result.systems[0]
         assert sys.name == "MySys"
-        assert sys.title == "My System"
         assert sys.is_external
 
     def test_nested_system(self) -> None:

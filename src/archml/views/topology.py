@@ -341,11 +341,11 @@ def build_viz_diagram(
     root = VizBoundary(
         id=root_id,
         label=entity.name,
-        title=entity.title,
+        title=None,
         kind="component" if isinstance(entity, Component) else "system",
         entity_path=entity_path,
         description=entity.description,
-        tags=list(entity.tags),
+        tags=[],
         ports=root_ports,
         children=all_children,
     )
@@ -554,7 +554,7 @@ def build_viz_diagram(
 
     return VizDiagram(
         id=f"diagram.{root_id}",
-        title=entity.title or entity.name,
+        title=entity.name,
         description=entity.description,
         root=root,
         peripheral_nodes=peripheral_nodes,
@@ -776,11 +776,11 @@ def _make_child_node(entity: Component | System | UserDef, entity_path: str) -> 
     return VizNode(
         id=node_id,
         label=entity.name,
-        title=entity.title,
+        title=None,
         kind=kind,
         entity_path=entity_path,
         description=entity.description,
-        tags=list(entity.tags),
+        tags=[],
         ports=_make_ports(node_id, entity),
     )
 
@@ -1253,11 +1253,11 @@ def _build_recursive_boundary(
     boundary = VizBoundary(
         id=root_id,
         label=entity.name,
-        title=entity.title,
+        title=None,
         kind="component" if isinstance(entity, Component) else "system",
         entity_path=entity_path,
         description=entity.description,
-        tags=list(entity.tags),
+        tags=[],
         ports=_make_ports(root_id, entity),
         children=all_children,
     )

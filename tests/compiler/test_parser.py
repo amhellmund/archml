@@ -155,17 +155,6 @@ enum OrderStatus {
             "Cancelled",
         ]
 
-    def test_enum_with_title(self) -> None:
-        source = """\
-enum Status {
-    title = "Order Status"
-    Active
-}"""
-        result = _parse(source)
-        enum = result.enums[0]
-        assert enum.title == "Order Status"
-        assert enum.values == ["Active"]
-
     def test_enum_with_description(self) -> None:
         source = """\
 enum Status {
@@ -175,43 +164,22 @@ enum Status {
         result = _parse(source)
         assert result.enums[0].description == "Current state of an order."
 
-    def test_enum_with_tags(self) -> None:
-        source = """\
-enum Status {
-    tags = ["domain", "order"]
-    Pending
-}"""
-        result = _parse(source)
-        assert result.enums[0].tags == ["domain", "order"]
-
     def test_enum_with_all_attributes(self) -> None:
         source = """\
 enum OrderStatus {
-    title = "Order Status"
     description = "Status of a customer order."
-    tags = ["core"]
     Pending
     Confirmed
 }"""
         result = _parse(source)
         enum = result.enums[0]
         assert enum.name == "OrderStatus"
-        assert enum.title == "Order Status"
         assert enum.description == "Status of a customer order."
-        assert enum.tags == ["core"]
         assert enum.values == ["Pending", "Confirmed"]
-
-    def test_enum_title_default_is_none(self) -> None:
-        result = _parse("enum Status {\n    Active\n}")
-        assert result.enums[0].title is None
 
     def test_enum_description_default_is_none(self) -> None:
         result = _parse("enum Status {\n    Active\n}")
         assert result.enums[0].description is None
-
-    def test_enum_tags_default_is_empty(self) -> None:
-        result = _parse("enum Status {\n    Active\n}")
-        assert result.enums[0].tags == []
 
     def test_multiple_enums(self) -> None:
         source = "enum A {\n    X\n}\nenum B {\n    Y\n}"
@@ -256,7 +224,7 @@ class TestTypeDeclarations:
 type OrderItem {
     field product_id: String
     field quantity: Int
-    field unit_price: Decimal
+    field unit_price: Float
 }"""
         result = _parse(source)
         t = result.types[0]
@@ -266,11 +234,6 @@ type OrderItem {
         assert t.fields[1].name == "quantity"
         assert t.fields[2].name == "unit_price"
 
-    def test_type_with_title(self) -> None:
-        source = 'type Order {\n    title = "Order Data"\n    field id: String\n}'
-        result = _parse(source)
-        assert result.types[0].title == "Order Data"
-
     def test_type_with_description(self) -> None:
         source = """\
 type Order {
@@ -279,11 +242,6 @@ type Order {
 }"""
         result = _parse(source)
         assert result.types[0].description == "Represents an order."
-
-    def test_type_with_tags(self) -> None:
-        source = 'type Order {\n    tags = ["domain"]\n    field id: String\n}'
-        result = _parse(source)
-        assert result.types[0].tags == ["domain"]
 
     def test_type_with_named_type_field(self) -> None:
         result = _parse("type Order { field item: OrderItem }")
@@ -342,11 +300,6 @@ class TestInterfaceDeclarations:
         result = _parse("interface OrderRequest {}")
         assert result.interfaces[0].version is None
 
-    def test_interface_with_title(self) -> None:
-        source = 'interface OrderRequest {\n    title = "Order Creation Request"\n}'
-        result = _parse(source)
-        assert result.interfaces[0].title == "Order Creation Request"
-
     def test_interface_with_description(self) -> None:
         source = """\
 interface OrderRequest {
@@ -356,18 +309,13 @@ interface OrderRequest {
         desc = result.interfaces[0].description
         assert desc == "Payload for submitting a new customer order."
 
-    def test_interface_with_tags(self) -> None:
-        source = 'interface OrderRequest {\n    tags = ["api", "order"]\n}'
-        result = _parse(source)
-        assert result.interfaces[0].tags == ["api", "order"]
-
     def test_interface_with_fields(self) -> None:
         source = """\
 interface OrderRequest {
     field order_id: String
     field customer_id: String
     field items: List<OrderItem>
-    field total_amount: Decimal
+    field total_amount: Float
 }"""
         result = _parse(source)
         iface = result.interfaces[0]
@@ -380,7 +328,7 @@ interface OrderRequest {
     def test_interface_field_with_description(self) -> None:
         source = """\
 interface OrderRequest {
-    field total_amount: Decimal {
+    field total_amount: Float {
         description = "Grand total including tax and shipping."
     }
 }"""
@@ -405,16 +353,12 @@ interface OrderRequest {
     def test_interface_with_all_attributes(self) -> None:
         source = """\
 interface OrderRequest {
-    title = "Order Creation Request"
     description = "Payload for submitting a new customer order."
-    tags = ["api"]
     field order_id: String
 }"""
         result = _parse(source)
         iface = result.interfaces[0]
-        assert iface.title == "Order Creation Request"
         assert iface.description == "Payload for submitting a new customer order."
-        assert iface.tags == ["api"]
         assert len(iface.fields) == 1
 
     def test_versioned_interface_with_fields(self) -> None:
@@ -461,9 +405,11 @@ class TestFieldTypeReferences:
         f = self._parse_field_type("Float")
         assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.FLOAT)
 
-    def test_primitive_decimal(self) -> None:
+    def test_primitive_decimal_is_named_ref(self) -> None:
+        """Decimal is no longer a primitive — it parses as a NamedTypeRef."""
         f = self._parse_field_type("Decimal")
-        assert f.type == PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)
+        assert isinstance(f.type, NamedTypeRef)
+        assert f.type.name == "Decimal"
 
     def test_primitive_bool(self) -> None:
         f = self._parse_field_type("Bool")
@@ -558,7 +504,7 @@ class TestFieldAnnotations:
         assert f.schema_ref is None
 
     def test_field_with_description(self) -> None:
-        f = self._parse_field('field amount: Decimal { description = "Grand total." }')
+        f = self._parse_field('field amount: Float { description = "Grand total." }')
         assert f.description == "Grand total."
 
     def test_field_with_schema(self) -> None:
@@ -591,17 +537,13 @@ class TestComponentDeclarations:
         assert comp.connects == []
         assert comp.exposes == []
 
-    def test_component_with_title(self) -> None:
-        result = _parse('component OrderService { title = "Order Service" }')
-        assert result.components[0].title == "Order Service"
-
     def test_component_with_description(self) -> None:
         result = _parse('component OrderService { description = "Accepts orders." }')
         assert result.components[0].description == "Accepts orders."
 
-    def test_component_with_tags(self) -> None:
-        result = _parse('component GW { tags = ["critical", "pci-scope"] }')
-        assert result.components[0].tags == ["critical", "pci-scope"]
+    def test_component_with_tags_rejected(self) -> None:
+        with pytest.raises(ParseError):
+            _parse('component GW { tags = ["critical", "pci-scope"] }')
 
     def test_component_with_requires(self) -> None:
         result = _parse("component X { requires OrderRequest }")
@@ -647,7 +589,6 @@ component X {
     def test_component_with_requires_and_provides(self) -> None:
         source = """\
 component OrderService {
-    title = "Order Service"
     description = "Accepts, validates, and processes customer orders."
     requires OrderRequest
     requires PaymentRequest
@@ -657,7 +598,7 @@ component OrderService {
         result = _parse(source)
         comp = result.components[0]
         assert comp.name == "OrderService"
-        assert comp.title == "Order Service"
+        assert comp.description == "Accepts, validates, and processes customer orders."
         assert len(comp.requires) == 3
         assert len(comp.provides) == 1
 
@@ -719,9 +660,8 @@ component OrderService {
     def test_component_defaults(self) -> None:
         result = _parse("component X {}")
         comp = result.components[0]
-        assert comp.title is None
         assert comp.description is None
-        assert comp.tags == []
+        assert comp.variants == []
         assert comp.is_external is False
 
     def test_multiple_top_level_components(self) -> None:
@@ -748,17 +688,9 @@ class TestSystemDeclarations:
         assert system.connects == []
         assert system.exposes == []
 
-    def test_system_with_title(self) -> None:
-        result = _parse('system ECommerce { title = "E-Commerce Platform" }')
-        assert result.systems[0].title == "E-Commerce Platform"
-
     def test_system_with_description(self) -> None:
         result = _parse('system ECommerce { description = "Customer-facing store." }')
         assert result.systems[0].description == "Customer-facing store."
-
-    def test_system_with_tags(self) -> None:
-        result = _parse('system ECommerce { tags = ["platform", "core"] }')
-        assert result.systems[0].tags == ["platform", "core"]
 
     def test_system_with_inline_component(self) -> None:
         source = """\
@@ -888,36 +820,33 @@ system ECommerce {
         assert system.is_external is True
         assert system.name == "StripeAPI"
 
-    def test_external_system_with_title(self) -> None:
+    def test_external_system_no_components(self) -> None:
         source = """\
 external system StripeAPI {
-    title = "Stripe Payment API"
+    description = "Stripe Payment API"
 }"""
         result = _parse(source)
         system = result.systems[0]
         assert system.is_external is True
-        assert system.title == "Stripe Payment API"
+        assert system.description == "Stripe Payment API"
         assert system.components == []
 
     def test_system_defaults(self) -> None:
         result = _parse("system X {}")
         system = result.systems[0]
-        assert system.title is None
         assert system.description is None
-        assert system.tags == []
+        assert system.variants == []
         assert system.is_external is False
 
     def test_nested_system_with_connect(self) -> None:
         source = """\
 system Enterprise {
-    title = "Enterprise Landscape"
     system ECommerce { provides InventorySync }
     system Warehouse { requires InventorySync }
     connect ECommerce.InventorySync -> $inventory -> Warehouse.InventorySync
 }"""
         result = _parse(source)
         system = result.systems[0]
-        assert system.title == "Enterprise Landscape"
         assert len(system.systems) == 2
         assert len(system.connects) == 1
         assert system.connects[0].channel == "inventory"
@@ -1203,37 +1132,39 @@ interface Report {
 
 
 class TestTagsParsing:
+    """Tags no longer exist; repurposed as a guard that tag syntax is rejected."""
+
     def test_empty_tags_list(self) -> None:
-        result = _parse("component X { tags = [] }")
-        assert result.components[0].tags == []
+        with pytest.raises(ParseError):
+            _parse("component X { tags = [] }")
 
     def test_single_tag(self) -> None:
-        result = _parse('component X { tags = ["critical"] }')
-        assert result.components[0].tags == ["critical"]
+        with pytest.raises(ParseError):
+            _parse('component X { tags = ["critical"] }')
 
     def test_multiple_tags(self) -> None:
-        result = _parse('component X { tags = ["critical", "pci-scope", "core"] }')
-        assert result.components[0].tags == ["critical", "pci-scope", "core"]
+        with pytest.raises(ParseError):
+            _parse('component X { tags = ["critical", "pci-scope", "core"] }')
 
     def test_tags_with_hyphens(self) -> None:
-        result = _parse('component X { tags = ["pci-scope", "high-availability"] }')
-        assert "pci-scope" in result.components[0].tags
+        with pytest.raises(ParseError):
+            _parse('component X { tags = ["pci-scope", "high-availability"] }')
 
     def test_tags_on_system(self) -> None:
-        result = _parse('system S { tags = ["platform"] }')
-        assert result.systems[0].tags == ["platform"]
+        with pytest.raises(ParseError):
+            _parse('system S { tags = ["platform"] }')
 
     def test_tags_on_enum(self) -> None:
-        result = _parse('enum E {\n    tags = ["domain"]\n    Active\n}')
-        assert result.enums[0].tags == ["domain"]
+        with pytest.raises(ParseError):
+            _parse('enum E {\n    tags = ["domain"]\n    Active\n}')
 
     def test_tags_on_type(self) -> None:
-        result = _parse('type T { tags = ["data"] field x: String }')
-        assert result.types[0].tags == ["data"]
+        with pytest.raises(ParseError):
+            _parse('type T { tags = ["data"] field x: String }')
 
     def test_tags_on_interface(self) -> None:
-        result = _parse('interface I { tags = ["api"] }')
-        assert result.interfaces[0].tags == ["api"]
+        with pytest.raises(ParseError):
+            _parse('interface I { tags = ["api"] }')
 
 
 # ###############
@@ -1303,7 +1234,7 @@ class TestFullLanguageExamples:
 type OrderItem {
     field product_id: String
     field quantity: Int
-    field unit_price: Decimal
+    field unit_price: Float
 }
 
 enum OrderStatus {
@@ -1328,7 +1259,7 @@ interface OrderConfirmation {
 
 interface PaymentRequest {
     field order_id: String
-    field amount: Decimal
+    field amount: Float
     field currency: String
 }
 
@@ -1397,7 +1328,6 @@ interface ReportOutput {
 {import_line}
 
 component OrderService {{
-    title = "Order Service"
     description = "Accepts, validates, and processes customer orders."
 
     requires OrderRequest
@@ -1418,7 +1348,7 @@ component OrderService {{
         assert len(result.components) == 1
         comp = result.components[0]
         assert comp.name == "OrderService"
-        assert comp.title == "Order Service"
+        assert comp.description == "Accepts, validates, and processes customer orders."
         assert len(comp.requires) == 3
         assert len(comp.provides) == 1
 
@@ -1428,26 +1358,17 @@ component OrderService {{
 from types import PaymentRequest, PaymentResult, InventoryCheck, InventoryStatus
 from components/order_service import OrderService
 
-external system StripeAPI {
-    title = "Stripe Payment API"
-}
+external system StripeAPI {}
 
 system ECommerce {
-    title = "E-Commerce Platform"
-
     use component OrderService
 
     component PaymentGateway {
-        title = "Payment Gateway"
-        tags = ["critical", "pci-scope"]
-
         requires PaymentRequest
         provides PaymentResult
     }
 
     component InventoryManager {
-        title = "Inventory Manager"
-
         requires InventoryCheck
         provides InventoryStatus
     }
@@ -1463,15 +1384,10 @@ system ECommerce {
 
         stripe = next(s for s in result.systems if s.name == "StripeAPI")
         assert stripe.is_external is True
-        assert stripe.title == "Stripe Payment API"
 
         ecommerce = next(s for s in result.systems if s.name == "ECommerce")
-        assert ecommerce.title == "E-Commerce Platform"
         assert len(ecommerce.components) == 3  # use + 2 inline
         assert len(ecommerce.connects) == 2
-
-        gw = next(c for c in ecommerce.components if c.name == "PaymentGateway")
-        assert gw.tags == ["critical", "pci-scope"]
 
         payment_conn = ecommerce.connects[0]
         assert payment_conn.channel == "payment"
@@ -1480,18 +1396,12 @@ system ECommerce {
         """Parse a component with nested sub-components and internal connect."""
         source = """\
 component OrderService {
-    title = "Order Service"
-
     component Validator {
-        title = "Order Validator"
-
         requires OrderRequest
         provides ValidationResult
     }
 
     component Processor {
-        title = "Order Processor"
-
         requires ValidationResult
         requires PaymentRequest
         requires InventoryCheck
@@ -1523,8 +1433,6 @@ component OrderService {
         """Parse an enterprise system with nested sub-systems."""
         source = """\
 system Enterprise {
-    title = "Enterprise Landscape"
-
     system ECommerce {}
     system Warehouse {}
 
@@ -1533,7 +1441,6 @@ system Enterprise {
 """
         result = _parse(source)
         enterprise = result.systems[0]
-        assert enterprise.title == "Enterprise Landscape"
         assert len(enterprise.systems) == 2
         assert len(enterprise.connects) == 1
         assert enterprise.connects[0].channel == "inventory"
@@ -1737,9 +1644,9 @@ class TestParseErrors:
 
 
 class TestEdgeCases:
-    def test_component_with_empty_tags(self) -> None:
-        result = _parse("component X { tags = [] }")
-        assert result.components[0].tags == []
+    def test_component_with_empty_tags_rejected(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("component X { tags = [] }")
 
     def test_interface_version_with_alphanumeric(self) -> None:
         result = _parse("interface X @v10 {}")
@@ -1837,9 +1744,9 @@ system S {
         assert sub.name == "LegacyPlatform"
 
     def test_string_with_special_characters(self) -> None:
-        source = 'component X { title = "gRPC/HTTP2 Service (v2.0)" }'
+        source = 'component X { description = "gRPC/HTTP2 Service (v2.0)" }'
         result = _parse(source)
-        assert result.components[0].title == "gRPC/HTTP2 Service (v2.0)"
+        assert result.components[0].description == "gRPC/HTTP2 Service (v2.0)"
 
     def test_all_primitive_types_in_interface(self) -> None:
         source = """\
@@ -1847,7 +1754,6 @@ interface AllPrimitives {
     field s: String
     field i: Int
     field f: Float
-    field d: Decimal
     field b: Bool
     field by: Bytes
     field ts: Timestamp
@@ -1856,12 +1762,11 @@ interface AllPrimitives {
 """
         result = _parse(source)
         iface = result.interfaces[0]
-        assert len(iface.fields) == 8
+        assert len(iface.fields) == 7
         expected = [
             PrimitiveType.STRING,
             PrimitiveType.INT,
             PrimitiveType.FLOAT,
-            PrimitiveType.DECIMAL,
             PrimitiveType.BOOL,
             PrimitiveType.BYTES,
             PrimitiveType.TIMESTAMP,
@@ -1926,24 +1831,22 @@ class TestUserDeclarations:
         assert len(result.users) == 1
         u = result.users[0]
         assert u.name == "Customer"
-        assert u.title is None
         assert u.description is None
-        assert u.tags == []
+        assert u.variants == []
         assert u.requires == []
         assert u.provides == []
         assert u.is_external is False
 
-    def test_user_with_title_and_description(self) -> None:
-        source = 'user Customer { title = "Customer" description = "An end user." }'
+    def test_user_with_description(self) -> None:
+        source = 'user Customer { description = "An end user." }'
         result = _parse(source)
         u = result.users[0]
-        assert u.title == "Customer"
         assert u.description == "An end user."
 
-    def test_user_with_tags(self) -> None:
-        result = _parse('user Customer { tags = ["external", "persona"] }')
+    def test_user_with_variants(self) -> None:
+        result = _parse('user Customer { variants = ["cloud"] }')
         u = result.users[0]
-        assert u.tags == ["external", "persona"]
+        assert u.variants == ["cloud"]
 
     def test_user_with_requires(self) -> None:
         result = _parse("user Customer { requires OrderConfirmation }")
@@ -2096,7 +1999,6 @@ class TestArtifactDeclarations:
         a = result.artifacts[0]
         assert isinstance(a, ArtifactDef)
         assert a.name == "ReportPDF"
-        assert a.title is None
         assert a.description is None
         assert a.spec is None
         assert a.ref_url is None
@@ -2104,7 +2006,6 @@ class TestArtifactDeclarations:
     def test_artifact_with_all_attributes(self) -> None:
         source = """\
 artifact DeployBundle {
-    title = "Deployment Bundle"
     description = "Kubernetes manifests for production rollout."
     spec = "Contains manifests/*.yaml, config/app.yaml"
     ref_url = "https://example.com/deploy-spec"
@@ -2112,16 +2013,9 @@ artifact DeployBundle {
         result = _parse(source)
         a = result.artifacts[0]
         assert a.name == "DeployBundle"
-        assert a.title == "Deployment Bundle"
         assert a.description == "Kubernetes manifests for production rollout."
         assert a.spec == "Contains manifests/*.yaml, config/app.yaml"
         assert a.ref_url == "https://example.com/deploy-spec"
-
-    def test_artifact_with_title_only(self) -> None:
-        source = 'artifact Report {\n    title = "My Report"\n}'
-        result = _parse(source)
-        assert result.artifacts[0].title == "My Report"
-        assert result.artifacts[0].spec is None
 
     def test_artifact_with_spec_only(self) -> None:
         source = 'artifact Config {\n    spec = "YAML file with server and database keys."\n}'
@@ -2178,3 +2072,362 @@ interface Foo {}"""
     def test_artifact_body_rejects_unknown_token(self) -> None:
         with pytest.raises(ParseError, match="Unexpected token"):
             _parse("artifact Bad { tags = [] }")
+
+
+# ###############
+# Variant Parsing
+# ###############
+
+
+class TestVariantDeclarations:
+    """Tests for top-level variant and variants declarations."""
+
+    def test_single_variant_declaration(self) -> None:
+        f = _parse("variant cloud")
+        assert f.variant_declarations == ["cloud"]
+        assert f.components == []
+
+    def test_multiple_separate_variant_declarations(self) -> None:
+        f = _parse("variant cloud\nvariant on_premise")
+        assert f.variant_declarations == ["cloud", "on_premise"]
+
+    def test_variants_multi_declaration(self) -> None:
+        f = _parse("variants cloud, on_premise")
+        assert f.variant_declarations == ["cloud", "on_premise"]
+
+    def test_variants_single_name(self) -> None:
+        f = _parse("variants cloud")
+        assert f.variant_declarations == ["cloud"]
+
+    def test_deduplicated_when_declared_twice(self) -> None:
+        f = _parse("variant cloud\nvariant cloud")
+        assert f.variant_declarations == ["cloud"]
+
+    def test_variant_block_top_level_registers_declaration(self) -> None:
+        f = _parse("variant cloud {\n  component Foo { provides Bar }\n}")
+        assert "cloud" in f.variant_declarations
+
+    def test_variant_block_top_level_adds_component(self) -> None:
+        f = _parse("variant cloud {\n  component Foo { provides Bar }\n}")
+        assert len(f.components) == 1
+        assert f.components[0].name == "Foo"
+        assert f.components[0].variants == ["cloud"]
+
+    def test_variant_block_top_level_adds_system(self) -> None:
+        f = _parse("variant cloud {\n  system S { provides Iface }\n}")
+        assert len(f.systems) == 1
+        assert f.systems[0].name == "S"
+        assert f.systems[0].variants == ["cloud"]
+
+    def test_variant_block_top_level_adds_user(self) -> None:
+        f = _parse("variant cloud {\n  user U { provides Cmd }\n}")
+        assert len(f.users) == 1
+        assert f.users[0].name == "U"
+        assert f.users[0].variants == ["cloud"]
+
+    def test_variant_block_top_level_adds_connect(self) -> None:
+        f = _parse("variant cloud {\n  connect A.p -> $ch -> B.q\n}")
+        assert len(f.connects) == 1
+        assert f.connects[0].variants == ["cloud"]
+
+    def test_variant_block_top_level_external_component(self) -> None:
+        f = _parse("variant cloud {\n  external component Ext { provides P }\n}")
+        assert len(f.components) == 1
+        assert f.components[0].is_external is True
+        assert f.components[0].variants == ["cloud"]
+
+
+class TestVariantsAttribute:
+    """Tests for the inline variants = [...] attribute on entities."""
+
+    def test_component_variants_attr(self) -> None:
+        f = _parse('component Foo {\n  variants = ["cloud"]\n  provides Bar\n}')
+        assert f.components[0].variants == ["cloud"]
+
+    def test_component_variants_multiple(self) -> None:
+        f = _parse('component Foo {\n  variants = ["cloud", "hybrid"]\n  provides Bar\n}')
+        assert f.components[0].variants == ["cloud", "hybrid"]
+
+    def test_system_variants_attr(self) -> None:
+        f = _parse('system S {\n  variants = ["on_premise"]\n}')
+        assert f.systems[0].variants == ["on_premise"]
+
+    def test_user_variants_attr(self) -> None:
+        f = _parse('user U {\n  variants = ["mobile"]\n  provides Cmd\n}')
+        assert f.users[0].variants == ["mobile"]
+
+    def test_variants_attr_empty_list(self) -> None:
+        f = _parse("component Foo {\n  variants = []\n  provides Bar\n}")
+        assert f.components[0].variants == []
+
+    def test_no_variants_attr_defaults_empty(self) -> None:
+        f = _parse("component Foo { provides Bar }")
+        assert f.components[0].variants == []
+
+
+class TestVariantBlockInSystem:
+    """Tests for variant { ... } blocks inside system bodies."""
+
+    def test_system_variant_block_adds_component(self) -> None:
+        src = """
+system S {
+    component Base { provides Iface }
+    variant cloud {
+        component Cloud { provides Iface }
+    }
+}
+"""
+        f = _parse(src)
+        system = f.systems[0]
+        assert len(system.components) == 2
+        base = next(c for c in system.components if c.name == "Base")
+        cloud = next(c for c in system.components if c.name == "Cloud")
+        assert base.variants == []
+        assert cloud.variants == ["cloud"]
+
+    def test_system_variant_block_adds_connect(self) -> None:
+        src = """
+system S {
+    variant cloud {
+        connect A.p -> $ch -> B.q
+    }
+}
+"""
+        f = _parse(src)
+        assert f.systems[0].connects[0].variants == ["cloud"]
+
+    def test_system_variant_block_adds_expose(self) -> None:
+        src = """
+system S {
+    component C { provides P }
+    variant cloud {
+        expose C.P
+    }
+}
+"""
+        f = _parse(src)
+        assert f.systems[0].exposes[0].variants == ["cloud"]
+
+    def test_system_variant_block_use_statement(self) -> None:
+        src = """
+system S {
+    variant cloud {
+        use component Imported
+    }
+}
+"""
+        f = _parse(src)
+        stub = f.systems[0].components[0]
+        assert stub.name == "Imported"
+        assert stub.is_stub is True
+        assert stub.variants == ["cloud"]
+
+    def test_system_variant_block_external(self) -> None:
+        src = """
+system S {
+    variant cloud {
+        external component Ext { provides P }
+    }
+}
+"""
+        f = _parse(src)
+        comp = f.systems[0].components[0]
+        assert comp.is_external is True
+        assert comp.variants == ["cloud"]
+
+    def test_system_two_variant_blocks(self) -> None:
+        src = """
+system S {
+    variant cloud {
+        component A { provides P }
+    }
+    variant on_premise {
+        component B { provides P }
+    }
+}
+"""
+        f = _parse(src)
+        comps = {c.name: c.variants for c in f.systems[0].components}
+        assert comps["A"] == ["cloud"]
+        assert comps["B"] == ["on_premise"]
+
+
+class TestVariantBlockInComponent:
+    """Tests for variant { ... } blocks inside component bodies."""
+
+    def test_component_variant_block_adds_sub_component(self) -> None:
+        src = """
+component Parent {
+    provides Iface
+    variant cloud {
+        component Sub { provides SubIface }
+    }
+}
+"""
+        f = _parse(src)
+        sub = f.components[0].components[0]
+        assert sub.name == "Sub"
+        assert sub.variants == ["cloud"]
+
+    def test_component_variant_block_adds_connect(self) -> None:
+        src = """
+component Parent {
+    variant cloud {
+        connect A.p -> $ch -> B.q
+    }
+}
+"""
+        f = _parse(src)
+        assert f.components[0].connects[0].variants == ["cloud"]
+
+    def test_component_variant_block_adds_expose(self) -> None:
+        src = """
+component Parent {
+    component Sub { provides P }
+    variant cloud {
+        expose Sub.P
+    }
+}
+"""
+        f = _parse(src)
+        assert f.components[0].exposes[0].variants == ["cloud"]
+
+
+class TestVariantUnionSemantics:
+    """Tests for union semantics when block and attribute variants combine."""
+
+    def test_block_and_attr_are_unioned(self) -> None:
+        src = """
+variant cloud {
+    component Foo {
+        variants = ["hybrid"]
+        provides Bar
+    }
+}
+"""
+        f = _parse(src)
+        assert set(f.components[0].variants) == {"cloud", "hybrid"}
+
+    def test_duplicate_not_added_twice(self) -> None:
+        src = """
+variant cloud {
+    component Foo {
+        variants = ["cloud"]
+        provides Bar
+    }
+}
+"""
+        f = _parse(src)
+        assert f.components[0].variants.count("cloud") == 1
+
+
+class TestPortLevelVariants:
+    """Tests for variants = [...] on individual requires/provides ports."""
+
+    def test_requires_port_variant(self) -> None:
+        src = """
+component Foo {
+    requires Bar { variants = ["cloud"] }
+    provides Baz
+}
+"""
+        f = _parse(src)
+        req = f.components[0].requires[0]
+        assert req.name == "Bar"
+        assert req.variants == ["cloud"]
+
+    def test_provides_port_variant(self) -> None:
+        src = """
+component Foo {
+    provides Baz { variants = ["on_premise"] }
+}
+"""
+        f = _parse(src)
+        prov = f.components[0].provides[0]
+        assert prov.variants == ["on_premise"]
+
+    def test_requires_with_as_and_variant(self) -> None:
+        src = """
+component Foo {
+    requires Bar as b { variants = ["cloud"] }
+}
+"""
+        f = _parse(src)
+        req = f.components[0].requires[0]
+        assert req.port_name == "b"
+        assert req.variants == ["cloud"]
+
+    def test_requires_with_version_and_variant(self) -> None:
+        src = """
+component Foo {
+    requires Bar @v2 { variants = ["cloud"] }
+}
+"""
+        f = _parse(src)
+        req = f.components[0].requires[0]
+        assert req.version == "v2"
+        assert req.variants == ["cloud"]
+
+    def test_baseline_port_has_empty_variants(self) -> None:
+        f = _parse("component Foo { requires Bar }")
+        assert f.components[0].requires[0].variants == []
+
+
+class TestConnectAndExposeVariants:
+    """Tests for variants on connect and expose statements."""
+
+    def test_connect_variants_attr(self) -> None:
+        src = 'connect A.p -> $ch -> B.q { variants = ["cloud"] }'
+        f = _parse(src)
+        assert f.connects[0].variants == ["cloud"]
+
+    def test_connect_no_variants_is_baseline(self) -> None:
+        f = _parse("connect A.p -> $ch -> B.q")
+        assert f.connects[0].variants == []
+
+    def test_expose_variants_attr(self) -> None:
+        src = """
+component Foo {
+    component Sub { provides P }
+    expose Sub.P { variants = ["cloud"] }
+}
+"""
+        f = _parse(src)
+        assert f.components[0].exposes[0].variants == ["cloud"]
+
+    def test_expose_with_as_and_variants(self) -> None:
+        src = """
+component Foo {
+    component Sub { provides P }
+    expose Sub.P as renamed { variants = ["cloud"] }
+}
+"""
+        f = _parse(src)
+        exp = f.components[0].exposes[0]
+        assert exp.as_name == "renamed"
+        assert exp.variants == ["cloud"]
+
+
+class TestVariantParseErrors:
+    """Tests for parse errors in variant syntax."""
+
+    def test_variant_block_rejects_invalid_token(self) -> None:
+        with pytest.raises(ParseError, match="Unexpected token"):
+            _parse("variant cloud { enum Foo {} }")
+
+    def test_component_variant_block_rejects_system(self) -> None:
+        with pytest.raises(ParseError, match="Unexpected token"):
+            _parse("component C { variant cloud { system S {} } }")
+
+    def test_connect_block_rejects_unknown_attr(self) -> None:
+        with pytest.raises(ParseError, match="Unexpected token"):
+            _parse('connect A.p -> $ch -> B.q { title = "x" }')
+
+    def test_expose_block_rejects_unknown_attr(self) -> None:
+        with pytest.raises(ParseError, match="Unexpected token"):
+            _parse("""
+component Foo {
+    component Sub { provides P }
+    expose Sub.P { title = "x" }
+}
+""")

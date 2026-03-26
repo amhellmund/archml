@@ -36,7 +36,7 @@ def test_container_type_refs() -> None:
     list_ref = ListTypeRef(element_type=PrimitiveTypeRef(primitive=PrimitiveType.INT))
     map_ref = MapTypeRef(
         key_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
-        value_type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL),
+        value_type=PrimitiveTypeRef(primitive=PrimitiveType.FLOAT),
     )
     optional_ref = OptionalTypeRef(inner_type=PrimitiveTypeRef(primitive=PrimitiveType.STRING))
 
@@ -81,7 +81,7 @@ def test_type_definition() -> None:
         fields=[
             FieldDef(name="product_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
             FieldDef(name="quantity", type=PrimitiveTypeRef(primitive=PrimitiveType.INT)),
-            FieldDef(name="unit_price", type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)),
+            FieldDef(name="unit_price", type=PrimitiveTypeRef(primitive=PrimitiveType.FLOAT)),
         ],
     )
     assert order_item.name == "OrderItem"
@@ -93,7 +93,6 @@ def test_interface_definition() -> None:
     """An InterfaceDef describes a named contract with typed fields."""
     iface = InterfaceDef(
         name="OrderRequest",
-        title="Order Creation Request",
         description="Payload for submitting a new customer order.",
         fields=[
             FieldDef(name="order_id", type=PrimitiveTypeRef(primitive=PrimitiveType.STRING)),
@@ -102,7 +101,7 @@ def test_interface_definition() -> None:
                 name="items",
                 type=ListTypeRef(element_type=NamedTypeRef(name="OrderItem")),
             ),
-            FieldDef(name="total_amount", type=PrimitiveTypeRef(primitive=PrimitiveType.DECIMAL)),
+            FieldDef(name="total_amount", type=PrimitiveTypeRef(primitive=PrimitiveType.FLOAT)),
         ],
     )
     assert iface.name == "OrderRequest"
@@ -124,7 +123,6 @@ def test_component_with_requires_and_provides() -> None:
     """A Component declares its consumed and exposed interfaces."""
     svc = Component(
         name="OrderService",
-        title="Order Service",
         description="Accepts and validates customer orders.",
         requires=[
             InterfaceRef(name="PaymentRequest"),
@@ -139,16 +137,16 @@ def test_component_with_requires_and_provides() -> None:
     assert not svc.is_external
 
 
-def test_component_with_tags() -> None:
-    """A Component can carry arbitrary tags."""
+def test_component_with_variants() -> None:
+    """A Component can carry variant labels."""
     gw = Component(
         name="PaymentGateway",
-        tags=["critical", "pci-scope"],
+        variants=["cloud", "on_premise"],
         requires=[InterfaceRef(name="PaymentRequest")],
         provides=[InterfaceRef(name="PaymentResult")],
     )
-    assert "critical" in gw.tags
-    assert "pci-scope" in gw.tags
+    assert "cloud" in gw.variants
+    assert "on_premise" in gw.variants
 
 
 def test_external_component() -> None:
@@ -219,12 +217,10 @@ def test_system_with_components_and_connects() -> None:
     )
     payment_gw = Component(
         name="PaymentGateway",
-        tags=["critical", "pci-scope"],
         provides=[InterfaceRef(name="PaymentRequest")],
     )
     ecommerce = System(
         name="ECommerce",
-        title="E-Commerce Platform",
         connects=[
             ConnectDef(
                 src_entity="PaymentGateway",

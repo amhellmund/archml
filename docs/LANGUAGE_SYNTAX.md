@@ -16,7 +16,7 @@ ArchML files use the `.archml` extension. A file contains one or more top-level 
 # Line comments start with a hash sign.
 ```
 
-Strings use double quotes. Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional human-readable `title` and `description`.
+Strings use double quotes. Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional `description`.
 
 Multi-line text is written with triple-quoted strings (`"""`):
 
@@ -34,7 +34,7 @@ Single-quoted strings may not contain a literal newline character but support th
 
 ### Primitive Types
 
-`String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
+`String`, `Int`, `Float`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 
 ### Artifacts
 
@@ -42,7 +42,6 @@ The `artifact` keyword defines an abstract, named data artifact — a file, dire
 
 ```
 artifact MonthlyReport {
-    title = "Monthly Sales Report"
     description = "PDF summary of monthly sales figures per region."
     spec = "Single-page PDF, A4, landscape. Header contains logo and date range."
     ref_url = "https://internal.wiki/report-format"
@@ -51,7 +50,6 @@ artifact MonthlyReport {
 
 | Attribute     | Required | Description                                                      |
 | ------------- | -------- | ---------------------------------------------------------------- |
-| `title`       | no       | Human-readable display name.                                     |
 | `description` | no       | Purpose and context of the artifact.                             |
 | `spec`        | no       | Free-text description of the expected content, shape, or format. |
 | `ref_url`     | no       | URL to an external specification or reference document.          |
@@ -90,7 +88,7 @@ The `type` keyword defines a reusable data structure:
 type OrderItem {
     field product_id: String
     field quantity: Int
-    field unit_price: Decimal
+    field unit_price: Float
 }
 ```
 
@@ -104,13 +102,12 @@ An interface defines a contract — a named set of typed data fields exchanged b
 
 ```
 interface OrderRequest {
-    title = "Order Creation Request"
     description = "Payload for submitting a new customer order."
 
     field order_id: String
     field customer_id: String
     field items: List<OrderItem>
-    field total_amount: Decimal {
+    field total_amount: Float {
         description = "Grand total including tax and shipping."
     }
     field currency: String {
@@ -129,7 +126,7 @@ interface OrderRequest @v2 {
     field order_id: String
     field customer_id: String
     field items: List<OrderItem>
-    field total_amount: Decimal
+    field total_amount: Float
     field currency: String
     field shipping_method: String
 }
@@ -145,7 +142,6 @@ A component is a module with a clear responsibility. Components declare the inte
 
 ```
 component OrderService {
-    title = "Order Service"
     description = "Accepts and validates customer orders."
 
     requires PaymentRequest
@@ -168,18 +164,15 @@ Components can nest sub-components to express internal structure. `connect` stat
 
 ```
 component OrderService {
-    title = "Order Service"
 
     component Validator {
-        title = "Order Validator"
-
+    
         requires OrderRequest
         provides ValidationResult
     }
 
     component Processor {
-        title = "Order Processor"
-
+    
         requires ValidationResult
         requires PaymentRequest
         requires InventoryCheck
@@ -205,7 +198,6 @@ A system groups components (or sub-systems) that work toward a shared goal. Syst
 
 ```
 system ECommerce {
-    title = "E-Commerce Platform"
     description = "Customer-facing online store."
 
     component OrderService {
@@ -240,7 +232,6 @@ Systems can nest other systems for large-scale decomposition:
 
 ```
 system Enterprise {
-    title = "Enterprise Landscape"
 
     system ECommerce {
         provides InventorySync   // declared directly — ECommerce's own boundary port
@@ -260,7 +251,6 @@ A user represents a human actor — a role or persona that interacts with the sy
 
 ```
 user Customer {
-    title = "Customer"
     description = "An end user who places orders through the e-commerce platform."
 
     provides OrderRequest
@@ -293,13 +283,11 @@ The `external` keyword marks systems, components, or users that are outside the 
 
 ```
 external system StripeAPI {
-    title = "Stripe Payment API"
     requires PaymentRequest
     provides PaymentResult
 }
 
 external user Admin {
-    title = "System Administrator"
     provides AdminCommand
 }
 ```
@@ -441,14 +429,147 @@ system ECommerce {
 
 A channel introduced by a `connect` statement is local to the scope where it appears — it is not visible from outside. The `$` prefix makes channels syntactically distinct from ports, preventing accidental name collisions.
 
-## Tags
+## Variants
 
-Any named entity can carry **tags** for filtering and view generation:
+Variants model multiple architectural possibilities within a single file. Each named variant represents a distinct configuration — for example, a cloud deployment vs. an on-premise deployment, or the current state vs. a target state. Tooling can render or validate the architecture for a specific active variant.
+
+### Declaring Variants
+
+Variants are **global** across the entire build — the same name used in different files refers to the same variant. Declarations appear at the top level of any `.archml` file:
+
+```
+variant cloud
+variant on_premise
+```
+
+Multiple variants can be declared on one line:
+
+```
+variants cloud, on_premise
+```
+
+A variant name may be declared in any file in the build; it does not need to be re-declared in every file that uses it. Using an undeclared variant name anywhere in the build is a validation error.
+
+### Baseline Entities
+
+Any entity that carries no variant annotation is **baseline** — it is present in every variant. Baseline entities form the shared core of the architecture.
+
+### `variant` Blocks
+
+The primary way to introduce variant-specific content is the `variant` block. All declarations inside the block belong to that variant:
+
+```
+system ECommerce {
+    # Baseline — present in every variant
+    component OrderService {
+        requires PaymentRequest
+        provides OrderConfirmation
+    }
+
+    variant cloud {
+        component PaymentGateway {
+                    provides PaymentRequest
+        }
+
+        connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
+            protocol = "gRPC"
+            async = true
+        }
+    }
+
+    variant on_premise {
+        component LocalPaymentProcessor {
+                    provides PaymentRequest
+        }
+
+        connect LocalPaymentProcessor.PaymentRequest -> $payment -> OrderService.PaymentRequest {
+            protocol = "HTTP"
+        }
+    }
+
+    expose OrderService.OrderConfirmation
+}
+```
+
+`variant` blocks can appear inside `system` or `component` bodies, or at the top level of a file to wrap entire top-level declarations. Variant declarations (`variant cloud`) are always top-level; the block syntax (`variant cloud { ... }`) is what appears inside bodies.
+
+### `variants` Attribute
+
+For fine-grained control, any named entity accepts a `variants` attribute — a list of variant names. This is useful when a single entity belongs to multiple variants or when grouping into a block is not natural:
 
 ```
 component PaymentGateway {
-    tags = ["critical", "pci-scope"]
-    ...
+    variants = ["cloud", "hybrid"]
+    provides PaymentRequest
+}
+
+component LocalPaymentProcessor {
+    variants = ["on_premise"]
+    provides PaymentRequest
+}
+```
+
+`connect` and `expose` statements support `variants` in their optional attribute block:
+
+```
+connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
+    protocol = "gRPC"
+    variants = ["cloud", "hybrid"]
+}
+
+expose Processor.PaymentRequest {
+    variants = ["on_premise"]
+}
+```
+
+### Variant-Scoped Ports
+
+Individual `requires` and `provides` declarations accept an optional inline block for port-level variant annotations. This avoids duplicating an entire component just to add a conditional port:
+
+```
+component OrderService {
+    requires PaymentRequest              # baseline — always present
+    requires StripeWebhook {            # only in the "cloud" variant
+        variants = ["cloud"]
+    }
+    provides OrderConfirmation
+}
+```
+
+### Union Semantics
+
+The effective variant set of an entity is the **union** of:
+
+- Variants inherited from any enclosing `variant` blocks.
+- Variants listed in the entity's own `variants` attribute.
+
+An entity with neither is baseline (present in all variants). The two mechanisms can be combined freely:
+
+```
+variant cloud {
+    component PaymentGateway {
+        variants = ["hybrid"]   # effective set: ["cloud", "hybrid"]
+        provides PaymentRequest
+    }
+}
+```
+
+### Validation per Variant
+
+All consistency checks — port coverage, dangling references, unused interfaces — are evaluated independently for each declared variant. A port that is only wired in one variant must be wired or exposed in every variant in which its owning entity appears.
+
+### Variants and Imported Entities
+
+Because variants are global, variant annotations on imported entities are directly meaningful in the importing scope — no re-declaration or mapping is needed. A component defined in one file with `variants = ["cloud"]` on a port is treated identically to one defined inline. The importing scope can also wrap `use` statements inside its own `variant` blocks to make the inclusion of an entity conditional:
+
+```
+system Enterprise {
+    use component OrderService   # baseline — present in every variant
+
+    variant cloud {
+        use component CloudAuditLogger
+        connect CloudAuditLogger -> $audit -> OrderService
+    }
 }
 ```
 
@@ -476,7 +597,6 @@ interface OrderConfirmation { ... }
 from interfaces/order import OrderRequest, OrderConfirmation
 
 component OrderService {
-    title = "Order Service"
 
     requires OrderRequest
     provides OrderConfirmation
@@ -487,7 +607,6 @@ from interfaces/order import OrderRequest, OrderConfirmation, PaymentRequest, In
 from components/order_service import OrderService
 
 system ECommerce {
-    title = "E-Commerce Platform"
 
     use component OrderService
 
@@ -521,7 +640,6 @@ from @payments/services/payment import PaymentService
 from @inventory/services/stock import StockManager
 
 system Enterprise {
-    title = "Enterprise Landscape"
 
     use component OrderService
     use component PaymentService
@@ -578,7 +696,7 @@ The key (e.g., `payments`) matches the `@repo-name` prefix in import paths. The 
 type OrderItem {
     field product_id: String
     field quantity: Int
-    field unit_price: Decimal
+    field unit_price: Float
 }
 
 enum OrderStatus {
@@ -603,7 +721,7 @@ interface OrderConfirmation {
 
 interface PaymentRequest {
     field order_id: String
-    field amount: Decimal
+    field amount: Float
     field currency: String
 }
 
@@ -629,7 +747,6 @@ interface ValidationResult {
 }
 
 artifact MonthlyReport {
-    title = "Monthly Sales Report"
     spec = "Monthly sales summary PDF."
 }
 
@@ -641,19 +758,16 @@ interface ReportOutput {
 from types import OrderRequest, ValidationResult, PaymentRequest, InventoryCheck, OrderConfirmation
 
 component OrderService {
-    title = "Order Service"
     description = "Accepts, validates, and processes customer orders."
 
     component Validator {
-        title = "Order Validator"
-
+    
         requires OrderRequest
         provides ValidationResult
     }
 
     component Processor {
-        title = "Order Processor"
-
+    
         requires ValidationResult
         requires PaymentRequest
         requires InventoryCheck
@@ -675,11 +789,9 @@ from types import OrderRequest, OrderConfirmation, PaymentRequest, PaymentResult
 from components/order_service import OrderService
 
 system ECommerce {
-    title = "E-Commerce Platform"
 
     user Customer {
-        title = "Customer"
-        description = "An end user who places orders through the e-commerce platform."
+            description = "An end user who places orders through the e-commerce platform."
 
         provides OrderRequest
         requires OrderConfirmation
@@ -688,22 +800,18 @@ system ECommerce {
     use component OrderService
 
     component PaymentGateway {
-        title = "Payment Gateway"
-        tags = ["critical", "pci-scope"]
-
+        
         provides PaymentRequest
         requires PaymentResult
     }
 
     component InventoryManager {
-        title = "Inventory Manager"
-
+    
         provides InventoryCheck
     }
 
     external system StripeAPI {
-        title = "Stripe Payment API"
-        requires PaymentRequest
+            requires PaymentRequest
         provides PaymentResult
     }
 
@@ -752,8 +860,8 @@ system ECommerce {
 | `import`        | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`).              |
 | `use`           | Places an imported entity into a system or component (e.g., `use component X`, `use system X`, `use user X`).      |
 | `external`      | Marks a system, component, or user as outside the development boundary.                                            |
-| `tags`          | Arbitrary labels for filtering and view generation.                                                                |
-| `title`         | Human-readable display name.                                                                                       |
+| `variant`       | Declares a named variant (`variant cloud`), or opens a variant block that conditionally includes its contents.     |
+| `variants`      | Declares multiple variants at once (`variants cloud, on_premise`), or lists the variants an entity belongs to (`variants = ["cloud"]`). |
 | `description`   | Longer explanation of an entity's purpose.                                                                         |
 
 ## Scope Boundaries

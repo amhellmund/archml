@@ -13,8 +13,8 @@ The payload contains two parts:
   same canonical file keys used by the compiler.  The JS viewer uses this to
   reconstruct any topology on demand without network requests.
 - **entities** — a pre-computed flat index of every viewable entity (systems
-  and components at any nesting level) with their qualified names, kinds, and
-  titles.  The viewer populates its entity-selector dropdown from this list.
+  and components at any nesting level) with their qualified names and kinds.
+  The viewer populates its entity-selector dropdown from this list.
 """
 
 from __future__ import annotations
@@ -37,14 +37,12 @@ class EntityEntry:
         qualified_name: Full ``::``-delimited path (e.g. ``"OrderSys::Cart"``).
         kind: One of ``"system"``, ``"component"``, ``"external_system"``, or
             ``"external_component"``.
-        title: Optional human-readable display name.
         file_key: Canonical compiler key of the :class:`~archml.model.entities.ArchFile`
             that owns this entity.
     """
 
     qualified_name: str
     kind: str
-    title: str | None
     file_key: str
 
 
@@ -74,7 +72,6 @@ def build_viewer_payload(compiled: dict[str, ArchFile], *, width_optimized: bool
             {
                 "qualified_name": e.qualified_name,
                 "kind": e.kind,
-                "title": e.title,
                 "file_key": e.file_key,
             }
             for e in entities
@@ -108,7 +105,6 @@ def _collect_from_system(system: System, entries: list[EntityEntry], file_key: s
         EntityEntry(
             qualified_name=system.qualified_name or system.name,
             kind=kind,
-            title=system.title,
             file_key=file_key,
         )
     )
@@ -125,7 +121,6 @@ def _collect_from_component(component: Component, entries: list[EntityEntry], fi
         EntityEntry(
             qualified_name=component.qualified_name or component.name,
             kind=kind,
-            title=component.title,
             file_key=file_key,
         )
     )

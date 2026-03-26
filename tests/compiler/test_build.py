@@ -357,7 +357,7 @@ class TestSourceImports:
         remote_services = tmp_path / "remote" / "services"
         build = tmp_path / "build"
 
-        _write(remote_services / "payment.archml", "interface PaymentService { field amount: Decimal }")
+        _write(remote_services / "payment.archml", "interface PaymentService { field amount: Float }")
         _write(
             src / "app.archml",
             "from @payments/services/payment import PaymentService\ncomponent C { requires PaymentService }",

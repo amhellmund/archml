@@ -8,7 +8,7 @@ interface ValidationResult {
 
 interface OrderRequest {
     field order_id: String
-    field amount: Decimal
+    field amount: Float
 }
 
 interface OrderConfirmation {
@@ -18,17 +18,14 @@ interface OrderConfirmation {
 
 interface PaymentRequest {
     field order_id: String
-    field amount: Decimal
+    field amount: Float
 }
 
 # A component with sub-components and internal routing
 component OrderService {
-    title = "Order Service"
     description = "Accepts, validates, and processes customer orders."
-    tags = ["core", "stateful"]
 
     component Validator {
-        title = "Order Validator"
         description = "Validates incoming order requests."
 
         requires OrderRequest
@@ -36,7 +33,6 @@ component OrderService {
     }
 
     component Processor {
-        title = "Order Processor"
         description = "Processes validated orders and triggers payment."
 
         requires ValidationResult

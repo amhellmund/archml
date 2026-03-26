@@ -912,7 +912,7 @@ def test_check_command_uses_synced_remote_repos(
     remote_dir = tmp_path / ".archml-remotes" / "payments"
     remote_api_dir = remote_dir / "api"
     remote_api_dir.mkdir(parents=True)
-    (remote_api_dir / "types.archml").write_text("interface PaymentAPI { field amount: Decimal }\n")
+    (remote_api_dir / "types.archml").write_text("interface PaymentAPI { field amount: Float }\n")
     # Remote repo defines its own workspace config with the "api" mnemonic.
     (remote_dir / ".archml-workspace.yaml").write_text(
         "name: payments\nbuild-directory: build\nsource-imports:\n  - name: api\n    local-path: api\n"
@@ -944,7 +944,7 @@ def test_check_command_loads_remote_repo_mnemonics(
     remote_dir = tmp_path / ".archml-remotes" / "payments"
     remote_lib_dir = remote_dir / "src" / "lib"
     remote_lib_dir.mkdir(parents=True)
-    (remote_lib_dir / "types.archml").write_text("interface PaymentType { field amount: Decimal }\n")
+    (remote_lib_dir / "types.archml").write_text("interface PaymentType { field amount: Float }\n")
 
     # Remote repo has its own .archml-workspace.yaml defining a "lib" mnemonic.
     (remote_dir / ".archml-workspace.yaml").write_text(

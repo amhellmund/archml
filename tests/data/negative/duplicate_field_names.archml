@@ -14,5 +14,5 @@ interface OrderRequest {
     field order_id: String
     field customer_id: String
     field order_id: Int
-    field amount: Decimal
+    field amount: Float
 }

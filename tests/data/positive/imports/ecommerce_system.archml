@@ -12,19 +12,15 @@ interface PaymentResult {
 }
 
 external system StripeAPI {
-    title = "Stripe Payment API"
     requires PaymentRequest
     provides PaymentResult
 }
 
 system ECommerce {
-    title = "E-Commerce Platform"
 
     use component OrderService
 
     component PaymentGateway {
-        title = "Payment Gateway"
-        tags = ["critical", "pci-scope"]
 
         requires PaymentRequest as pay_in
         provides PaymentResult

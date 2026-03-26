@@ -3,7 +3,7 @@
 
 interface PaymentRequest {
     field order_id: String
-    field amount: Decimal
+    field amount: Float
     field currency: String
 }
 
@@ -35,7 +35,6 @@ interface OrderConfirmation {
 
 # External payment provider
 external system StripeAPI {
-    title = "Stripe Payment API"
     description = "Third-party payment processing service."
     requires PaymentRequest
     provides PaymentResult
@@ -43,12 +42,9 @@ external system StripeAPI {
 
 # E-commerce platform
 system ECommerce {
-    title = "E-Commerce Platform"
     description = "Customer-facing online store back-end."
 
     component OrderService {
-        title = "Order Service"
-        tags = ["core"]
 
         requires OrderRequest
         requires PaymentRequest
@@ -57,15 +53,12 @@ system ECommerce {
     }
 
     component PaymentGateway {
-        title = "Payment Gateway"
-        tags = ["critical", "pci-scope"]
 
         provides PaymentRequest
         requires PaymentResult
     }
 
     component InventoryManager {
-        title = "Inventory Manager"
 
         provides InventoryCheck
         provides InventoryStatus

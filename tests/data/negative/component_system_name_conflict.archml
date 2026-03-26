@@ -5,15 +5,12 @@
 interface API { field endpoint: String }
 
 system Enterprise {
-    title = "Enterprise System"
 
     component Services {
-        title = "Services component"
         provides API
     }
 
     system Services {
-        title = "Services sub-system — conflicts with component above!"
         requires API
     }
 }

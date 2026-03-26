@@ -4,11 +4,9 @@
 #   Duplicate component name 'Worker' in system 'Platform'
 
 component OrderService {
-    title = "First OrderService"
 }
 
 component OrderService {
-    title = "Second OrderService — duplicate!"
 }
 
 system Platform {
