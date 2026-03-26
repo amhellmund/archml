@@ -165,6 +165,7 @@ export interface ViewerPayload {
   version: string;
   files: Record<string, ArchFileJson>;
   entities: EntityEntry[];
+  widthOptimized?: boolean;
 }
 
 // ─── Topology model (mirrors Python views/topology.py dataclasses) ───────────

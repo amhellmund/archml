@@ -26,16 +26,28 @@ import { renderToSvgString } from "./renderer";
 
 /** Mount the full interactive viewer into *container*. */
 export function mountViewer(container: HTMLElement, payload: ViewerPayload): void {
-  container.innerHTML = buildViewerShell();
-  container.className = "archml-viewer";
+  const widthOptimized = payload.widthOptimized === true;
+  container.innerHTML = buildViewerShell(widthOptimized);
+  container.className = widthOptimized ? "archml-viewer archml-viewer--wo" : "archml-viewer";
 
   const canvasArea = container.querySelector<HTMLElement>(".archml-canvas-area")!;
   const canvasTransform = container.querySelector<HTMLElement>(".archml-canvas-transform")!;
-  const rightSidebar = container.querySelector<HTMLElement>(".archml-sidebar-right")!;
+  // In width-optimized mode details are shown in .archml-sidebar-details; otherwise .archml-sidebar-right.
+  const detailsSidebar = container.querySelector<HTMLElement>(
+    widthOptimized ? ".archml-sidebar-details" : ".archml-sidebar-right",
+  )!;
   const entitySelectWrap = container.querySelector<HTMLElement>("#archml-entity-select-wrap")!;
   const depthSelect = container.querySelector<HTMLSelectElement>("#archml-depth-select")!;
   const errorBanner = container.querySelector<HTMLElement>(".archml-error-banner")!;
   const loadingEl = container.querySelector<HTMLElement>(".archml-loading")!;
+
+  // Hamburger toggle (width-optimized mode only)
+  if (widthOptimized) {
+    const hamburger = container.querySelector<HTMLElement>(".archml-hamburger");
+    hamburger?.addEventListener("click", () => {
+      container.classList.toggle("archml-viewer--sidebar-collapsed");
+    });
+  }
 
   // Build custom entity dropdown
   const customEntitySelect = buildCustomEntitySelect(entitySelectWrap, payload.entities, () => {
@@ -95,7 +107,7 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
       if (!channelName && currentEntity && (entityKind === "terminal" || entityKind === "interface")) {
         channelName = findChannelViaExposeChain(payload.files, currentEntity, entityPath);
       }
-      showEntityDetails(rightSidebar, entityPath, entityKind, payload, channelName);
+      showEntityDetails(detailsSidebar, entityPath, entityKind, payload, channelName);
     }
   }, { capture: true });
 
@@ -208,7 +220,42 @@ export function mountEmbed(
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function buildViewerShell(): string {
+function buildViewerShell(widthOptimized: boolean): string {
+  if (widthOptimized) {
+    return `
+      <div class="archml-topbar">
+        <button class="archml-hamburger" type="button" title="Toggle sidebar">&#9776;</button>
+        <span class="archml-topbar-title">ArchML Explorer</span>
+      </div>
+      <div class="archml-body">
+        <div class="archml-sidebar-combined">
+          <div class="archml-sidebar-controls">
+            <div>
+              <label>Entity</label>
+              <div id="archml-entity-select-wrap"></div>
+            </div>
+            <div>
+              <label for="archml-depth-select">Depth</label>
+              <select id="archml-depth-select">
+                <option value="full">Full depth</option>
+                <option value="0">0 – root only</option>
+                <option value="1">1 – children</option>
+                <option value="2">2 – grand children</option>
+              </select>
+            </div>
+            <div class="archml-error-banner" style="display:none"></div>
+          </div>
+          <div class="archml-sidebar-details">
+            <p class="archml-detail-empty">Click an entity to see details.</p>
+          </div>
+        </div>
+        <div class="archml-canvas-area">
+          <div class="archml-canvas-transform"></div>
+          <div class="archml-loading">Loading…</div>
+        </div>
+      </div>
+    `.trim();
+  }
   return `
     <div class="archml-sidebar-left">
       <div>

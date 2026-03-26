@@ -38,5 +38,8 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 packages = ["src/archml"]
 exclude = ["src/archml/export/js"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/archml/static" = "archml/static"
+
 [tool.hatch.build.targets.sdist]
 exclude = ["src/archml/export/js"]

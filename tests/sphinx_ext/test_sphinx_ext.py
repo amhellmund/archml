@@ -9,8 +9,15 @@ from unittest.mock import MagicMock
 import pytest
 from docutils import nodes
 
-from archml.sphinx_ext import ArchmlVisualizeDirective, find_workspace_root, setup
-from archml.sphinx_ext.extension import _DiagramError, _generate_diagram, _sanitize_name
+from archml.sphinx_ext import ArchmlExplorerDirective, ArchmlVisualizeDirective, find_workspace_root, setup
+from archml.sphinx_ext.extension import (
+    _copy_explorer_static,
+    _DiagramError,
+    _ExplorerError,
+    _generate_diagram,
+    _generate_explorer_html,
+    _sanitize_name,
+)
 
 # ###############
 # Fixtures
@@ -39,6 +46,26 @@ def _make_directive(
     state.document.settings.env = env
     return ArchmlVisualizeDirective(
         name="archml-visualize",
+        arguments=[],
+        options=options,
+        content=[],
+        lineno=1,
+        content_offset=0,
+        block_text="",
+        state=state,
+        state_machine=MagicMock(),
+    )
+
+
+def _make_explorer_directive(
+    options: dict, srcdir: Path, docname: str = "index", workspace_dir: str | None = None
+) -> ArchmlExplorerDirective:
+    """Instantiate an ArchmlExplorerDirective with mocked docutils state."""
+    env = _make_env(srcdir, docname, workspace_dir=workspace_dir)
+    state = MagicMock()
+    state.document.settings.env = env
+    return ArchmlExplorerDirective(
+        name="archml-explorer",
         arguments=[],
         options=options,
         content=[],
@@ -112,7 +139,21 @@ def test_setup_registers_directive() -> None:
     """setup() registers the archml-visualize directive with the Sphinx app."""
     app = MagicMock()
     setup(app)
-    app.add_directive.assert_called_once_with("archml-visualize", ArchmlVisualizeDirective)
+    app.add_directive.assert_any_call("archml-visualize", ArchmlVisualizeDirective)
+
+
+def test_setup_registers_explorer_directive() -> None:
+    """setup() registers the archml-explorer directive with the Sphinx app."""
+    app = MagicMock()
+    setup(app)
+    app.add_directive.assert_any_call("archml-explorer", ArchmlExplorerDirective)
+
+
+def test_setup_connects_build_finished() -> None:
+    """setup() connects the build-finished event for copying the explorer output."""
+    app = MagicMock()
+    setup(app)
+    app.connect.assert_called_once_with("build-finished", _copy_explorer_static)
 
 
 def test_setup_returns_version() -> None:
@@ -385,3 +426,254 @@ def test_directive_run_uri_relative_to_doc_in_subdir(tmp_path: Path) -> None:
     assert isinstance(result[0], nodes.image)
     # The URI must navigate up from guide/ to reach _archml_images/ at root.
     assert result[0]["uri"].startswith("../_archml_images/")
+
+
+# ###############
+# _generate_explorer_html
+# ###############
+
+
+def test_generate_explorer_html_creates_html_file(tmp_path: Path) -> None:
+    """_generate_explorer_html writes an HTML file and returns its path."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    env = _make_env(tmp_path)
+    html_path = _generate_explorer_html(env)
+
+    assert html_path.exists()
+    assert html_path.suffix == ".html"
+
+
+def test_generate_explorer_html_places_file_in_archml_explorer(tmp_path: Path) -> None:
+    """The HTML is written into the _archml_explorer subdirectory of srcdir."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    env = _make_env(tmp_path)
+    html_path = _generate_explorer_html(env)
+
+    assert html_path.parent == tmp_path / "_archml_explorer"
+    assert html_path.name == "index.html"
+
+
+def test_generate_explorer_html_content_contains_archml_data(tmp_path: Path) -> None:
+    """The generated HTML contains the embedded archml-data script tag."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    env = _make_env(tmp_path)
+    html_path = _generate_explorer_html(env)
+
+    content = html_path.read_text(encoding="utf-8")
+    assert 'id="archml-data"' in content
+
+
+def test_generate_explorer_html_raises_when_no_workspace(tmp_path: Path) -> None:
+    """_generate_explorer_html raises _ExplorerError when no workspace is found."""
+    env = _make_env(tmp_path)
+    with pytest.raises(_ExplorerError, match="No ArchML workspace"):
+        _generate_explorer_html(env)
+
+
+def test_generate_explorer_html_raises_when_no_archml_files(tmp_path: Path) -> None:
+    """_generate_explorer_html raises _ExplorerError when no .archml files exist."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+
+    env = _make_env(tmp_path)
+    with pytest.raises(_ExplorerError, match="No .archml files"):
+        _generate_explorer_html(env)
+
+
+def test_generate_explorer_html_raises_when_configured_dir_missing_workspace(tmp_path: Path) -> None:
+    """_generate_explorer_html raises _ExplorerError when configured dir has no workspace file."""
+    env = _make_env(tmp_path, workspace_dir=str(tmp_path))
+    with pytest.raises(_ExplorerError, match="archml_workspace_dir"):
+        _generate_explorer_html(env)
+
+
+# ###############
+# _copy_explorer_static
+# ###############
+
+
+def test_copy_explorer_static_copies_directory(tmp_path: Path) -> None:
+    """_copy_explorer_static copies _archml_explorer/ from srcdir to outdir."""
+    srcdir = tmp_path / "src"
+    outdir = tmp_path / "out"
+    srcdir.mkdir()
+    outdir.mkdir()
+    explorer_src = srcdir / "_archml_explorer"
+    explorer_src.mkdir()
+    (explorer_src / "index.html").write_text("<html/>")
+
+    app = MagicMock()
+    app.srcdir = str(srcdir)
+    app.outdir = str(outdir)
+
+    _copy_explorer_static(app, None)
+
+    assert (outdir / "_archml_explorer" / "index.html").exists()
+
+
+def test_copy_explorer_static_skips_when_exception(tmp_path: Path) -> None:
+    """_copy_explorer_static does nothing when the build raised an exception."""
+    srcdir = tmp_path / "src"
+    outdir = tmp_path / "out"
+    srcdir.mkdir()
+    outdir.mkdir()
+    explorer_src = srcdir / "_archml_explorer"
+    explorer_src.mkdir()
+    (explorer_src / "index.html").write_text("<html/>")
+
+    app = MagicMock()
+    app.srcdir = str(srcdir)
+    app.outdir = str(outdir)
+
+    _copy_explorer_static(app, RuntimeError("build failed"))
+
+    assert not (outdir / "_archml_explorer").exists()
+
+
+def test_copy_explorer_static_skips_when_no_explorer_dir(tmp_path: Path) -> None:
+    """_copy_explorer_static does nothing when the explorer dir was never created."""
+    app = MagicMock()
+    app.srcdir = str(tmp_path)
+    app.outdir = str(tmp_path / "out")
+
+    # Should not raise even when directory is absent.
+    _copy_explorer_static(app, None)
+
+
+# ###############
+# ArchmlExplorerDirective.run()
+# ###############
+
+
+def test_explorer_directive_run_returns_raw_node(tmp_path: Path) -> None:
+    """run() returns a single raw HTML node on success."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    directive = _make_explorer_directive({}, tmp_path)
+    result = directive.run()
+
+    assert len(result) == 1
+    assert isinstance(result[0], nodes.raw)
+
+
+def test_explorer_directive_run_iframe_src_contains_index_html(tmp_path: Path) -> None:
+    """The raw node content contains an iframe pointing to index.html."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    directive = _make_explorer_directive({}, tmp_path)
+    result = directive.run()
+
+    assert "index.html" in result[0].astext()
+
+
+def test_explorer_directive_run_sets_height(tmp_path: Path) -> None:
+    """When height is given, the iframe carries that height."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    directive = _make_explorer_directive({"height": "900px"}, tmp_path)
+    result = directive.run()
+
+    assert 'height="900px"' in result[0].astext()
+
+
+def test_explorer_directive_run_default_height(tmp_path: Path) -> None:
+    """When height is not given, the iframe defaults to 600px."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    directive = _make_explorer_directive({}, tmp_path)
+    result = directive.run()
+
+    assert 'height="600px"' in result[0].astext()
+
+
+def test_explorer_directive_run_sets_width(tmp_path: Path) -> None:
+    """When width is given, the iframe carries that width."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    directive = _make_explorer_directive({"width": "80%"}, tmp_path)
+    result = directive.run()
+
+    assert 'width="80%"' in result[0].astext()
+
+
+def test_explorer_directive_run_returns_error_on_missing_workspace(tmp_path: Path) -> None:
+    """run() returns an error system_message when no workspace is found."""
+    directive = _make_explorer_directive({}, tmp_path)
+    result = directive.run()
+
+    assert len(result) == 1
+    assert not isinstance(result[0], nodes.raw)
+
+
+def test_explorer_directive_run_uri_relative_to_doc_in_subdir(tmp_path: Path) -> None:
+    """iframe src is computed relative to the document directory, not srcdir."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    directive = _make_explorer_directive({}, tmp_path, docname="guide/index")
+    result = directive.run()
+
+    assert isinstance(result[0], nodes.raw)
+    assert "../_archml_explorer/index.html" in result[0].astext()
+
+
+# ###############
+# ArchmlExplorerDirective — width-optimized
+# ###############
+
+
+def test_explorer_directive_width_optimized_embeds_flag(tmp_path: Path) -> None:
+    """width-optimized option causes widthOptimized to appear in the generated HTML payload."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    directive = _make_explorer_directive({"width-optimized": None}, tmp_path)
+    result = directive.run()
+
+    assert isinstance(result[0], nodes.raw)
+    html_path = tmp_path / "_archml_explorer" / "index.html"
+    assert "widthOptimized" in html_path.read_text(encoding="utf-8")
+
+
+def test_explorer_directive_without_width_optimized_no_flag(tmp_path: Path) -> None:
+    """Without width-optimized option, widthOptimized is absent from the generated HTML payload."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    directive = _make_explorer_directive({}, tmp_path)
+    directive.run()
+
+    html_path = tmp_path / "_archml_explorer" / "index.html"
+    assert "widthOptimized" not in html_path.read_text(encoding="utf-8")
+
+
+def test_generate_explorer_html_width_optimized_embeds_flag(tmp_path: Path) -> None:
+    """_generate_explorer_html with width_optimized=True embeds widthOptimized in the HTML."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    env = _make_env(tmp_path)
+    html_path = _generate_explorer_html(env, width_optimized=True)
+
+    assert "widthOptimized" in html_path.read_text(encoding="utf-8")
+
+
+def test_generate_explorer_html_default_no_width_optimized_flag(tmp_path: Path) -> None:
+    """_generate_explorer_html without width_optimized does not embed widthOptimized."""
+    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+
+    env = _make_env(tmp_path)
+    html_path = _generate_explorer_html(env)
+
+    assert "widthOptimized" not in html_path.read_text(encoding="utf-8")

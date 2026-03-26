@@ -101,6 +101,15 @@ def main() -> None:
         metavar="FILE",
         help="Output file path (default: architecture.html)",
     )
+    export_parser.add_argument(
+        "--width-optimized",
+        action="store_true",
+        default=False,
+        help=(
+            "Combine left and right sidebars into a single left sidebar and add a top bar "
+            "with a hamburger toggle. Saves horizontal space for narrow viewports."
+        ),
+    )
 
     # sync-remote subcommand
     subparsers.add_parser(
@@ -412,7 +421,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    payload_json = build_viewer_payload(compiled)
+    payload_json = build_viewer_payload(compiled, width_optimized=args.width_optimized)
 
     template = template_path.read_text(encoding="utf-8")
     data_tag = f'<script id="archml-data" type="application/json">{payload_json}</script>'

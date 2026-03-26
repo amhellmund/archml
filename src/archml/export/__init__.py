@@ -48,7 +48,7 @@ class EntityEntry:
     file_key: str
 
 
-def build_viewer_payload(compiled: dict[str, ArchFile]) -> str:
+def build_viewer_payload(compiled: dict[str, ArchFile], *, width_optimized: bool = False) -> str:
     """Serialise a compiled workspace into the static viewer JSON payload.
 
     The returned string is valid JSON and is intended to be embedded verbatim
@@ -58,13 +58,16 @@ def build_viewer_payload(compiled: dict[str, ArchFile]) -> str:
         compiled: Mapping from canonical file key to compiled
             :class:`~archml.model.entities.ArchFile`, as returned by
             :func:`~archml.compiler.build.compile_files`.
+        width_optimized: When ``True``, includes ``widthOptimized: true`` in the
+            payload, instructing the JS viewer to use the single-sidebar
+            width-optimized layout with a top bar.
 
     Returns:
         A compact JSON string containing the full model and entity index.
     """
     files_data = {key: arch_file.model_dump(mode="json") for key, arch_file in compiled.items()}
     entities = _collect_entities(compiled)
-    payload = {
+    payload: dict[str, object] = {
         "version": "1",
         "files": files_data,
         "entities": [
@@ -77,6 +80,8 @@ def build_viewer_payload(compiled: dict[str, ArchFile]) -> str:
             for e in entities
         ],
     }
+    if width_optimized:
+        payload["widthOptimized"] = True
     return json.dumps(payload, separators=(",", ":"))
 
 
