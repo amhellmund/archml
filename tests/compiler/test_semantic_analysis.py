@@ -705,7 +705,7 @@ component Processor {
 interface DataFeed { field payload: String }
 system Pipeline {
     component Consumer { requires DataFeed }
-    connect Ghost.DataFeed -> Consumer.DataFeed
+    connect Ghost.DataFeed -> $feed -> Consumer.DataFeed
 }
 """,
             "connect references unknown child entity 'Ghost'",
@@ -717,7 +717,7 @@ system Pipeline {
 interface DataFeed { field payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
-    connect Producer.DataFeed -> Ghost.DataFeed
+    connect Producer.DataFeed -> $feed -> Ghost.DataFeed
 }
 """,
             "connect references unknown child entity 'Ghost'",
@@ -785,14 +785,17 @@ system Order {
 """)
 
     def test_direct_connect_no_channel(self) -> None:
-        _assert_clean("""
+        _assert_error(
+            """
 interface DataFeed { field payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
     component Consumer { requires DataFeed }
     connect Producer.DataFeed -> Consumer.DataFeed
 }
-""")
+""",
+            "connect without a channel is not allowed",
+        )
 
 
 # ###############
@@ -1622,7 +1625,7 @@ interface Data { field v: String }
 system S {
     component A { provides Data }
     component B { requires Data }
-    connect A.Typo -> B.Data
+    connect A.Typo -> $ch -> B.Data
 }
 """,
             "connect references unknown port 'Typo' on 'A'",
@@ -1758,7 +1761,7 @@ component A {
     component SubA2 {
         requires AInternal
     }
-    connect SubA1 -> SubA2
+    connect SubA1 -> $internal -> SubA2
 }
 """)
         assert errors == []
@@ -1832,7 +1835,7 @@ system S {
     interface SInternal { field val: Int }
     component Producer { provides SInternal }
     component Consumer { requires SInternal }
-    connect Producer -> Consumer
+    connect Producer -> $internal -> Consumer
 }
 """)
         assert errors == []
@@ -1878,7 +1881,7 @@ system Outer {
     system Inner {
         component X { provides Shared }
         component Y { requires Shared }
-        connect X -> Y
+        connect X -> $shared -> Y
     }
 }
 """)
@@ -1903,7 +1906,7 @@ component A {
         provides Simple
     }
 
-    connect SubA1 -> SubA2
+    connect SubA1 -> $internal -> SubA2
 }
 """)
         assert errors == []

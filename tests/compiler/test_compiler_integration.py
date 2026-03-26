@@ -396,7 +396,7 @@ system Outer {
         component Inner {
             provides Signal
         }
-        connect Ghost.Signal -> Inner.Signal
+        connect Ghost.Signal -> $sig -> Inner.Signal
     }
 }
 """

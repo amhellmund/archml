@@ -81,9 +81,9 @@ class ArtifactDef(BaseModel):
 
 
 class ConnectDef(BaseModel):
-    """A ``connect`` statement wiring ports, optionally via a named channel.
+    """A ``connect`` statement wiring ports via a named channel.
 
-    Each of the four syntactic forms is encoded as follows:
+    Each of the three syntactic forms is encoded as follows:
 
     - Full chain ``connect A.p -> $ch -> B.q``:
       ``src_entity="A"``, ``src_port="p"``, ``channel="ch"``,
@@ -93,9 +93,6 @@ class ConnectDef(BaseModel):
       ``dst_entity=None``, ``dst_port=None``
     - One-sided dst ``connect $ch -> B.q``:
       ``src_entity=None``, ``src_port=None``, ``channel="ch"``,
-      ``dst_entity="B"``, ``dst_port="q"``
-    - Direct ``connect A.p -> B.q``:
-      ``src_entity="A"``, ``src_port="p"``, ``channel=None``,
       ``dst_entity="B"``, ``dst_port="q"``
 
     For a port on the current scope's own boundary (no entity qualifier),

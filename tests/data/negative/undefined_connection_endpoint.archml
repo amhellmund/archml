@@ -16,7 +16,7 @@ system Pipeline {
         requires DataFeed
     }
 
-    connect Ghost.DataFeed -> Consumer.DataFeed
+    connect Ghost.DataFeed -> $feed -> Consumer.DataFeed
 }
 
 component Router {

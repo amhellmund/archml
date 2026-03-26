@@ -343,9 +343,6 @@ connect <src_port> -> $<channel> -> <dst_port>
 // One-sided: introduces or references $channel, wires one port
 connect <src_port> -> $<channel>
 connect $<channel> -> <dst_port>
-
-// Direct: wires two ports without a named channel
-connect <src_port> -> <dst_port>
 ```
 
 `<src_port>` and `<dst_port>` are either:
@@ -366,9 +363,6 @@ connect PaymentGateway -> $payment -> OrderService
 // Multi-step — build up a channel across two statements (same result)
 connect PaymentGateway.PaymentRequest -> $payment
 connect $payment -> OrderService.PaymentRequest
-
-// Direct connection without a named channel
-connect Validator.ValidationResult -> Processor.ValidationResult
 
 // Top-level connect — wires two top-level systems across file scope
 connect Frontend.API -> $bus -> Backend.API

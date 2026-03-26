@@ -894,6 +894,15 @@ def _check_connect(
 ) -> list[SemanticError]:
     """Check that entity and port references in a connect statement are valid."""
     errors: list[SemanticError] = []
+    if conn.channel is None:
+        errors.append(
+            SemanticError(
+                message=f"{ctx}: connect without a channel is not allowed; use '-> $channel ->'",
+                filename=filename,
+                line=conn.line,
+            )
+        )
+        return errors
     for side_entity, side_port in ((conn.src_entity, conn.src_port), (conn.dst_entity, conn.dst_port)):
         if side_entity is None:
             continue

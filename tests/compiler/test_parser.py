@@ -1005,14 +1005,12 @@ system ECommerce {
     component D { requires InventoryCheck }
     connect A.PaymentRequest -> $payment -> B.PaymentRequest
     connect C.InventoryCheck -> $inventory -> D.InventoryCheck
-    connect A.PaymentRequest -> B.PaymentRequest
 }"""
         result = _parse(source)
         connects = result.systems[0].connects
-        assert len(connects) == 3
+        assert len(connects) == 2
         assert connects[0].channel == "payment"
         assert connects[1].channel == "inventory"
-        assert connects[2].channel is None
 
     def test_connect_in_component(self) -> None:
         source = """\

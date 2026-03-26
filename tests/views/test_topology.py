@@ -1628,20 +1628,22 @@ class TestDepthConnectionEdges:
         diag = build_viz_diagram(sys, depth=1)
         assert len(diag.edges) == 2
 
-    def test_depth_1_direct_connect_produces_single_edge(self) -> None:
-        """A direct connect (no channel) at depth=1 produces exactly one edge."""
+    def test_depth_1_channel_connect_src_dst_nodes(self) -> None:
+        """A channel connect at depth=1 produces two edges linking the correct node IDs."""
         a = Component(name="A", provides=[_iref("X")])
         b = Component(name="B", requires=[_iref("X")])
         sys = System(
             name="Root",
             components=[a, b],
-            connects=[ConnectDef(src_entity="A", src_port="X", dst_entity="B", dst_port="X")],
+            connects=[_connect("A", "X", "B", "X", channel="ch")],
         )
         diag = build_viz_diagram(sys, depth=1)
-        assert len(diag.edges) == 1
+        assert len(diag.edges) == 2
         all_ports = collect_all_ports(diag)
-        assert all_ports[diag.edges[0].source_port_id].node_id == "Root__A"
-        assert all_ports[diag.edges[0].target_port_id].node_id == "Root__B"
+        src_node_ids = {all_ports[e.source_port_id].node_id for e in diag.edges}
+        dst_node_ids = {all_ports[e.target_port_id].node_id for e in diag.edges}
+        assert "Root__A" in src_node_ids
+        assert "Root__B" in dst_node_ids
 
     def test_depth_1_multiple_connects_produce_correct_edge_count(self) -> None:
         """Two channel connects at depth=1 produce four edges in total."""
@@ -1846,20 +1848,21 @@ class TestBuildVizDiagramAllDepthConnections:
             assert edge.source_port_id in all_ports
             assert edge.target_port_id in all_ports
 
-    def test_depth_2_direct_connect_no_channel_single_edge(self) -> None:
-        """depth=2: a direct (no-channel) connect inside a doubly-nested system yields one edge."""
+    def test_depth_2_channel_connect_two_edges(self) -> None:
+        """depth=2: a channel connect inside a doubly-nested system yields two edges."""
         a = Component(name="A", provides=[_iref("X")])
         b = Component(name="B", requires=[_iref("X")])
         inner = System(
             name="Inner",
             components=[a, b],
-            connects=[ConnectDef(src_entity="A", src_port="X", dst_entity="B", dst_port="X")],
+            connects=[_connect("A", "X", "B", "X", channel="ch")],
         )
         outer = System(name="Outer", systems=[inner])
         af = _arch_file(systems=[outer])
         diag = build_viz_diagram_all({"f": af}, depth=2)
-        assert len(diag.edges) == 1
+        assert len(diag.edges) == 2
         all_ports = collect_all_ports(diag)
-        edge = diag.edges[0]
-        assert all_ports[edge.source_port_id].node_id == "Outer__Inner__A"
-        assert all_ports[edge.target_port_id].node_id == "Outer__Inner__B"
+        src_node_ids = {all_ports[e.source_port_id].node_id for e in diag.edges}
+        dst_node_ids = {all_ports[e.target_port_id].node_id for e in diag.edges}
+        assert "Outer__Inner__A" in src_node_ids
+        assert "Outer__Inner__B" in dst_node_ids
