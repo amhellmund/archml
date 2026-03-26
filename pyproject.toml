@@ -43,3 +43,6 @@ exclude = ["src/archml/export/js"]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["src/archml/export/js"]
+
+[tool.hatch.build.targets.sdist.force-include]
+"src/archml/static" = "src/archml/static"
