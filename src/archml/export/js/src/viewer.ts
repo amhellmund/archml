@@ -424,13 +424,11 @@ function showEntityDetails(
     <div class="archml-detail-kind">${escText(kindLabel)}</div>
   `;
 
-  if (description) {
-    html += `<p class="archml-detail-description">${escText(description)}</p>`;
-  }
-
-  if (tags.length > 0) {
-    html += detailsSection("Tags",
-      tags.map((t) => `<span class="archml-detail-pill">${escText(t)}</span>`).join(""));
+  {
+    let generalBody = "";
+    if (description) generalBody += `<p class="archml-detail-description">${escText(description)}</p>`;
+    if (tags.length > 0) generalBody += `<div class="archml-detail-tags">${tags.map((t) => `<span class="archml-detail-pill">${escText(t)}</span>`).join("")}</div>`;
+    if (generalBody) html += detailsSection("general", generalBody);
   }
 
   html += renderIfaceSection("Requires", requires, payload.files);
@@ -580,13 +578,11 @@ function showInterfaceDetails(
     <div class="archml-detail-kind">interface</div>
   `;
 
-  if (def.description) {
-    html += `<p class="archml-detail-description">${escText(def.description)}</p>`;
-  }
-
-  if (def.tags.length > 0) {
-    html += detailsSection("Tags",
-      def.tags.map((t) => `<span class="archml-detail-pill">${escText(t)}</span>`).join(""));
+  {
+    let generalBody = "";
+    if (def.description) generalBody += `<p class="archml-detail-description">${escText(def.description)}</p>`;
+    if (def.tags.length > 0) generalBody += `<div class="archml-detail-tags">${def.tags.map((t) => `<span class="archml-detail-pill">${escText(t)}</span>`).join("")}</div>`;
+    if (generalBody) html += detailsSection("general", generalBody);
   }
 
   if (def.fields.length > 0) {
@@ -596,7 +592,7 @@ function showInterfaceDetails(
           `<li class="archml-type-field"><span class="archml-type-fname">${escText(f.name)}</span><span class="archml-type-sep">:</span>${renderTypeRef(f.type, files, new Set())}</li>`,
       )
       .join("");
-    html += detailsSection(label, `<ul class="archml-type-tree">${fieldsHtml}</ul>`);
+    html += detailsSection("Fields", `<ul class="archml-type-tree">${fieldsHtml}</ul>`);
   }
 
   if (channelName) {

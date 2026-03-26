@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build && vite build --config vite.singlefile.config.ts",
+    "build": "vite build && vite build --config vite.singlefile.config.ts && cp ../../static/index.html ../../static/archml-viewer-template.html",
     "build:lib": "vite build",
-    "build:html": "vite build --config vite.singlefile.config.ts",
+    "build:html": "vite build --config vite.singlefile.config.ts && cp ../../static/index.html ../../static/archml-viewer-template.html",
     "dev": "vite",
     "test": "vitest run"
   },
