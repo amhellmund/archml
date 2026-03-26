@@ -25,7 +25,6 @@ const FONT_SIZE = 15;
 const CORNER_RADIUS = 7;
 const BOUNDARY_LABEL_OFFSET = 21.0;
 const LABEL_PADDING = 6.0;
-const CHANNEL_STROKE_DASH = "5,3";
 const ARROW_LEN = 9.0;
 const ARROW_HALF_W = 4.0;
 
@@ -173,10 +172,8 @@ function renderNode(
 ): string {
   const cls = nodeClass(kind);
   const r = CORNER_RADIUS;
-  const isDashed = kind === "channel" || kind === "interface" || kind === "terminal";
-  const dashAttr = isDashed ? ` stroke-dasharray="${CHANNEL_STROKE_DASH}"` : "";
 
-  const rect = `<rect x="${f(nl.x, scale)}" y="${f(nl.y, scale)}" width="${f(nl.width, scale)}" height="${f(nl.height, scale)}" rx="${r}" ry="${r}" class="${cls}"${dashAttr}/>`;
+  const rect = `<rect x="${f(nl.x, scale)}" y="${f(nl.y, scale)}" width="${f(nl.width, scale)}" height="${f(nl.height, scale)}" rx="${r}" ry="${r}" class="${cls}"/>`;
 
   const cx = f(nl.x + nl.width / 2, scale);
   const cyMid = nl.y + nl.height / 2;

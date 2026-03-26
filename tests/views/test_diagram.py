@@ -299,9 +299,9 @@ def test_render_edge_has_explicit_arrowhead_polygon(tmp_path: Path) -> None:
     root = _render_and_parse(sys, tmp_path)
     polygons = list(root.iter(f"{{{_SVG_NS}}}polygon"))
     assert len(polygons) >= 1
-    # The arrowhead polygon must have a fill attribute (not transparent).
-    fills = {p.attrib.get("fill") for p in polygons}
-    assert any(f and f != "none" for f in fills)
+    # The arrowhead polygon uses the CSS class (no inline fill).
+    classes = {p.attrib.get("class") for p in polygons}
+    assert any(c == "archml-arrowhead" for c in classes)
 
 
 # ###############
@@ -378,6 +378,53 @@ def test_render_expose_provides_terminal_present(tmp_path: Path) -> None:
     )
     root = _render_and_parse(comp, tmp_path)
     assert "Result" in _text_content(root)
+
+
+# ###############
+# CSS class usage
+# ###############
+
+
+def test_render_node_rects_have_css_class(tmp_path: Path) -> None:
+    """Node rects carry an ``archml-node`` CSS class and presentation-attribute fallbacks."""
+    comp = Component(name="Parent", components=[Component(name="Alpha"), Component(name="Beta")])
+    root = _render_and_parse(comp, tmp_path)
+    node_rects = [r for r in root.iter(f"{{{_SVG_NS}}}rect") if "archml-node" in (r.attrib.get("class") or "")]
+    assert len(node_rects) >= 2
+    # CSS class is present for CSS-capable viewers.
+    for rect in node_rects:
+        assert "archml-node" in rect.attrib.get("class", "")
+    # Presentation-attribute fallbacks are also set so non-CSS viewers get colour.
+    for rect in node_rects:
+        assert rect.attrib.get("fill")
+        assert rect.attrib.get("stroke")
+
+
+def test_render_svg_contains_embedded_css(tmp_path: Path) -> None:
+    """Rendered SVG contains a ``<style>`` element with ``archml-`` CSS content."""
+    comp = Component(name="Sys", components=[Component(name="A")])
+    root = _render_and_parse(comp, tmp_path)
+    styles = list(root.iter(f"{{{_SVG_NS}}}style"))
+    assert len(styles) >= 1
+    css_text = styles[0].text or ""
+    assert "archml-" in css_text
+
+
+def test_render_edge_polyline_has_css_class(tmp_path: Path) -> None:
+    """Edge polylines carry the ``archml-edge`` CSS class and presentation-attribute fallbacks."""
+    a = Component(name="A", requires=[_iref("IFace")])
+    b = Component(name="B", provides=[_iref("IFace")])
+    sys = System(
+        name="Root",
+        connects=[_connect("B", "IFace", "A", "IFace", channel="ch")],
+        components=[a, b],
+    )
+    root = _render_and_parse(sys, tmp_path)
+    polylines = list(root.iter(f"{{{_SVG_NS}}}polyline"))
+    assert len(polylines) >= 1
+    for pl in polylines:
+        assert pl.attrib.get("class") == "archml-edge"
+        assert pl.attrib.get("stroke")  # fallback stroke colour is set
 
 
 def test_render_expose_terminals_produce_peripheral_nodes(tmp_path: Path) -> None:

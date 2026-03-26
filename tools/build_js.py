@@ -45,6 +45,12 @@ def main() -> None:
             shutil.move(str(built_html), str(template))
             print(f"Renamed {built_html.name} → {template.name}")
 
+    # Copy diagram CSS (source of truth for SVG embedding).
+    css_src = JS_DIR / "src" / "archml-diagram.css"
+    css_dst = STATIC_DIR / "archml-diagram.css"
+    shutil.copy(str(css_src), str(css_dst))
+    print("Copied archml-diagram.css → static/")
+
     print("\nArtifacts in src/archml/static/:")
     for f in sorted(STATIC_DIR.iterdir()):
         size = f.stat().st_size

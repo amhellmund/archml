@@ -17,19 +17,14 @@ explicit filled-polygon arrowhead at the target end.
 Text labels are clipped to their node bounding box via SVG ``<clipPath>``
 elements, so long labels never overflow the node rectangle.
 
-Color palette:
-
-- Root boundary — no box drawn (top-level architecture is not framed).
-- Component — orange tones.
-- System — blue tones.
-- User — amber tones.
-- Channel / interface / terminal — red tones, dashed border.
-- External actors — slate-gray tones.
-- Edges — dark navy lines with filled arrowheads.
+Visual styles are defined in ``archml-diagram.css`` and embedded in the SVG
+``<style>`` element.  CSS classes follow the ``archml-`` prefix convention used
+by the JS renderer so both renderers produce identical visual output.
 """
 
 from __future__ import annotations
 
+import importlib.resources
 import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -105,39 +100,9 @@ def render_diagram_to_svg_string(
 # Implementation
 # ################
 
-# --- Color palette ---
-# Components (orange family)
-_FILL_COMPONENT = "#fff7ed"
-_STROKE_COMPONENT = "#ea580c"
-# Systems (blue family)
-_FILL_SYSTEM = "#eff6ff"
-_STROKE_SYSTEM = "#2563eb"
-# Users (amber family)
-_FILL_USER = "#fffbeb"
-_STROKE_USER = "#d97706"
-# Channels / interfaces (red family, dashed border)
-_FILL_CHANNEL = "#fef2f2"
-_STROKE_CHANNEL = "#dc2626"
-# External actors (slate-gray family)
-_FILL_EXTERNAL = "#f8fafc"
-_STROKE_EXTERNAL = "#475569"
-# Terminal interface nodes (yellow family)
-_FILL_TERMINAL = "#fefce8"
-_STROKE_TERMINAL = "#ca8a04"
-# Root boundary (slate-blue family)
-_FILL_BOUNDARY = "#eff6ff"
-_STROKE_BOUNDARY = "#2563eb"
-# Edges
-_EDGE_COLOUR = "#1e293b"
-_TEXT_COLOUR = "#1e293b"
-# Diagram background
-_FILL_BACKGROUND = "#ffffff"
-
 _FONT_FAMILY = "system-ui, -apple-system, sans-serif"
 _FONT_SIZE = 15
 _CORNER_RADIUS = 7
-_STROKE_WIDTH = 1.5
-_BOUNDARY_STROKE_WIDTH = 2.0
 _BOUNDARY_LABEL_OFFSET = 21.0  # y distance from boundary top to title baseline
 _LABEL_PADDING = 6.0  # horizontal padding inside node for text clip region
 
@@ -148,21 +113,67 @@ _CHANNEL_STROKE_DASH = "5,3"
 _ARROW_LEN = 9.0
 _ARROW_HALF_W = 4.0
 
+# Presentation-attribute fallbacks — mirror archml-diagram.css exactly.
+# SVG viewers that do not apply embedded <style> (e.g. rsvg, Inkscape, macOS
+# Preview) rely on these; CSS-capable browsers use the CSS classes instead.
+_NODE_FILL: dict[str, str] = {
+    "archml-node--component": "#fff7ed",
+    "archml-node--system": "#eff6ff",
+    "archml-node--user": "#fffbeb",
+    "archml-node--channel": "#fef2f2",
+    "archml-node--external": "#f8fafc",
+    "archml-node--unknown": "#fefce8",
+}
+_NODE_STROKE: dict[str, str] = {
+    "archml-node--component": "#ea580c",
+    "archml-node--system": "#2563eb",
+    "archml-node--user": "#d97706",
+    "archml-node--channel": "#dc2626",
+    "archml-node--external": "#475569",
+    "archml-node--unknown": "#ca8a04",
+}
+_BOUNDARY_FILL: dict[str, str] = {
+    "archml-boundary--system": "#eff6ff",
+    "archml-boundary--component": "#fff7ed",
+}
+_BOUNDARY_STROKE: dict[str, str] = {
+    "archml-boundary--system": "#2563eb",
+    "archml-boundary--component": "#ea580c",
+}
+_TEXT_COLOUR = "#1e293b"
+_EDGE_COLOUR = "#1e293b"
+_FILL_BACKGROUND = "#ffffff"
 
-def _node_colours(kind: NodeKind | None) -> tuple[str, str]:
-    """Return ``(fill, stroke)`` for a node kind."""
+
+def _load_diagram_css() -> str:
+    """Return diagram CSS content for embedding in SVG files."""
+    try:
+        ref = importlib.resources.files("archml") / "static" / "archml-diagram.css"
+        return ref.read_text(encoding="utf-8")
+    except (FileNotFoundError, TypeError, ModuleNotFoundError):
+        return ""
+
+
+def _node_class(kind: NodeKind | None) -> str:
+    """Return the CSS class string for a node rectangle of the given *kind*."""
     if kind == "component":
-        return _FILL_COMPONENT, _STROKE_COMPONENT
+        return "archml-node archml-node--component"
     if kind == "system":
-        return _FILL_SYSTEM, _STROKE_SYSTEM
+        return "archml-node archml-node--system"
     if kind == "user":
-        return _FILL_USER, _STROKE_USER
+        return "archml-node archml-node--user"
     if kind in ("channel", "interface", "terminal"):
-        return _FILL_CHANNEL, _STROKE_CHANNEL
+        return "archml-node archml-node--channel"
     if kind in ("external_component", "external_system", "external_user"):
-        return _FILL_EXTERNAL, _STROKE_EXTERNAL
-    # unknown
-    return _FILL_TERMINAL, _STROKE_TERMINAL
+        return "archml-node archml-node--external"
+    return "archml-node archml-node--unknown"
+
+
+def _boundary_class(kind: BoundaryKind | None) -> str:
+    """Return the CSS class string for a boundary rectangle of the given *kind*."""
+    if kind == "component":
+        return "archml-boundary archml-boundary--component"
+    return "archml-boundary archml-boundary--system"
 
 
 def _f(value: float, scale: float) -> str:
@@ -191,6 +202,12 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
         },
     )
 
+    # Style element (embedded CSS).
+    css = _load_diagram_css()
+    if css:
+        style = ET.SubElement(svg, "style")
+        style.text = css
+
     # White background rectangle.
     ET.SubElement(
         svg,
@@ -201,6 +218,7 @@ def _build_svg(diagram: VizDiagram, plan: LayoutPlan, scale: float) -> ET.Elemen
             "width": f"{tw:.2f}",
             "height": f"{th:.2f}",
             "fill": _FILL_BACKGROUND,
+            "class": "archml-bg",
         },
     )
 
@@ -288,16 +306,12 @@ def _render_boundary(
 ) -> None:
     """Draw a boundary rectangle with a title label.
 
-    *kind* selects the colour palette: ``"component"`` uses orange tones,
+    *kind* selects the CSS class palette: ``"component"`` uses orange tones,
     ``"system"`` uses blue tones.  ``None`` (the default) falls back to the
-    blue boundary palette.
+    system boundary style.
     """
-    if kind == "component":
-        fill, stroke = _FILL_COMPONENT, _STROKE_COMPONENT
-    elif kind == "system":
-        fill, stroke = _FILL_SYSTEM, _STROKE_SYSTEM
-    else:
-        fill, stroke = _FILL_BOUNDARY, _STROKE_BOUNDARY
+    cls = _boundary_class(kind)
+    variant = cls.split()[-1]  # e.g. "archml-boundary--system"
     r = str(_CORNER_RADIUS)
     ET.SubElement(
         svg,
@@ -309,11 +323,13 @@ def _render_boundary(
             "height": _f(bl.height, scale),
             "rx": r,
             "ry": r,
-            "fill": fill,
-            "stroke": stroke,
-            "stroke-width": str(_BOUNDARY_STROKE_WIDTH),
+            "fill": _BOUNDARY_FILL.get(variant, "#eff6ff"),
+            "stroke": _BOUNDARY_STROKE.get(variant, "#2563eb"),
+            "stroke-width": "2",
+            "class": cls,
         },
     )
+    stroke = _BOUNDARY_STROKE.get(variant, "#2563eb")
     title = ET.SubElement(
         svg,
         "text",
@@ -326,6 +342,7 @@ def _render_boundary(
             "font-size": str(int(_FONT_SIZE * scale * 1.1)),
             "font-weight": "bold",
             "fill": stroke,
+            "class": "archml-text archml-text--boundary",
         },
     )
     title.text = label
@@ -345,7 +362,8 @@ def _render_node(
     For channel nodes, renders two lines: the interface name (larger) above
     centre and the channel name (smaller) below centre.
     """
-    fill, stroke = _node_colours(kind)
+    cls = _node_class(kind)
+    variant = cls.split()[-1]  # e.g. "archml-node--channel"
     r = str(_CORNER_RADIUS)
 
     rect_attrs: dict[str, str] = {
@@ -355,9 +373,10 @@ def _render_node(
         "height": _f(nl.height, scale),
         "rx": r,
         "ry": r,
-        "fill": fill,
-        "stroke": stroke,
-        "stroke-width": str(_STROKE_WIDTH),
+        "fill": _NODE_FILL.get(variant, "#ffffff"),
+        "stroke": _NODE_STROKE.get(variant, "#475569"),
+        "stroke-width": "1.5",
+        "class": cls,
     }
     if kind in ("channel", "interface", "terminal"):
         rect_attrs["stroke-dasharray"] = _CHANNEL_STROKE_DASH
@@ -383,6 +402,7 @@ def _render_node(
                 "font-size": str(int(_FONT_SIZE * scale)),
                 "font-weight": "bold",
                 "fill": _TEXT_COLOUR,
+                "class": "archml-text",
                 "clip-path": f"url(#{clip_id})",
             },
         )
@@ -396,6 +416,7 @@ def _render_node(
             "font-family": _FONT_FAMILY,
             "font-size": str(int(_FONT_SIZE * scale)),
             "fill": _TEXT_COLOUR,
+            "class": "archml-text",
             "clip-path": f"url(#{clip_id})",
         }
         if kind in ("component", "system", "interface", "terminal"):
@@ -440,8 +461,7 @@ def _render_edge(
             "fill": "none",
             "stroke": _EDGE_COLOUR,
             "stroke-width": "1.5",
-            "stroke-linejoin": "round",
-            "stroke-linecap": "round",
+            "class": "archml-edge",
         },
     )
 
@@ -451,7 +471,7 @@ def _render_edge(
     rx_pt = base_x + _ARROW_HALF_W * ndy
     ry_pt = base_y - _ARROW_HALF_W * ndx
     arrow_pts = " ".join(f"{x * scale:.2f},{y * scale:.2f}" for x, y in [(x2, y2), (lx, ly), (rx_pt, ry_pt)])
-    ET.SubElement(svg, "polygon", {"points": arrow_pts, "fill": _EDGE_COLOUR})
+    ET.SubElement(svg, "polygon", {"points": arrow_pts, "fill": _EDGE_COLOUR, "class": "archml-arrowhead"})
 
 
 def _write_svg(svg: ET.Element, output_path: Path) -> None:
@@ -517,10 +537,23 @@ def _build_svg_interactive(
         },
     )
 
+    # Style element (embedded CSS).
+    css = _load_diagram_css()
+    if css:
+        style = ET.SubElement(svg, "style")
+        style.text = css
+
     ET.SubElement(
         svg,
         "rect",
-        {"x": "0", "y": "0", "width": f"{tw:.2f}", "height": f"{th:.2f}", "fill": _FILL_BACKGROUND},
+        {
+            "x": "0",
+            "y": "0",
+            "width": f"{tw:.2f}",
+            "height": f"{th:.2f}",
+            "fill": _FILL_BACKGROUND,
+            "class": "archml-bg",
+        },
     )
 
     defs = ET.SubElement(svg, "defs")
