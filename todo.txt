@@ -1,0 +1,25 @@
+# Unify variants
+
+```
+variants abc, cde {
+
+}
+
+system ABC {
+    """
+    System description
+    """
+
+    variants: abc, cde
+}
+
+# Remove true and false values
+# Remove protocol and async for connect statements
+# Update language spec
+# Use variants for visualization
+# Introduce colors for variants
+# Introduce batches for variants (maybe)
+# Remove archml-explorer from sphinx as is
+# Add proper user into visualization
+# Remove the field keyword, just use `member: type`
+# Remove strings

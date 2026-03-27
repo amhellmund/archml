@@ -17,18 +17,16 @@ type OrderItem {
 
 # Unversioned interface
 interface OrderRequest {
-    description = "Payload for placing a new customer order."
+    """Payload for placing a new customer order."""
 
     field order_id: String
     field customer_id: String
     field items: List<OrderItem>
     field total_amount: Float {
-        description = "Grand total including tax and shipping."
-        schema = "Positive decimal value."
+        """Grand total including tax and shipping."""
     }
     field currency: String {
-        description = "ISO 4217 currency code."
-        schema = "Three-letter uppercase code, e.g. USD, EUR."
+        """ISO 4217 currency code."""
     }
 }
 
@@ -77,12 +75,12 @@ interface InventoryStatus {
 
 interface ReportOutput {
     field report: String {
-        schema = "Monthly sales summary report."
+        """Monthly sales summary report."""
     }
     field export: String {
-        schema = "Raw transaction data."
+        """Raw transaction data."""
     }
     field artifact: String {
-        schema = "Contains report.pdf, data.csv, and metadata.json."
+        """Contains report.pdf, data.csv, and metadata.json."""
     }
 }

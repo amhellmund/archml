@@ -2,5 +2,5 @@
 # Expected result: no semantic errors
 
 component Processor {
-    description = "A minimal component with no interface requirements."
+    """A minimal component with no interface requirements."""
 }

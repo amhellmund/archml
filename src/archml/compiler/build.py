@@ -38,7 +38,7 @@ from typing import NamedTuple
 from archml.compiler.artifact import ARTIFACT_SUFFIX, read_artifact, write_artifact
 from archml.compiler.parser import ParseError, parse
 from archml.compiler.scanner import LexerError
-from archml.compiler.semantic_analysis import analyze, check_variant_names
+from archml.compiler.semantic_analysis import analyze
 from archml.model.entities import ArchFile
 
 # ###############
@@ -112,18 +112,6 @@ def compile_files(
     in_progress: set[str] = set()
     for f in files:
         _compile_file(f, build_dir, source_import_map, compiled, in_progress)
-
-    # Global variant check: collect all declared variants across all files,
-    # then verify that every variant name used anywhere is declared somewhere.
-    known_variants: set[str] = set()
-    for af in compiled.values():
-        known_variants.update(af.variant_declarations)
-    if known_variants:
-        for _key, af in compiled.items():
-            errors = check_variant_names(af, known_variants)
-            if errors:
-                error_lines = "\n".join(str(e) for e in errors)
-                raise CompilerError(error_lines)
 
     return compiled
 

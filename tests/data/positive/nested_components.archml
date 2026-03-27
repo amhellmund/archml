@@ -23,17 +23,17 @@ interface PaymentRequest {
 
 # A component with sub-components and internal routing
 component OrderService {
-    description = "Accepts, validates, and processes customer orders."
+    """Accepts, validates, and processes customer orders."""
 
     component Validator {
-        description = "Validates incoming order requests."
+        """Validates incoming order requests."""
 
         requires OrderRequest
         provides ValidationResult
     }
 
     component Processor {
-        description = "Processes validated orders and triggers payment."
+        """Processes validated orders and triggers payment."""
 
         requires ValidationResult
         requires PaymentRequest

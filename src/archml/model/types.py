@@ -78,7 +78,6 @@ class FieldDef(BaseModel):
     name: str
     type: TypeRef
     description: str | None = None
-    schema_ref: str | None = None
     line: int = 0
 
 

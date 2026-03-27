@@ -433,22 +433,7 @@ A channel introduced by a `connect` statement is local to the scope where it app
 
 Variants model multiple architectural possibilities within a single file. Each named variant represents a distinct configuration — for example, a cloud deployment vs. an on-premise deployment, or the current state vs. a target state. Tooling can render or validate the architecture for a specific active variant.
 
-### Declaring Variants
-
-Variants are **global** across the entire build — the same name used in different files refers to the same variant. Declarations appear at the top level of any `.archml` file:
-
-```
-variant cloud
-variant on_premise
-```
-
-Multiple variants can be declared on one line:
-
-```
-variants cloud, on_premise
-```
-
-A variant name may be declared in any file in the build; it does not need to be re-declared in every file that uses it. Using an undeclared variant name anywhere in the build is a validation error.
+Variants are **global** across the entire build — the same name used in different files refers to the same variant. Variant names are declared implicitly by using them; no explicit top-level declaration is required.
 
 ### Baseline Entities
 
@@ -456,7 +441,7 @@ Any entity that carries no variant annotation is **baseline** — it is present 
 
 ### `variant` Blocks
 
-The primary way to introduce variant-specific content is the `variant` block. All declarations inside the block belong to that variant:
+The primary way to introduce variant-specific content is the `variant` block inside a `system` or `component` body. All declarations inside the block belong to that variant:
 
 ```
 system ECommerce {
@@ -491,7 +476,7 @@ system ECommerce {
 }
 ```
 
-`variant` blocks can appear inside `system` or `component` bodies, or at the top level of a file to wrap entire top-level declarations. Variant declarations (`variant cloud`) are always top-level; the block syntax (`variant cloud { ... }`) is what appears inside bodies.
+`variant` blocks appear inside `system` or `component` bodies. The block syntax (`variant cloud { ... }`) groups variant-specific declarations together within a body.
 
 ### `variants` Attribute
 
@@ -860,8 +845,8 @@ system ECommerce {
 | `import`        | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`).              |
 | `use`           | Places an imported entity into a system or component (e.g., `use component X`, `use system X`, `use user X`).      |
 | `external`      | Marks a system, component, or user as outside the development boundary.                                            |
-| `variant`       | Declares a named variant (`variant cloud`), or opens a variant block that conditionally includes its contents.     |
-| `variants`      | Declares multiple variants at once (`variants cloud, on_premise`), or lists the variants an entity belongs to (`variants = ["cloud"]`). |
+| `variant`       | Opens a variant block inside a `system` or `component` body that conditionally includes its contents (`variant cloud { ... }`).     |
+| `variants`      | Lists the variants an entity belongs to as an inline attribute (`variants = ["cloud"]`). |
 | `description`   | Longer explanation of an entity's purpose.                                                                         |
 
 ## Scope Boundaries

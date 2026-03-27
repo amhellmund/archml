@@ -35,14 +35,14 @@ interface OrderConfirmation {
 
 # External payment provider
 external system StripeAPI {
-    description = "Third-party payment processing service."
+    """Third-party payment processing service."""
     requires PaymentRequest
     provides PaymentResult
 }
 
 # E-commerce platform
 system ECommerce {
-    description = "Customer-facing online store back-end."
+    """Customer-facing online store back-end."""
 
     component OrderService {
 

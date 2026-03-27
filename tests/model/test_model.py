@@ -52,15 +52,13 @@ def test_named_type_ref() -> None:
 
 
 def test_field_with_annotations() -> None:
-    """A field can carry description and schema annotations."""
+    """A field can carry a description annotation."""
     f = FieldDef(
         name="currency",
         type=PrimitiveTypeRef(primitive=PrimitiveType.STRING),
         description="ISO 4217 currency code.",
-        schema_ref="Three-letter uppercase code, e.g. USD, EUR.",
     )
     assert f.description == "ISO 4217 currency code."
-    assert f.schema_ref == "Three-letter uppercase code, e.g. USD, EUR."
 
 
 def test_enum_definition() -> None:

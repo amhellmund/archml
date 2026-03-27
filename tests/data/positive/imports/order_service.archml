@@ -4,7 +4,7 @@
 from imports/types import OrderRequest, PaymentRequest, OrderConfirmation
 
 component OrderService {
-    description = "Accepts, validates, and processes customer orders."
+    """Accepts, validates, and processes customer orders."""
 
     requires OrderRequest
     requires PaymentRequest

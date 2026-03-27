@@ -4,7 +4,7 @@
 """Unit tests for the ArchML semantic analysis module."""
 
 from archml.compiler.parser import parse
-from archml.compiler.semantic_analysis import SemanticError, analyze, check_variant_names
+from archml.compiler.semantic_analysis import SemanticError, analyze
 from archml.model.entities import (
     ArchFile,
     Component,
@@ -61,11 +61,11 @@ class TestCleanFile:
         _assert_clean("")
 
     def test_single_component_no_ports(self) -> None:
-        _assert_clean("""
+        _assert_clean('''
 component Foo {
-    description = "Foo"
+    """Foo"""
 }
-""")
+''')
 
     def test_interface_with_primitive_fields(self) -> None:
         _assert_clean("""
@@ -1993,140 +1993,3 @@ interface DeployRequest {
             "from artifacts import Report",
             resolved_imports=resolved,
         )
-
-
-# ###############
-# Variant Name Validation
-# ###############
-
-
-class TestCheckVariantNames:
-    """Tests for check_variant_names (global variant reference validation)."""
-
-    def test_no_variants_used_no_errors(self) -> None:
-        f = parse("component Foo { provides Bar }")
-        assert check_variant_names(f, {"cloud"}) == []
-
-    def test_known_variant_on_component_no_error(self) -> None:
-        f = parse('component Foo { variants = ["cloud"] provides Bar }')
-        errors = check_variant_names(f, {"cloud"})
-        assert errors == []
-
-    def test_unknown_variant_on_component_error(self) -> None:
-        f = parse('component Foo { variants = ["typo"] provides Bar }')
-        errors = check_variant_names(f, {"cloud"})
-        msgs = [e.message for e in errors]
-        assert any("typo" in m and "not declared" in m for m in msgs)
-
-    def test_unknown_variant_on_system_error(self) -> None:
-        f = parse('system S { variants = ["ghost"] }')
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_unknown_variant_on_user_error(self) -> None:
-        f = parse('user U { variants = ["ghost"] provides Cmd }')
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_unknown_variant_on_connect_error(self) -> None:
-        f = parse('connect A.p -> $ch -> B.q { variants = ["ghost"] }')
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_unknown_variant_on_expose_error(self) -> None:
-        src = """
-component Foo {
-    component Sub { provides P }
-    expose Sub.P { variants = ["ghost"] }
-}
-"""
-        f = parse(src)
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_unknown_variant_on_requires_port_error(self) -> None:
-        f = parse('component Foo { requires Bar { variants = ["ghost"] } }')
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_unknown_variant_on_provides_port_error(self) -> None:
-        f = parse('component Foo { provides Bar { variants = ["ghost"] } }')
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_multiple_unknown_variants_multiple_errors(self) -> None:
-        src = 'component A { variants = ["x"] }\ncomponent B { variants = ["y"] }'
-        f = parse(src)
-        errors = check_variant_names(f, {"cloud"})
-        msgs = [e.message for e in errors]
-        assert any("x" in m for m in msgs)
-        assert any("y" in m for m in msgs)
-
-    def test_nested_component_unknown_variant_error(self) -> None:
-        src = """
-component Parent {
-    component Sub { variants = ["ghost"] provides P }
-    provides P
-}
-"""
-        f = parse(src)
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_nested_system_unknown_variant_error(self) -> None:
-        src = """
-system Outer {
-    system Inner { variants = ["ghost"] }
-}
-"""
-        f = parse(src)
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_user_inside_system_unknown_variant_error(self) -> None:
-        src = """
-system S {
-    user U { variants = ["ghost"] provides Cmd }
-}
-"""
-        f = parse(src)
-        errors = check_variant_names(f, {"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_known_variants_set_is_used(self) -> None:
-        f = parse('component Foo { variants = ["cloud"] provides Bar }')
-        # known_variants does not include "cloud" → error
-        errors = check_variant_names(f, set())
-        assert any("cloud" in e.message for e in errors)
-
-    def test_block_applied_variant_validated(self) -> None:
-        # Block-applied variant shows up in component.variants
-        f = parse("variant cloud {\n  component Foo { provides Bar }\n}")
-        # If known_variants lacks "cloud", should error
-        errors = check_variant_names(f, set())
-        assert any("cloud" in e.message for e in errors)
-        # If known_variants has "cloud", no error
-        assert check_variant_names(f, {"cloud"}) == []
-
-
-class TestAnalyzeWithKnownVariants:
-    """Tests for analyze() with the known_variants parameter."""
-
-    def test_analyze_validates_known_variants(self) -> None:
-        src = 'component Foo { variants = ["ghost"] provides Bar }'
-        f = parse(src)
-        errors = analyze(f, known_variants={"cloud"})
-        assert any("ghost" in e.message for e in errors)
-
-    def test_analyze_no_known_variants_skips_check(self) -> None:
-        src = 'component Foo { variants = ["ghost"] provides Bar }'
-        f = parse(src)
-        # No known_variants passed → variant names are not checked
-        errors = analyze(f)
-        assert not any("ghost" in e.message for e in errors)
-
-    def test_analyze_with_empty_known_variants_flags_any_use(self) -> None:
-        src = 'component Foo { variants = ["cloud"] provides Bar }'
-        f = parse(src)
-        errors = analyze(f, known_variants=set())
-        assert any("cloud" in e.message for e in errors)

@@ -78,7 +78,6 @@ class TestKeywords:
             ("type", TokenType.TYPE),
             ("enum", TokenType.ENUM),
             ("field", TokenType.FIELD),
-            ("schema", TokenType.SCHEMA),
             ("requires", TokenType.REQUIRES),
             ("provides", TokenType.PROVIDES),
             ("connect", TokenType.CONNECT),
@@ -88,7 +87,6 @@ class TestKeywords:
             ("import", TokenType.IMPORT),
             ("use", TokenType.USE),
             ("external", TokenType.EXTERNAL),
-            ("description", TokenType.DESCRIPTION),
             ("true", TokenType.TRUE),
             ("false", TokenType.FALSE),
         ],
@@ -161,11 +159,8 @@ class TestSymbols:
             ("}", TokenType.RBRACE),
             ("<", TokenType.LANGLE),
             (">", TokenType.RANGLE),
-            ("[", TokenType.LBRACKET),
-            ("]", TokenType.RBRACKET),
             (",", TokenType.COMMA),
             (":", TokenType.COLON),
-            ("=", TokenType.EQUALS),
             ("@", TokenType.AT),
             ("/", TokenType.SLASH),
         ],
@@ -193,9 +188,17 @@ class TestSymbols:
         types = _types("{}")
         assert types == [TokenType.LBRACE, TokenType.RBRACE]
 
-    def test_brackets(self) -> None:
-        types = _types("[]")
-        assert types == [TokenType.LBRACKET, TokenType.RBRACKET]
+    def test_equals_raises(self) -> None:
+        with pytest.raises(LexerError):
+            tokenize("=")
+
+    def test_lbracket_raises(self) -> None:
+        with pytest.raises(LexerError):
+            tokenize("[")
+
+    def test_rbracket_raises(self) -> None:
+        with pytest.raises(LexerError):
+            tokenize("]")
 
     def test_colon_in_field_declaration(self) -> None:
         types = _types("field x: String")
@@ -205,10 +208,6 @@ class TestSymbols:
             TokenType.COLON,
             TokenType.IDENTIFIER,
         ]
-
-    def test_equals_in_assignment(self) -> None:
-        types = _types('description = "Hello"')
-        assert types == [TokenType.DESCRIPTION, TokenType.EQUALS, TokenType.STRING]
 
     def test_at_symbol(self) -> None:
         types = _types("@v2")
@@ -301,23 +300,23 @@ class TestTripleQuotedStrings:
     def test_simple_triple_quoted_string(self) -> None:
         tokens = _tokens_no_eof('"""hello"""')
         assert len(tokens) == 1
-        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].type == TokenType.TRIPLE_STRING
         assert tokens[0].value == "hello"
 
     def test_empty_triple_quoted_string(self) -> None:
         tokens = _tokens_no_eof('""""""')
-        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].type == TokenType.TRIPLE_STRING
         assert tokens[0].value == ""
 
     def test_triple_quoted_with_literal_newline(self) -> None:
         tokens = _tokens_no_eof('"""line1\nline2"""')
-        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].type == TokenType.TRIPLE_STRING
         assert tokens[0].value == "line1\nline2"
 
     def test_triple_quoted_with_multiple_newlines(self) -> None:
         source = '"""\nfirst\nsecond\nthird\n"""'
         tokens = _tokens_no_eof(source)
-        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].type == TokenType.TRIPLE_STRING
         assert tokens[0].value == "\nfirst\nsecond\nthird\n"
 
     def test_triple_quoted_with_single_double_quote_inside(self) -> None:
@@ -344,9 +343,9 @@ class TestTripleQuotedStrings:
         tokens = _tokens_no_eof(r'"""say \"hi\""""')
         assert tokens[0].value == 'say "hi"'
 
-    def test_triple_quoted_produces_string_token(self) -> None:
+    def test_triple_quoted_produces_triple_string_token(self) -> None:
         tokens = _tokens_no_eof('"""content"""')
-        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].type == TokenType.TRIPLE_STRING
 
     def test_triple_quoted_start_position_at_opening_quotes(self) -> None:
         tokens = _tokens_no_eof('   """hello"""')
@@ -381,14 +380,14 @@ class TestTripleQuotedStrings:
     def test_triple_quoted_followed_by_token(self) -> None:
         tokens = _tokens_no_eof('"""hello""" system')
         assert len(tokens) == 2
-        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].type == TokenType.TRIPLE_STRING
         assert tokens[0].value == "hello"
         assert tokens[1].type == TokenType.SYSTEM
 
-    def test_triple_quoted_in_description_assignment(self) -> None:
-        source = 'description = """multi\nline"""'
+    def test_triple_quoted_as_docstring(self) -> None:
+        source = '"""multi\nline"""'
         types = _types(source)
-        assert types == [TokenType.DESCRIPTION, TokenType.EQUALS, TokenType.STRING]
+        assert types == [TokenType.TRIPLE_STRING]
 
 
 # ###############
@@ -537,10 +536,10 @@ class TestSourceLocations:
         assert as_tok.column == 12
 
     def test_string_start_position_is_at_opening_quote(self) -> None:
-        tokens = _tokens_no_eof('x = "hello"')
+        tokens = _tokens_no_eof('x: "hello"')
         string_tok = tokens[2]
         assert string_tok.type == TokenType.STRING
-        assert string_tok.column == 5
+        assert string_tok.column == 4
 
     def test_eof_position_after_single_line(self) -> None:
         tokens = _tokens("abc")
@@ -761,23 +760,21 @@ class TestStructuralPatterns:
             TokenType.RBRACE,
         ]
 
-    def test_variants_assignment(self) -> None:
-        source = 'variants = ["cloud", "on_premise"]'
+    def test_variants_colon_syntax(self) -> None:
+        source = "variants: cloud, on_premise"
         types = _types(source)
         assert types == [
             TokenType.VARIANTS,
-            TokenType.EQUALS,
-            TokenType.LBRACKET,
-            TokenType.STRING,
+            TokenType.COLON,
+            TokenType.IDENTIFIER,
             TokenType.COMMA,
-            TokenType.STRING,
-            TokenType.RBRACKET,
+            TokenType.IDENTIFIER,
         ]
 
-    def test_description_assignment(self) -> None:
-        source = 'description = "Accepts and validates customer orders."'
+    def test_docstring_description(self) -> None:
+        source = '"""Accepts and validates customer orders."""'
         types = _types(source)
-        assert types == [TokenType.DESCRIPTION, TokenType.EQUALS, TokenType.STRING]
+        assert types == [TokenType.TRIPLE_STRING]
 
     def test_requires_declaration(self) -> None:
         source = "requires OrderRequest"
@@ -790,27 +787,17 @@ class TestStructuralPatterns:
         assert types == [TokenType.PROVIDES, TokenType.IDENTIFIER]
 
     def test_boolean_true_value(self) -> None:
-        source = "async = true"
+        source = "true"
         types = _types(source)
-        assert types == [TokenType.IDENTIFIER, TokenType.EQUALS, TokenType.TRUE]
+        assert types == [TokenType.TRUE]
 
     def test_boolean_false_value(self) -> None:
-        source = "async = false"
+        source = "false"
         types = _types(source)
-        assert types == [TokenType.IDENTIFIER, TokenType.EQUALS, TokenType.FALSE]
+        assert types == [TokenType.FALSE]
 
-    def test_schema_annotation(self) -> None:
-        source = 'schema = "Monthly sales summary report."'
-        types = _types(source)
-        assert types == [TokenType.SCHEMA, TokenType.EQUALS, TokenType.STRING]
-
-    def test_connect_with_block_annotation(self) -> None:
-        source = """
-            connect A.PaymentRequest -> $payment -> B.PaymentRequest {
-                protocol = "HTTP"
-                async = true
-            }
-        """
+    def test_connect_with_variants_block(self) -> None:
+        source = "connect A.PaymentRequest -> $payment -> B.PaymentRequest { variants: cloud }"
         types = _types(source)
         assert types == [
             TokenType.CONNECT,
@@ -825,12 +812,9 @@ class TestStructuralPatterns:
             TokenType.DOT,
             TokenType.IDENTIFIER,
             TokenType.LBRACE,
+            TokenType.VARIANTS,
+            TokenType.COLON,
             TokenType.IDENTIFIER,
-            TokenType.EQUALS,
-            TokenType.STRING,
-            TokenType.IDENTIFIER,
-            TokenType.EQUALS,
-            TokenType.TRUE,
             TokenType.RBRACE,
         ]
 
@@ -899,27 +883,26 @@ class TestFullExample:
     """Validate a real-world multi-construct ArchML snippet end-to-end."""
 
     def test_interface_block(self) -> None:
-        source = """
+        source = '''
             # Interface definition
             interface OrderRequest {
-                description = "Payload for submitting a new customer order."
+                """Payload for submitting a new customer order."""
 
                 field order_id: String
                 field items: List<OrderItem>
                 field total_amount: Float {
-                    description = "Grand total including tax and shipping."
-                    schema = "Positive decimal value."
+                    """Grand total including tax and shipping."""
                 }
             }
-        """
+        '''
         tokens = _tokens_no_eof(source)
         # First real token should be INTERFACE (comment skipped)
         assert tokens[0].type == TokenType.INTERFACE
         assert tokens[1].type == TokenType.IDENTIFIER
         assert tokens[1].value == "OrderRequest"
-        # Verify the STRING values
-        string_values = [t.value for t in tokens if t.type == TokenType.STRING]
-        assert "Payload for submitting a new customer order." in string_values
+        # Verify the TRIPLE_STRING values
+        triple_values = [t.value for t in tokens if t.type == TokenType.TRIPLE_STRING]
+        assert "Payload for submitting a new customer order." in triple_values
 
     def test_system_with_connect(self) -> None:
         source = """
@@ -979,14 +962,12 @@ class TestVariantKeywords:
             TokenType.IDENTIFIER,
         ]
 
-    def test_variant_in_attribute(self) -> None:
-        types = _types('variants = ["cloud"]')
+    def test_variants_colon_attribute(self) -> None:
+        types = _types("variants: cloud")
         assert types == [
             TokenType.VARIANTS,
-            TokenType.EQUALS,
-            TokenType.LBRACKET,
-            TokenType.STRING,
-            TokenType.RBRACKET,
+            TokenType.COLON,
+            TokenType.IDENTIFIER,
         ]
 
     def test_variant_not_identifier(self) -> None:

@@ -87,7 +87,6 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.TYPE,
         TokenType.ENUM,
         TokenType.FIELD,
-        TokenType.SCHEMA,
         TokenType.REQUIRES,
         TokenType.PROVIDES,
         TokenType.AS,
@@ -95,14 +94,11 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.IMPORT,
         TokenType.USE,
         TokenType.EXTERNAL,
-        TokenType.DESCRIPTION,
         TokenType.VARIANT,
         TokenType.VARIANTS,
         TokenType.TRUE,
         TokenType.FALSE,
         TokenType.ARTIFACT,
-        TokenType.SPEC,
-        TokenType.REF_URL,
     }
 )
 
@@ -225,10 +221,6 @@ class _Parser:
             result.users.append(self._parse_user(is_external=False))
         elif tok.type == TokenType.CONNECT:
             result.connects.append(self._parse_connect())
-        elif tok.type == TokenType.VARIANT:
-            self._parse_top_level_variant(result)
-        elif tok.type == TokenType.VARIANTS:
-            self._parse_top_level_variants(result)
         elif tok.type == TokenType.EXTERNAL:
             self._advance()  # consume 'external'
             inner = self._current()
@@ -299,19 +291,28 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_enum(self) -> EnumDef:
-        """Parse: enum <Name> { [attrs] <Value>* }
+        """Parse: enum <Name> { [\"\"\"docstring\"\"\"] <Value>* }
 
-        Each enum value must appear on its own line (line number strictly
+        An optional triple-quoted docstring may appear as the first item in the
+        body.  Each enum value must appear on its own line (line number strictly
         greater than the opening brace or the previous value).
         """
         self._expect(TokenType.ENUM)
         name_tok = self._expect(TokenType.IDENTIFIER)
         lbrace = self._expect(TokenType.LBRACE)
         enum_def = EnumDef(name=name_tok.value, line=name_tok.line)
+        if self._check(TokenType.TRIPLE_STRING):
+            enum_def.description = self._advance().value
         last_value_line = lbrace.line
         while not self._check(TokenType.RBRACE, TokenType.EOF):
-            if self._check(TokenType.DESCRIPTION):
-                enum_def.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            if self._check(TokenType.TRIPLE_STRING):
+                tok = self._current()
+                raise ParseError(
+                    "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
             elif self._check(TokenType.IDENTIFIER):
                 value_tok = self._current()
                 if value_tok.line <= last_value_line:
@@ -340,14 +341,22 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_type_def(self) -> TypeDef:
-        """Parse: type <Name> { [attrs] field* }"""
+        """Parse: type <Name> { [\"\"\"docstring\"\"\"] field* }"""
         self._expect(TokenType.TYPE)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
         type_def = TypeDef(name=name_tok.value, line=name_tok.line)
+        if self._check(TokenType.TRIPLE_STRING):
+            type_def.description = self._advance().value
         while not self._check(TokenType.RBRACE, TokenType.EOF):
-            if self._check(TokenType.DESCRIPTION):
-                type_def.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            if self._check(TokenType.TRIPLE_STRING):
+                tok = self._current()
+                raise ParseError(
+                    "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
             elif self._check(TokenType.FIELD):
                 type_def.fields.append(self._parse_field())
             else:
@@ -366,26 +375,28 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_artifact_def(self) -> ArtifactDef:
-        """Parse: artifact <Name> { [title=..] [description=..] [spec=..] [ref_url=..] }"""
+        """Parse: artifact <Name> { [\"\"\"docstring\"\"\"] }"""
         self._expect(TokenType.ARTIFACT)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
         artifact = ArtifactDef(name=name_tok.value, line=name_tok.line)
+        if self._check(TokenType.TRIPLE_STRING):
+            artifact.description = self._advance().value
         while not self._check(TokenType.RBRACE, TokenType.EOF):
-            if self._check(TokenType.DESCRIPTION):
-                artifact.description = self._parse_string_attr(TokenType.DESCRIPTION)
-            elif self._check(TokenType.SPEC):
-                artifact.spec = self._parse_string_attr(TokenType.SPEC)
-            elif self._check(TokenType.REF_URL):
-                artifact.ref_url = self._parse_string_attr(TokenType.REF_URL)
-            else:
-                tok = self._current()
+            tok = self._current()
+            if self._check(TokenType.TRIPLE_STRING):
                 raise ParseError(
-                    f"Unexpected token {tok.value!r} in artifact body",
+                    "Description docstring must appear first in body",
                     tok.line,
                     tok.column,
                     self._filename,
                 )
+            raise ParseError(
+                f"Unexpected token {tok.value!r} in artifact body",
+                tok.line,
+                tok.column,
+                self._filename,
+            )
         self._expect(TokenType.RBRACE)
         return artifact
 
@@ -394,7 +405,7 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_interface(self) -> InterfaceDef:
-        """Parse: interface <Name> [@version] { [attrs] field* }"""
+        """Parse: interface <Name> [@version] { [\"\"\"docstring\"\"\"] field* }"""
         self._expect(TokenType.INTERFACE)
         name_tok = self._expect(TokenType.IDENTIFIER)
         version: str | None = None
@@ -404,9 +415,17 @@ class _Parser:
             version = ver_tok.value
         self._expect(TokenType.LBRACE)
         iface = InterfaceDef(name=name_tok.value, version=version, line=name_tok.line)
+        if self._check(TokenType.TRIPLE_STRING):
+            iface.description = self._advance().value
         while not self._check(TokenType.RBRACE, TokenType.EOF):
-            if self._check(TokenType.DESCRIPTION):
-                iface.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            if self._check(TokenType.TRIPLE_STRING):
+                tok = self._current()
+                raise ParseError(
+                    "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
             elif self._check(TokenType.FIELD):
                 iface.fields.append(self._parse_field())
             else:
@@ -425,14 +444,22 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_component(self, is_external: bool) -> Component:
-        """Parse: [external] component <Name> { ... }"""
+        """Parse: [external] component <Name> { [\"\"\"docstring\"\"\"] ... }"""
         self._expect(TokenType.COMPONENT)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
         comp = Component(name=name_tok.value, is_external=is_external, line=name_tok.line)
+        if self._check(TokenType.TRIPLE_STRING):
+            comp.description = self._advance().value
         while not self._check(TokenType.RBRACE, TokenType.EOF):
-            if self._check(TokenType.DESCRIPTION):
-                comp.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            if self._check(TokenType.TRIPLE_STRING):
+                tok = self._current()
+                raise ParseError(
+                    "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
             elif self._check(TokenType.VARIANTS):
                 comp.variants = self._parse_variants_attr()
             elif self._check(TokenType.REQUIRES):
@@ -477,14 +504,22 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_system(self, is_external: bool) -> System:
-        """Parse: [external] system <Name> { ... }"""
+        """Parse: [external] system <Name> { [\"\"\"docstring\"\"\"] ... }"""
         self._expect(TokenType.SYSTEM)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
         system = System(name=name_tok.value, is_external=is_external, line=name_tok.line)
+        if self._check(TokenType.TRIPLE_STRING):
+            system.description = self._advance().value
         while not self._check(TokenType.RBRACE, TokenType.EOF):
-            if self._check(TokenType.DESCRIPTION):
-                system.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            if self._check(TokenType.TRIPLE_STRING):
+                tok = self._current()
+                raise ParseError(
+                    "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
             elif self._check(TokenType.VARIANTS):
                 system.variants = self._parse_variants_attr()
             elif self._check(TokenType.REQUIRES):
@@ -569,18 +604,26 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_user(self, is_external: bool) -> UserDef:
-        """Parse: [external] user <Name> { [attrs] (requires|provides)* }
+        """Parse: [external] user <Name> { [\"\"\"docstring\"\"\"] (requires|provides)* }
 
-        Users are leaf nodes: they support title, description, tags, requires,
-        and provides, but no sub-entities or channels.
+        Users are leaf nodes: they support an optional docstring, variants,
+        requires, and provides, but no sub-entities or channels.
         """
         self._expect(TokenType.USER)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
         user = UserDef(name=name_tok.value, is_external=is_external, line=name_tok.line)
+        if self._check(TokenType.TRIPLE_STRING):
+            user.description = self._advance().value
         while not self._check(TokenType.RBRACE, TokenType.EOF):
-            if self._check(TokenType.DESCRIPTION):
-                user.description = self._parse_string_attr(TokenType.DESCRIPTION)
+            if self._check(TokenType.TRIPLE_STRING):
+                tok = self._current()
+                raise ParseError(
+                    "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
             elif self._check(TokenType.VARIANTS):
                 user.variants = self._parse_variants_attr()
             elif self._check(TokenType.REQUIRES):
@@ -737,7 +780,7 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_field(self) -> FieldDef:
-        """Parse: field <name>: <type> [{ description=.. schema=.. }]"""
+        """Parse: field <name>: <type> [{ \"\"\"docstring\"\"\" }]"""
         self._expect(TokenType.FIELD)
         name_tok = self._expect_name_token()
         self._expect(TokenType.COLON)
@@ -745,19 +788,16 @@ class _Parser:
         f = FieldDef(name=name_tok.value, type=field_type, line=name_tok.line)
         if self._check(TokenType.LBRACE):
             self._advance()  # consume {
-            while not self._check(TokenType.RBRACE, TokenType.EOF):
-                if self._check(TokenType.DESCRIPTION):
-                    f.description = self._parse_string_attr(TokenType.DESCRIPTION)
-                elif self._check(TokenType.SCHEMA):
-                    f.schema_ref = self._parse_string_attr(TokenType.SCHEMA)
-                else:
-                    inner_tok = self._current()
-                    raise ParseError(
-                        f"Unexpected token {inner_tok.value!r} in field annotation block",
-                        inner_tok.line,
-                        inner_tok.column,
-                        self._filename,
-                    )
+            if self._check(TokenType.TRIPLE_STRING):
+                f.description = self._advance().value
+            if not self._check(TokenType.RBRACE):
+                tok = self._current()
+                raise ParseError(
+                    f"Unexpected token {tok.value!r} in field annotation block",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
             self._expect(TokenType.RBRACE)
         return f
 
@@ -832,107 +872,22 @@ class _Parser:
     # Common attribute parsers
     # ------------------------------------------------------------------
 
-    def _parse_string_attr(self, keyword: TokenType) -> str:
-        """Parse: <keyword> = <string>"""
-        self._expect(keyword)
-        self._expect(TokenType.EQUALS)
-        str_tok = self._expect(TokenType.STRING)
-        return str_tok.value
-
     def _parse_variants_attr(self) -> list[str]:
-        """Parse: variants = [ "name1", "name2", ... ]"""
+        """Parse: variants: name1, name2, ..."""
         self._expect(TokenType.VARIANTS)
-        self._expect(TokenType.EQUALS)
-        self._expect(TokenType.LBRACKET)
+        self._expect(TokenType.COLON)
         variants: list[str] = []
-        if not self._check(TokenType.RBRACKET):
-            first = self._expect(TokenType.STRING)
-            variants.append(first.value)
-            while self._check(TokenType.COMMA):
-                self._advance()
-                v = self._expect(TokenType.STRING)
-                variants.append(v.value)
-        self._expect(TokenType.RBRACKET)
+        first = self._expect(TokenType.IDENTIFIER)
+        variants.append(first.value)
+        while self._check(TokenType.COMMA):
+            self._advance()
+            v = self._expect(TokenType.IDENTIFIER)
+            variants.append(v.value)
         return variants
 
     # ------------------------------------------------------------------
-    # Variant declarations and blocks
+    # Variant blocks
     # ------------------------------------------------------------------
-
-    def _parse_top_level_variant(self, result: ArchFile) -> None:
-        """Parse a top-level 'variant <name>' declaration or 'variant <name> { ... }' block.
-
-        - ``variant cloud`` — registers the variant name as a global declaration.
-        - ``variant cloud { ... }`` — registers the declaration AND applies the
-          variant to all entities defined inside the block.
-        """
-        self._expect(TokenType.VARIANT)
-        name_tok = self._expect(TokenType.IDENTIFIER)
-        name = name_tok.value
-        if name not in result.variant_declarations:
-            result.variant_declarations.append(name)
-        if self._check(TokenType.LBRACE):
-            self._advance()  # consume {
-            while not self._check(TokenType.RBRACE, TokenType.EOF):
-                tok = self._current()
-                if tok.type == TokenType.COMPONENT:
-                    comp = self._parse_component(is_external=False)
-                    _union_variant(comp.variants, name)
-                    result.components.append(comp)
-                elif tok.type == TokenType.SYSTEM:
-                    sys_ = self._parse_system(is_external=False)
-                    _union_variant(sys_.variants, name)
-                    result.systems.append(sys_)
-                elif tok.type == TokenType.USER:
-                    user = self._parse_user(is_external=False)
-                    _union_variant(user.variants, name)
-                    result.users.append(user)
-                elif tok.type == TokenType.CONNECT:
-                    conn = self._parse_connect()
-                    _union_variant(conn.variants, name)
-                    result.connects.append(conn)
-                elif tok.type == TokenType.EXTERNAL:
-                    self._advance()  # consume 'external'
-                    inner = self._current()
-                    if inner.type == TokenType.COMPONENT:
-                        comp = self._parse_component(is_external=True)
-                        _union_variant(comp.variants, name)
-                        result.components.append(comp)
-                    elif inner.type == TokenType.SYSTEM:
-                        sys_ = self._parse_system(is_external=True)
-                        _union_variant(sys_.variants, name)
-                        result.systems.append(sys_)
-                    elif inner.type == TokenType.USER:
-                        user = self._parse_user(is_external=True)
-                        _union_variant(user.variants, name)
-                        result.users.append(user)
-                    else:
-                        raise ParseError(
-                            f"Expected 'component', 'system', or 'user' after 'external', got {inner.value!r}",
-                            inner.line,
-                            inner.column,
-                            self._filename,
-                        )
-                else:
-                    raise ParseError(
-                        f"Unexpected token {tok.value!r} in variant block",
-                        tok.line,
-                        tok.column,
-                        self._filename,
-                    )
-            self._expect(TokenType.RBRACE)
-
-    def _parse_top_level_variants(self, result: ArchFile) -> None:
-        """Parse: variants <name1>, <name2>, ... — declares multiple variants at once."""
-        self._expect(TokenType.VARIANTS)
-        name_tok = self._expect(TokenType.IDENTIFIER)
-        if name_tok.value not in result.variant_declarations:
-            result.variant_declarations.append(name_tok.value)
-        while self._check(TokenType.COMMA):
-            self._advance()  # consume ,
-            next_tok = self._expect(TokenType.IDENTIFIER)
-            if next_tok.value not in result.variant_declarations:
-                result.variant_declarations.append(next_tok.value)
 
     def _parse_variant_block_system(self, system: System) -> None:
         """Parse a 'variant <name> { ... }' block inside a system body.

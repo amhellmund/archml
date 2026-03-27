@@ -72,8 +72,6 @@ class ArtifactDef(BaseModel):
 
     name: str
     description: str | None = None
-    spec: str | None = None
-    ref_url: str | None = None
     line: int = 0
 
 
@@ -190,7 +188,6 @@ class ImportDeclaration(BaseModel):
 class ArchFile(BaseModel):
     """Top-level model representing the parsed contents of a single .archml file."""
 
-    variant_declarations: list[str] = _Field(default_factory=list)
     imports: list[ImportDeclaration] = _Field(default_factory=list)
     enums: list[EnumDef] = _Field(default_factory=list)
     types: list[TypeDef] = _Field(default_factory=list)

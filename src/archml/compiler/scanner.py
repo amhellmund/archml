@@ -27,10 +27,7 @@ class TokenType(enum.Enum):
     TYPE = "type"
     ENUM = "enum"
     FIELD = "field"
-    SCHEMA = "schema"
     ARTIFACT = "artifact"
-    SPEC = "spec"
-    REF_URL = "ref_url"
     REQUIRES = "requires"
     PROVIDES = "provides"
     AS = "as"
@@ -38,7 +35,6 @@ class TokenType(enum.Enum):
     IMPORT = "import"
     USE = "use"
     EXTERNAL = "external"
-    DESCRIPTION = "description"
     VARIANT = "variant"
     VARIANTS = "variants"
     TRUE = "true"
@@ -49,11 +45,8 @@ class TokenType(enum.Enum):
     RBRACE = "}"
     LANGLE = "<"
     RANGLE = ">"
-    LBRACKET = "["
-    RBRACKET = "]"
     COMMA = ","
     COLON = ":"
-    EQUALS = "="
     AT = "@"
     SLASH = "/"
     ARROW = "->"
@@ -62,6 +55,7 @@ class TokenType(enum.Enum):
 
     # Literals
     STRING = "STRING"
+    TRIPLE_STRING = "TRIPLE_STRING"
     INTEGER = "INTEGER"
 
     # Identifiers
@@ -139,10 +133,7 @@ _KEYWORDS: dict[str, TokenType] = {
     "type": TokenType.TYPE,
     "enum": TokenType.ENUM,
     "field": TokenType.FIELD,
-    "schema": TokenType.SCHEMA,
     "artifact": TokenType.ARTIFACT,
-    "spec": TokenType.SPEC,
-    "ref_url": TokenType.REF_URL,
     "requires": TokenType.REQUIRES,
     "provides": TokenType.PROVIDES,
     "as": TokenType.AS,
@@ -150,7 +141,6 @@ _KEYWORDS: dict[str, TokenType] = {
     "import": TokenType.IMPORT,
     "use": TokenType.USE,
     "external": TokenType.EXTERNAL,
-    "description": TokenType.DESCRIPTION,
     "variant": TokenType.VARIANT,
     "variants": TokenType.VARIANTS,
     "true": TokenType.TRUE,
@@ -162,11 +152,8 @@ _SINGLE_CHAR_TOKENS: dict[str, TokenType] = {
     "}": TokenType.RBRACE,
     "<": TokenType.LANGLE,
     ">": TokenType.RANGLE,
-    "[": TokenType.LBRACKET,
-    "]": TokenType.RBRACKET,
     ",": TokenType.COMMA,
     ":": TokenType.COLON,
-    "=": TokenType.EQUALS,
     "@": TokenType.AT,
     "/": TokenType.SLASH,
     "$": TokenType.DOLLAR,
@@ -346,7 +333,7 @@ class _Lexer:
                 self._advance()  # first "
                 self._advance()  # second "
                 self._advance()  # third "
-                self._tokens.append(Token(TokenType.STRING, "".join(chars), line, col))
+                self._tokens.append(Token(TokenType.TRIPLE_STRING, "".join(chars), line, col))
                 return
             if ch == "\\":
                 self._advance()
