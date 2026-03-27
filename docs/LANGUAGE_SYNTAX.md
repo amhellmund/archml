@@ -16,16 +16,29 @@ ArchML files use the `.archml` extension. A file contains one or more top-level 
 # Line comments start with a hash sign.
 ```
 
-Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional `description`.
+Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional `description`. Description values support **Markdown** — headings, lists, links, and emphasis are all valid and rendered by tooling.
 
-Multi-line text is written with triple-quoted strings (`"""`):
+Descriptions are written as a bare triple-quoted string at the top of the entity body, before any fields or declarations:
 
 ```
-description = """
-Accepts and validates customer orders.
-Delegates payment processing to the PaymentGateway
-and inventory checks to the InventoryManager.
-"""
+component OrderService {
+    """Accepts and validates customer orders."""
+
+    requires PaymentRequest
+}
+
+component OrderService {
+    """
+    Accepts and validates customer orders.
+
+    - Delegates payment to **PaymentGateway**
+    - Checks stock availability with **InventoryManager**
+
+    See [ADR-12](docs/adr/0012-order-flow.md) for the design rationale.
+    """
+
+    requires PaymentRequest
+}
 ```
 
 ## Type System
@@ -40,19 +53,16 @@ The `artifact` keyword defines an abstract, named data artifact — a file, dire
 
 ```
 artifact MonthlyReport {
-    description = "PDF summary of monthly sales figures per region."
-    spec = "Single-page PDF, A4, landscape. Header contains logo and date range."
-    ref_url = "https://internal.wiki/report-format"
+    """
+    PDF summary of monthly sales figures per region.
+
+    - One file per region per month
+    - Single-page PDF, A4, landscape
+    """
 }
 ```
 
-| Attribute     | Required | Description                                                      |
-| ------------- | -------- | ---------------------------------------------------------------- |
-| `description` | no       | Purpose and context of the artifact.                             |
-| `spec`        | no       | Free-text description of the expected content, shape, or format. |
-| `ref_url`     | no       | URL to an external specification or reference document.          |
-
-Once defined, an artifact is referenced by name as a field type in any `type` or `interface`:
+The body contains an optional triple-quoted Markdown description. Once defined, an artifact is referenced by name as a field type in any `type` or `interface`:
 
 ```
 interface ReportOutput {
@@ -118,7 +128,7 @@ A component is a module with a clear responsibility. Components declare the inte
 
 ```
 component OrderService {
-    description = "Accepts and validates customer orders."
+    """Accepts and validates customer orders."""
 
     requires PaymentRequest
     requires InventoryCheck
@@ -168,13 +178,25 @@ component OrderService {
 
 A port that is neither wired by `connect` nor promoted by `expose` is a validation error.
 
+Variant annotations apply to a component and propagate to all its children. Individual ports can carry their own annotation to further extend the inherited set:
+
+```
+component<cloud> OrderService {
+    requires PaymentRequest           # inherits cloud
+    requires<hybrid> StripeWebhook    # effective set: {cloud, hybrid}
+    provides OrderConfirmation        # inherits cloud
+}
+```
+
+See [Variants](#variants) for the full variant syntax.
+
 ### System
 
 A system groups components (or sub-systems) that work toward a shared goal. Systems wire their members using `connect` statements. Systems may contain components and other systems, but components may not contain systems.
 
 ```
 system ECommerce {
-    description = "Customer-facing online store."
+    """Customer-facing online store."""
 
     component OrderService {
         requires PaymentRequest
@@ -199,6 +221,25 @@ system ECommerce {
 }
 ```
 
+Variant annotations apply to a system and propagate to all contained entities. `variant<>` blocks and per-entity `<>` annotations can be combined inside the body:
+
+```
+system<cloud> ECommerce {
+    component OrderService {}             # inherits cloud
+
+    variant<on_premise> {
+        component LocalPaymentProcessor { # effective set: {cloud, on_premise}
+            provides PaymentRequest
+        }
+        connect LocalPaymentProcessor.PaymentRequest -> $payment -> OrderService.PaymentRequest
+    }
+
+    expose OrderService.OrderConfirmation
+}
+```
+
+See [Variants](#variants) for the full variant syntax.
+
 Systems can nest other systems for large-scale decomposition:
 
 ```
@@ -222,7 +263,7 @@ A user represents a human actor — a role or persona that interacts with the sy
 
 ```
 user Customer {
-    description = "An end user who places orders through the e-commerce platform."
+    """An end user who places orders through the e-commerce platform."""
 
     provides OrderRequest
     requires OrderConfirmation
@@ -308,7 +349,6 @@ connect $<channel> -> <dst_port>
 
 - `Entity.port_name` — explicit port on a named child entity (full form)
 - `Entity` — child entity with a single unambiguous port (simplified form)
-- `port_name` — a port on the current scope's own boundary
 
 The arrow direction follows data flow: a `provides` port (producer) is always on the left; a `requires` port (consumer) is always on the right.
 
@@ -673,7 +713,7 @@ interface ReportOutput {
 from types import OrderRequest, ValidationResult, PaymentRequest, InventoryCheck, OrderConfirmation
 
 component OrderService {
-    description = "Accepts, validates, and processes customer orders."
+    """Accepts, validates, and processes customer orders."""
 
     component Validator {
     
@@ -706,7 +746,7 @@ from components/order_service import OrderService
 system ECommerce {
 
     user Customer {
-            description = "An end user who places orders through the e-commerce platform."
+            """An end user who places orders through the e-commerce platform."""
 
         provides OrderRequest
         requires OrderConfirmation
@@ -755,8 +795,6 @@ system ECommerce {
 | `type`          | Reusable data structure (used within interfaces).                                                                  |
 | `enum`          | Constrained set of named values.                                                                                   |
 | `artifact`      | Abstract data artifact (file, directory, blob, etc.) whose concrete form is given in the deployment architecture.  |
-| `spec`          | Free-text annotation on an `artifact` describing its expected content, shape, or format.                           |
-| `ref_url`       | Optional URL on an `artifact` pointing to an external specification.                                               |
 | `requires`      | Declares a port that consumes an interface (listed before `provides`).                                             |
 | `provides`      | Declares a port that exposes an interface.                                                                         |
 | `as`            | Assigns an explicit name to a port (`requires PaymentRequest as pay_in`).                                          |
@@ -768,7 +806,7 @@ system ECommerce {
 | `use`           | Places an imported entity into a system or component (e.g., `use component X`, `use system X`, `use user X`).      |
 | `external`      | Marks a system, component, or user as outside the development boundary.                                            |
 | `variant`       | Opens a variant block inside a `system` or `component` body that conditionally includes its contents (`variant<cloud> { ... }`). |
-| `description`   | Longer explanation of an entity's purpose.                                                                         |
+| `"""..."""`     | Docstring description at the top of any entity body; supports Markdown formatting.                                 |
 
 ## Scope Boundaries
 
