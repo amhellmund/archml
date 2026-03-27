@@ -2,7 +2,7 @@
 # Expected error:
 #   system 'Enterprise': name 'Services' is used for both a component and a sub-system
 
-interface API { field endpoint: String }
+interface API { endpoint: String }
 
 system Enterprise {
 

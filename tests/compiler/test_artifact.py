@@ -382,12 +382,12 @@ enum Status {
 }
 
 type Config {
-    field timeout: Int
+    timeout: Int
 }
 
 interface Request {
-    field id: String
-    field config: Config
+    id: String
+    config: Config
 }
 
 component Worker {

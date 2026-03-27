@@ -16,7 +16,7 @@ ArchML files use the `.archml` extension. A file contains one or more top-level 
 # Line comments start with a hash sign.
 ```
 
-Strings use double quotes. Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional `description`.
+Identifiers are unquoted alphanumeric names with underscores (e.g., `order_service`). Every named entity has an optional `description`.
 
 Multi-line text is written with triple-quoted strings (`"""`):
 
@@ -27,8 +27,6 @@ Delegates payment processing to the PaymentGateway
 and inventory checks to the InventoryManager.
 """
 ```
-
-Single-quoted strings may not contain a literal newline character but support the same `\n`, `\t`, `\\`, `\"` escape sequences as triple-quoted strings.
 
 ## Type System
 
@@ -58,7 +56,7 @@ Once defined, an artifact is referenced by name as a field type in any `type` or
 
 ```
 interface ReportOutput {
-    field report: MonthlyReport
+    report: MonthlyReport
 }
 ```
 
@@ -86,9 +84,9 @@ The `type` keyword defines a reusable data structure:
 
 ```
 type OrderItem {
-    field product_id: String
-    field quantity: Int
-    field unit_price: Float
+    product_id: String
+    quantity: Int
+    unit_price: Float
 }
 ```
 
@@ -102,39 +100,32 @@ An interface defines a contract — a named set of typed data fields exchanged b
 
 ```
 interface OrderRequest {
-    description = "Payload for submitting a new customer order."
+    """Payload for submitting a new customer order."""
 
-    field order_id: String
-    field customer_id: String
-    field items: List<OrderItem>
-    field total_amount: Float {
-        description = "Grand total including tax and shipping."
-    }
-    field currency: String {
-        description = "ISO 4217 currency code."
-        schema = "Three-letter uppercase code, e.g. USD, EUR."
-    }
+    order_id: String
+    customer_id: String
+    items: List<OrderItem>
+    total_amount: Float
+    currency: String
 }
 ```
-
-Fields support optional `description` and `schema` annotations in a block. `description` explains the purpose of the field; `schema` provides format or validation expectations as free text.
 
 Interfaces support versioning with the `@` suffix:
 
 ```
 interface OrderRequest @v2 {
-    field order_id: String
-    field customer_id: String
-    field items: List<OrderItem>
-    field total_amount: Float
-    field currency: String
-    field shipping_method: String
+    order_id: String
+    customer_id: String
+    items: List<OrderItem>
+    total_amount: Float
+    currency: String
+    shipping_method: String
 }
 ```
 
 When a component requires or provides a versioned interface, it references the version explicitly (e.g., `requires OrderRequest @v2`). Unversioned references default to the latest version.
 
-`interface` defines a contract used on ports. `type` defines a building block used within interfaces. Both share the same field syntax — the distinction is semantic: interfaces appear on ports; types compose into fields.
+`interface` defines a contract used on ports. `type` defines a building block used within interfaces. Both share the same field syntax (`name: type`, one per line) — the distinction is semantic: interfaces appear on ports; types compose into fields.
 
 ### Component
 
@@ -214,13 +205,8 @@ system ECommerce {
         provides InventoryCheck
     }
 
-    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-        protocol = "gRPC"
-        async = true
-    }
-    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
-        protocol = "HTTP"
-    }
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck
 
     // OrderService.OrderConfirmation has no internal consumer — expose it as the
     // system's own boundary port
@@ -356,22 +342,6 @@ connect $payment -> OrderService.PaymentRequest
 connect Frontend.API -> $bus -> Backend.API
 ```
 
-Channel attributes (`protocol`, `async`, `description`) can be set in an optional block on the `connect` statement that introduces the channel:
-
-```
-connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-    protocol = "gRPC"
-    async = true
-    description = "Delegate payment processing to Stripe."
-}
-```
-
-| Attribute     | Type    | Purpose                                      |
-| ------------- | ------- | -------------------------------------------- |
-| `protocol`    | string  | Transport protocol (e.g. `"gRPC"`, `"HTTP"`) |
-| `async`       | boolean | Whether the channel is asynchronous          |
-| `description` | string  | Human-readable explanation of the channel    |
-
 ### Port Exposure
 
 Every port of every sub-entity must be accounted for within its enclosing scope: either wired by a `connect` statement or explicitly promoted to the enclosing boundary with `expose`. A port that is neither wired nor exposed is a **validation error**.
@@ -456,10 +426,7 @@ system ECommerce {
                     provides PaymentRequest
         }
 
-        connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-            protocol = "gRPC"
-            async = true
-        }
+        connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
     }
 
     variant on_premise {
@@ -467,9 +434,7 @@ system ECommerce {
                     provides PaymentRequest
         }
 
-        connect LocalPaymentProcessor.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-            protocol = "HTTP"
-        }
+        connect LocalPaymentProcessor.PaymentRequest -> $payment -> OrderService.PaymentRequest
     }
 
     expose OrderService.OrderConfirmation
@@ -498,7 +463,6 @@ component LocalPaymentProcessor {
 
 ```
 connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-    protocol = "gRPC"
     variants = ["cloud", "hybrid"]
 }
 
@@ -679,9 +643,9 @@ The key (e.g., `payments`) matches the `@repo-name` prefix in import paths. The 
 // file: types.archml
 
 type OrderItem {
-    field product_id: String
-    field quantity: Int
-    field unit_price: Float
+    product_id: String
+    quantity: Int
+    unit_price: Float
 }
 
 enum OrderStatus {
@@ -693,42 +657,42 @@ enum OrderStatus {
 }
 
 interface OrderRequest {
-    field order_id: String
-    field customer_id: String
-    field items: List<OrderItem>
+    order_id: String
+    customer_id: String
+    items: List<OrderItem>
 }
 
 interface OrderConfirmation {
-    field order_id: String
-    field status: OrderStatus
-    field confirmed_at: Timestamp
+    order_id: String
+    status: OrderStatus
+    confirmed_at: Timestamp
 }
 
 interface PaymentRequest {
-    field order_id: String
-    field amount: Float
-    field currency: String
+    order_id: String
+    amount: Float
+    currency: String
 }
 
 interface PaymentResult {
-    field order_id: String
-    field success: Bool
-    field transaction_id: Optional<String>
+    order_id: String
+    success: Bool
+    transaction_id: Optional<String>
 }
 
 interface InventoryCheck {
-    field product_id: String
-    field quantity: Int
+    product_id: String
+    quantity: Int
 }
 
 interface InventoryStatus {
-    field product_id: String
-    field available: Bool
+    product_id: String
+    available: Bool
 }
 
 interface ValidationResult {
-    field order_id: String
-    field valid: Bool
+    order_id: String
+    valid: Bool
 }
 
 artifact MonthlyReport {
@@ -736,7 +700,7 @@ artifact MonthlyReport {
 }
 
 interface ReportOutput {
-    field report: MonthlyReport
+    report: MonthlyReport
 }
 
 // file: components/order_service.archml
@@ -805,14 +769,8 @@ system ECommerce {
     connect OrderService.OrderConfirmation -> $order_out -> Customer.OrderConfirmation
 
     // Wire OrderService to backing services
-    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-        protocol = "gRPC"
-        async = true
-        description = "Delegate payment processing."
-    }
-    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
-        protocol = "HTTP"
-    }
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
+    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck
 
     // Wire PaymentGateway to external Stripe
     connect PaymentGateway.PaymentRequest -> $stripe -> StripeAPI.PaymentRequest
@@ -831,8 +789,6 @@ system ECommerce {
 | `type`          | Reusable data structure (used within interfaces).                                                                  |
 | `enum`          | Constrained set of named values.                                                                                   |
 | `artifact`      | Abstract data artifact (file, directory, blob, etc.) whose concrete form is given in the deployment architecture.  |
-| `field`         | Named, typed data element. Supports `description` and `schema` annotations.                                        |
-| `schema`        | Free-text annotation on a `field` describing expected content or format.                                           |
 | `spec`          | Free-text annotation on an `artifact` describing its expected content, shape, or format.                           |
 | `ref_url`       | Optional URL on an `artifact` pointing to an external specification.                                               |
 | `requires`      | Declares a port that consumes an interface (listed before `provides`).                                             |

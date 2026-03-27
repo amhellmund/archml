@@ -4,11 +4,11 @@
 #   component 'Router': expose references unknown child entity 'Missing'
 
 interface DataFeed {
-    field payload: String
+    payload: String
 }
 
 interface Signal {
-    field value: Int
+    value: Int
 }
 
 system Pipeline {

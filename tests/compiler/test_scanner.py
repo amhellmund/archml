@@ -77,7 +77,6 @@ class TestKeywords:
             ("interface", TokenType.INTERFACE),
             ("type", TokenType.TYPE),
             ("enum", TokenType.ENUM),
-            ("field", TokenType.FIELD),
             ("requires", TokenType.REQUIRES),
             ("provides", TokenType.PROVIDES),
             ("connect", TokenType.CONNECT),
@@ -87,8 +86,6 @@ class TestKeywords:
             ("import", TokenType.IMPORT),
             ("use", TokenType.USE),
             ("external", TokenType.EXTERNAL),
-            ("true", TokenType.TRUE),
-            ("false", TokenType.FALSE),
         ],
     )
     def test_keyword_recognized(self, source: str, expected_type: TokenType) -> None:
@@ -201,9 +198,8 @@ class TestSymbols:
             tokenize("]")
 
     def test_colon_in_field_declaration(self) -> None:
-        types = _types("field x: String")
+        types = _types("x: String")
         assert types == [
-            TokenType.FIELD,
             TokenType.IDENTIFIER,
             TokenType.COLON,
             TokenType.IDENTIFIER,
@@ -222,73 +218,23 @@ class TestSymbols:
         ]
 
 
-# ###############
-# String Literals
-# ###############
+# #####################
+# Single-Quoted Strings
+# #####################
 
 
-class TestStringLiterals:
-    @pytest.mark.parametrize(
-        "source_string",
-        [
-            '"hello"',
-            '""',
-            '"hello world"',
-            '"gRPC/HTTP2"',
-            '"critical, pci-scope"',
-            '"USD,EUR,GBP"',
-            '"system"',
-        ],
-    )
-    def test_string_literals(self, source_string: str) -> None:
-        tokens = _tokens_no_eof(source_string)
-        assert len(tokens) == 1
-        assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == source_string.replace('"', "")
+class TestSingleQuotedStrings:
+    def test_single_quote_raises(self) -> None:
+        with pytest.raises(LexerError, match="Expected triple-quoted string"):
+            tokenize('"hello"')
 
-    def test_string_literal_whitespace(self) -> None:
-        tokens = _tokens_no_eof(r'"col1\tcol2"')
-        assert len(tokens) == 1
-        assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == "col1\tcol2"
-
-    def test_string_literal_escaped_backslash(self) -> None:
-        tokens = _tokens_no_eof(r'"back\\slash"')
-        assert len(tokens) == 1
-        assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == "back\\slash"
-
-    def test_string_literal_escaped_double_quotes(self) -> None:
-        tokens = _tokens_no_eof(r'"say \"hi\""')
-        assert len(tokens) == 1
-        assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == 'say "hi"'
-
-    def test_unterminated_string_raises(self) -> None:
-        with pytest.raises(LexerError, match="Unterminated string literal"):
+    def test_lone_quote_raises(self) -> None:
+        with pytest.raises(LexerError, match="Expected triple-quoted string"):
             tokenize('"unterminated')
 
-    def test_string_with_newline_raises(self) -> None:
-        with pytest.raises(LexerError, match="Unterminated string literal"):
-            tokenize('"line1\nline2"')
-
-    def test_invalid_escape_sequence_raises(self) -> None:
-        with pytest.raises(LexerError, match="Invalid escape sequence"):
-            tokenize(r'"bad\xescape"')
-
-    def test_string_at_end_of_file_without_close_raises(self) -> None:
-        with pytest.raises(LexerError):
-            tokenize('"eof')
-
-    def test_string_after_backslash_at_eof_raises(self) -> None:
-        with pytest.raises(LexerError):
-            tokenize('"\\')
-
-    def test_multiple_strings(self) -> None:
-        tokens = _tokens_no_eof('"foo" "bar"')
-        assert len(tokens) == 2
-        assert tokens[0].value == "foo"
-        assert tokens[1].value == "bar"
+    def test_double_quote_raises(self) -> None:
+        with pytest.raises(LexerError, match="Expected triple-quoted string"):
+            tokenize('""')
 
 
 # ###############
@@ -372,11 +318,6 @@ class TestTripleQuotedStrings:
             tokenize(r'"""bad\xescape"""')
         assert "Invalid escape sequence" in str(exc_info.value)
 
-    def test_regular_empty_string_still_works(self) -> None:
-        tokens = _tokens_no_eof('""')
-        assert tokens[0].type == TokenType.STRING
-        assert tokens[0].value == ""
-
     def test_triple_quoted_followed_by_token(self) -> None:
         tokens = _tokens_no_eof('"""hello""" system')
         assert len(tokens) == 2
@@ -455,10 +396,10 @@ class TestComments:
         types = _types(source)
         assert types == [TokenType.SYSTEM]
 
-    def test_hash_in_string_not_comment(self) -> None:
-        tokens = _tokens_no_eof('"color: #ff0000"')
+    def test_hash_in_triple_string_not_comment(self) -> None:
+        tokens = _tokens_no_eof('"""color: #ff0000"""')
         assert len(tokens) == 1
-        assert tokens[0].type == TokenType.STRING
+        assert tokens[0].type == TokenType.TRIPLE_STRING
         assert tokens[0].value == "color: #ff0000"
 
 
@@ -535,10 +476,10 @@ class TestSourceLocations:
         assert as_tok.line == 1
         assert as_tok.column == 12
 
-    def test_string_start_position_is_at_opening_quote(self) -> None:
-        tokens = _tokens_no_eof('x: "hello"')
+    def test_triple_string_start_position_is_at_opening_quote(self) -> None:
+        tokens = _tokens_no_eof('x: """hello"""')
         string_tok = tokens[2]
-        assert string_tok.type == TokenType.STRING
+        assert string_tok.type == TokenType.TRIPLE_STRING
         assert string_tok.column == 4
 
     def test_eof_position_after_single_line(self) -> None:
@@ -638,20 +579,18 @@ class TestStructuralPatterns:
         ]
 
     def test_field_declaration_with_type(self) -> None:
-        source = "field order_id: String"
+        source = "order_id: String"
         types = _types(source)
         assert types == [
-            TokenType.FIELD,
             TokenType.IDENTIFIER,
             TokenType.COLON,
             TokenType.IDENTIFIER,
         ]
 
     def test_field_with_container_type(self) -> None:
-        source = "field items: List<OrderItem>"
+        source = "items: List<OrderItem>"
         types = _types(source)
         assert types == [
-            TokenType.FIELD,
             TokenType.IDENTIFIER,
             TokenType.COLON,
             TokenType.IDENTIFIER,
@@ -786,15 +725,15 @@ class TestStructuralPatterns:
         types = _types(source)
         assert types == [TokenType.PROVIDES, TokenType.IDENTIFIER]
 
-    def test_boolean_true_value(self) -> None:
+    def test_true_is_identifier(self) -> None:
         source = "true"
         types = _types(source)
-        assert types == [TokenType.TRUE]
+        assert types == [TokenType.IDENTIFIER]
 
-    def test_boolean_false_value(self) -> None:
+    def test_false_is_identifier(self) -> None:
         source = "false"
         types = _types(source)
-        assert types == [TokenType.FALSE]
+        assert types == [TokenType.IDENTIFIER]
 
     def test_connect_with_variants_block(self) -> None:
         source = "connect A.PaymentRequest -> $payment -> B.PaymentRequest { variants: cloud }"
@@ -853,8 +792,8 @@ class TestStructuralPatterns:
     def test_type_declaration(self) -> None:
         source = """
             type OrderItem {
-                field product_id: String
-                field quantity: Int
+                product_id: String
+                quantity: Int
             }
         """
         types = _types(source)
@@ -862,11 +801,9 @@ class TestStructuralPatterns:
             TokenType.TYPE,
             TokenType.IDENTIFIER,
             TokenType.LBRACE,
-            TokenType.FIELD,
             TokenType.IDENTIFIER,
             TokenType.COLON,
             TokenType.IDENTIFIER,
-            TokenType.FIELD,
             TokenType.IDENTIFIER,
             TokenType.COLON,
             TokenType.IDENTIFIER,
@@ -888,11 +825,9 @@ class TestFullExample:
             interface OrderRequest {
                 """Payload for submitting a new customer order."""
 
-                field order_id: String
-                field items: List<OrderItem>
-                field total_amount: Float {
-                    """Grand total including tax and shipping."""
-                }
+                order_id: String
+                items: List<OrderItem>
+                total_amount: Float
             }
         '''
         tokens = _tokens_no_eof(source)
@@ -928,11 +863,11 @@ class TestFullExample:
         assert len(dollar_tokens) == 1
 
     def test_integer_values_in_source(self) -> None:
-        source = "field quantity: Int"
+        source = "quantity: Int"
         tokens = _tokens_no_eof(source)
         # 'Int' is an identifier, not a number
-        assert tokens[3].type == TokenType.IDENTIFIER
-        assert tokens[3].value == "Int"
+        assert tokens[2].type == TokenType.IDENTIFIER
+        assert tokens[2].value == "Int"
 
 
 # ###############

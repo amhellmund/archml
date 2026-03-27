@@ -167,12 +167,7 @@ def test_check_reports_validation_errors(
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     # Interface propagation error: system provides I but no member provides I.
     (tmp_path / "propagation.archml").write_text(
-        "interface I { field v: Int }\n"
-        "interface J { field v: Int }\n"
-        "system S {\n"
-        "  provides I\n"
-        "  component A { provides J }\n"
-        "}\n"
+        "interface I { v: Int }\ninterface J { v: Int }\nsystem S {\n  provides I\n  component A { provides J }\n}\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -188,7 +183,7 @@ def test_check_uses_workspace_yaml_build_dir(
     (tmp_path / ".archml-workspace.yaml").write_text(
         "name: src\nbuild-directory: custom-build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
-    (tmp_path / "arch.archml").write_text("interface Signal { field v: Int }\ncomponent A { provides Signal }\n")
+    (tmp_path / "arch.archml").write_text("interface Signal { v: Int }\ncomponent A { provides Signal }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -269,7 +264,7 @@ def test_check_with_workspace_yaml_and_local_source_import(
     """check resolves mnemonic imports from the workspace YAML source-imports."""
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir()
-    (lib_dir / "iface.archml").write_text("interface MyIface { field v: Int }\n")
+    (lib_dir / "iface.archml").write_text("interface MyIface { v: Int }\n")
 
     (tmp_path / ".archml-workspace.yaml").write_text(
         "name: myproject\nbuild-directory: build\n"
@@ -912,7 +907,7 @@ def test_check_command_uses_synced_remote_repos(
     remote_dir = tmp_path / ".archml-remotes" / "payments"
     remote_api_dir = remote_dir / "api"
     remote_api_dir.mkdir(parents=True)
-    (remote_api_dir / "types.archml").write_text("interface PaymentAPI { field amount: Float }\n")
+    (remote_api_dir / "types.archml").write_text("interface PaymentAPI { amount: Float }\n")
     # Remote repo defines its own workspace config with the "api" mnemonic.
     (remote_dir / ".archml-workspace.yaml").write_text(
         "name: payments\nbuild-directory: build\nsource-imports:\n  - name: api\n    local-path: api\n"
@@ -944,7 +939,7 @@ def test_check_command_loads_remote_repo_mnemonics(
     remote_dir = tmp_path / ".archml-remotes" / "payments"
     remote_lib_dir = remote_dir / "src" / "lib"
     remote_lib_dir.mkdir(parents=True)
-    (remote_lib_dir / "types.archml").write_text("interface PaymentType { field amount: Float }\n")
+    (remote_lib_dir / "types.archml").write_text("interface PaymentType { amount: Float }\n")
 
     # Remote repo has its own .archml-workspace.yaml defining a "lib" mnemonic.
     (remote_dir / ".archml-workspace.yaml").write_text(

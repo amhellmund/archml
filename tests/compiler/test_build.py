@@ -59,7 +59,7 @@ class TestSingleFile:
         _write(
             src / "simple.archml",
             """
-interface Signal { field v: Int }
+interface Signal { v: Int }
 component A { provides Signal }
 """,
         )
@@ -97,7 +97,7 @@ enum Color {
     Green
     Blue
 }
-type Point { field x: Int field y: Int }
+type Point { x: Int y: Int }
 """,
         )
         result = compile_files([src / "types.archml"], build, {("", "app"): src})
@@ -170,7 +170,7 @@ class TestMultiFile:
         build = tmp_path / "build"
         _write(
             src / "types.archml",
-            "interface Signal { field v: Int }",
+            "interface Signal { v: Int }",
         )
         _write(
             src / "app.archml",
@@ -186,7 +186,7 @@ component Worker { requires Signal }
     def test_dependency_artifact_also_written(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "types.archml", "interface Signal { field v: Int }")
+        _write(src / "types.archml", "interface Signal { v: Int }")
         _write(src / "app.archml", "from app/types import Signal\ncomponent W { requires Signal }")
         compile_files([src / "app.archml"], build, {("", "app"): src})
         types_artifact = _artifact(build, "app/types")
@@ -195,7 +195,7 @@ component Worker { requires Signal }
     def test_three_level_dependency_chain(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "base.archml", "interface IBase { field x: Int }")
+        _write(src / "base.archml", "interface IBase { x: Int }")
         _write(src / "mid.archml", "from app/base import IBase\ncomponent Mid { requires IBase }")
         _write(
             src / "top.archml", "from app/base import IBase\nfrom app/mid import Mid\ncomponent Top { requires IBase }"
@@ -209,7 +209,7 @@ component Worker { requires Signal }
         """Two top-level files sharing a dependency don't recompile it."""
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "shared.archml", "interface I { field v: Int }")
+        _write(src / "shared.archml", "interface I { v: Int }")
         _write(src / "a.archml", "from app/shared import I\ncomponent A { requires I }")
         _write(src / "b.archml", "from app/shared import I\ncomponent B { requires I }")
         result = compile_files([src / "a.archml", src / "b.archml"], build, {("", "app"): src})
@@ -220,7 +220,7 @@ component Worker { requires Signal }
     def test_subdirectory_dependency(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "shared" / "types.archml", "interface Signal { field v: Int }")
+        _write(src / "shared" / "types.archml", "interface Signal { v: Int }")
         _write(
             src / "worker.archml",
             "from app/shared/types import Signal\ncomponent Worker { requires Signal }",
@@ -253,7 +253,7 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "types.archml", "interface Signal { field v: Int }")
+        _write(lib / "types.archml", "interface Signal { v: Int }")
         _write(
             src / "app.archml",
             "from mylib/types import Signal\ncomponent Worker { requires Signal }",
@@ -273,7 +273,7 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "types.archml", "interface Signal { field v: Int }")
+        _write(lib / "types.archml", "interface Signal { v: Int }")
         _write(src / "app.archml", "from mylib/types import Signal\ncomponent C { requires Signal }")
 
         compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
@@ -286,7 +286,7 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "shared" / "base.archml", "interface IBase { field x: Int }")
+        _write(lib / "shared" / "base.archml", "interface IBase { x: Int }")
         _write(
             src / "app.archml",
             "from mylib/shared/base import IBase\ncomponent C { requires IBase }",
@@ -306,8 +306,8 @@ class TestSourceImports:
         lib_b = tmp_path / "lib_b"
         build = tmp_path / "build"
 
-        _write(lib_a / "types.archml", "interface TypeA { field x: Int }")
-        _write(lib_b / "types.archml", "interface TypeB { field y: Int }")
+        _write(lib_a / "types.archml", "interface TypeA { x: Int }")
+        _write(lib_b / "types.archml", "interface TypeB { y: Int }")
         _write(
             src / "app.archml",
             "from liba/types import TypeA\nfrom libb/types import TypeB\n"
@@ -328,7 +328,7 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "iface.archml", "interface IFace { field v: Int }")
+        _write(lib / "iface.archml", "interface IFace { v: Int }")
         _write(src / "mid.archml", "from ext/iface import IFace\ncomponent Mid { requires IFace }")
         _write(src / "top.archml", "from app/mid import Mid\ncomponent Top {}")
 
@@ -357,7 +357,7 @@ class TestSourceImports:
         remote_services = tmp_path / "remote" / "services"
         build = tmp_path / "build"
 
-        _write(remote_services / "payment.archml", "interface PaymentService { field amount: Float }")
+        _write(remote_services / "payment.archml", "interface PaymentService { amount: Float }")
         _write(
             src / "app.archml",
             "from @payments/services/payment import PaymentService\ncomponent C { requires PaymentService }",
@@ -378,7 +378,7 @@ class TestSourceImports:
         remote_api = tmp_path / "remote" / "api"
         build = tmp_path / "build"
 
-        _write(remote_api / "types.archml", "interface RemoteType { field v: Int }")
+        _write(remote_api / "types.archml", "interface RemoteType { v: Int }")
         _write(src / "app.archml", "from @ext/api/types import RemoteType\ncomponent C { requires RemoteType }")
 
         compile_files([src / "app.archml"], build, {("", "app"): src, ("@ext", "api"): remote_api})
@@ -391,7 +391,7 @@ class TestSourceImports:
         remote_utils = tmp_path / "remote" / "utils"
         build = tmp_path / "build"
 
-        _write(remote_utils / "helpers.archml", "interface Helper { field v: Int }")
+        _write(remote_utils / "helpers.archml", "interface Helper { v: Int }")
         _write(
             src / "app.archml",
             "from @payments/utils/helpers import Helper\ncomponent C { requires Helper }",
@@ -446,7 +446,7 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "types.archml", "interface Signal { field v: Int }")
+        _write(lib / "types.archml", "interface Signal { v: Int }")
         _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
         compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
@@ -483,7 +483,7 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "utils.archml", "interface IUtil { field v: Int }")
+        _write(lib / "utils.archml", "interface IUtil { v: Int }")
         # lib/main.archml imports from "lib" mnemonic (same repo "")
         _write(lib / "main.archml", "from lib/utils import IUtil\ncomponent Main { requires IUtil }")
 
@@ -508,7 +508,7 @@ class TestFileMoveRecompilation:
         build = tmp_path / "build"
 
         # Initial setup: app imports types from same mnemonic
-        _write(src / "types.archml", "interface Signal { field v: Int }")
+        _write(src / "types.archml", "interface Signal { v: Int }")
         _write(src / "app.archml", "from app/types import Signal\ncomponent W { requires Signal }")
 
         compile_files([src / "app.archml"], build, {("", "app"): src})
@@ -519,7 +519,7 @@ class TestFileMoveRecompilation:
         (src / "types.archml").unlink()
 
         # Place the file at a new location and update app to import from new location
-        _write(src / "signals" / "types.archml", "interface Signal { field v: Int }")
+        _write(src / "signals" / "types.archml", "interface Signal { v: Int }")
         _write(src / "app.archml", "from app/signals/types import Signal\ncomponent W { requires Signal }")
 
         compile_files([src / "app.archml"], build, {("", "app"): src})
@@ -536,7 +536,7 @@ class TestFileMoveRecompilation:
         build = tmp_path / "build"
 
         # First compilation: mylib/types exists
-        _write(lib / "types.archml", "interface Signal { field v: Int }")
+        _write(lib / "types.archml", "interface Signal { v: Int }")
         _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
         compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
@@ -558,7 +558,7 @@ class TestFileMoveRecompilation:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "types.archml", "interface Signal { field v: Int }")
+        _write(lib / "types.archml", "interface Signal { v: Int }")
         _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
         compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
@@ -679,7 +679,7 @@ class TestReturnValue:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "iface.archml", "interface I { field v: Int }")
+        _write(lib / "iface.archml", "interface I { v: Int }")
         _write(src / "app.archml", "from ext/iface import I\ncomponent C { requires I }")
 
         result = compile_files([src / "app.archml"], build, {("", "app"): src, ("", "ext"): lib})

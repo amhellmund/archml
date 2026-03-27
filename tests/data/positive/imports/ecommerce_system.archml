@@ -6,9 +6,9 @@ from imports/order_service import OrderService
 
 # PaymentResult defined locally (not in the types file)
 interface PaymentResult {
-    field order_id: String
-    field success: Bool
-    field transaction_id: Optional<String>
+    order_id: String
+    success: Bool
+    transaction_id: Optional<String>
 }
 
 external system StripeAPI {

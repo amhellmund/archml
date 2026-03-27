@@ -7,11 +7,11 @@ enum Status {
 }
 
 type Status {
-    field code: Int
-    field label: String
+    code: Int
+    label: String
 }
 
 # A field referencing Status would be ambiguous
 interface Record {
-    field status: Status
+    status: Status
 }

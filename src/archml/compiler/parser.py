@@ -86,7 +86,6 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.EXPOSE,
         TokenType.TYPE,
         TokenType.ENUM,
-        TokenType.FIELD,
         TokenType.REQUIRES,
         TokenType.PROVIDES,
         TokenType.AS,
@@ -96,8 +95,6 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.EXTERNAL,
         TokenType.VARIANT,
         TokenType.VARIANTS,
-        TokenType.TRUE,
-        TokenType.FALSE,
         TokenType.ARTIFACT,
     }
 )
@@ -357,7 +354,7 @@ class _Parser:
                     tok.column,
                     self._filename,
                 )
-            elif self._check(TokenType.FIELD):
+            elif self._at_field_start():
                 type_def.fields.append(self._parse_field())
             else:
                 tok = self._current()
@@ -426,7 +423,7 @@ class _Parser:
                     tok.column,
                     self._filename,
                 )
-            elif self._check(TokenType.FIELD):
+            elif self._at_field_start():
                 iface.fields.append(self._parse_field())
             else:
                 tok = self._current()
@@ -779,27 +776,22 @@ class _Parser:
     # Field declarations
     # ------------------------------------------------------------------
 
+    def _at_field_start(self) -> bool:
+        """Return True if the current position looks like the start of a field def.
+
+        A field starts with any name token (identifier or keyword) followed by a colon.
+        """
+        cur = self._peek_type()
+        if cur != TokenType.IDENTIFIER and cur not in _KEYWORD_TYPES:
+            return False
+        return self._peek_type_at(1) == TokenType.COLON
+
     def _parse_field(self) -> FieldDef:
-        """Parse: field <name>: <type> [{ \"\"\"docstring\"\"\" }]"""
-        self._expect(TokenType.FIELD)
+        """Parse: <name>: <type>"""
         name_tok = self._expect_name_token()
         self._expect(TokenType.COLON)
         field_type = self._parse_type_ref()
-        f = FieldDef(name=name_tok.value, type=field_type, line=name_tok.line)
-        if self._check(TokenType.LBRACE):
-            self._advance()  # consume {
-            if self._check(TokenType.TRIPLE_STRING):
-                f.description = self._advance().value
-            if not self._check(TokenType.RBRACE):
-                tok = self._current()
-                raise ParseError(
-                    f"Unexpected token {tok.value!r} in field annotation block",
-                    tok.line,
-                    tok.column,
-                    self._filename,
-                )
-            self._expect(TokenType.RBRACE)
-        return f
+        return FieldDef(name=name_tok.value, type=field_type, line=name_tok.line)
 
     # ------------------------------------------------------------------
     # Type references

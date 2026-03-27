@@ -7,18 +7,18 @@ enum Priority {
 }
 
 type TaskConfig {
-    field retries: Int
-    field timeout: Int
+    retries: Int
+    timeout: Int
 }
 
 interface TaskRequest {
-    field task_id: String
-    field priority: Priority
-    field config: TaskConfig
+    task_id: String
+    priority: Priority
+    config: TaskConfig
 }
 
 interface TaskResult {
-    field task_id: String
-    field success: Bool
-    field message: Optional<String>
+    task_id: String
+    success: Bool
+    message: Optional<String>
 }

@@ -3,23 +3,23 @@
 
 # Unversioned baseline
 interface OrderRequest {
-    field order_id: String
-    field amount: Float
+    order_id: String
+    amount: Float
 }
 
 # Version 2 adds currency
 interface OrderRequest @v2 {
-    field order_id: String
-    field amount: Float
-    field currency: String
+    order_id: String
+    amount: Float
+    currency: String
 }
 
 # Version 3 adds shipping
 interface OrderRequest @v3 {
-    field order_id: String
-    field amount: Float
-    field currency: String
-    field shipping_method: String
+    order_id: String
+    amount: Float
+    currency: String
+    shipping_method: String
 }
 
 # Component referencing specific version

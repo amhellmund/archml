@@ -17,34 +17,34 @@ enum PaymentMethod {
 }
 
 type Address {
-    field street: String
-    field city: String
-    field postal_code: String
-    field country: String
+    street: String
+    city: String
+    postal_code: String
+    country: String
 }
 
 type OrderItem {
-    field product_id: String
-    field product_name: String
-    field quantity: Int
-    field unit_price: Float
+    product_id: String
+    product_name: String
+    quantity: Int
+    unit_price: Float
 }
 
 type CustomerProfile {
-    field customer_id: String
-    field name: String
-    field email: String
-    field address: Address
-    field preferred_payment: PaymentMethod
+    customer_id: String
+    name: String
+    email: String
+    address: Address
+    preferred_payment: PaymentMethod
 }
 
 type Order {
-    field order_id: String
-    field customer: CustomerProfile
-    field items: List<OrderItem>
-    field total: Float
-    field status: OrderStatus
-    field payment_method: PaymentMethod
-    field notes: Optional<String>
-    field labels: Map<String, String>
+    order_id: String
+    customer: CustomerProfile
+    items: List<OrderItem>
+    total: Float
+    status: OrderStatus
+    payment_method: PaymentMethod
+    notes: Optional<String>
+    labels: Map<String, String>
 }

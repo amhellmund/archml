@@ -4,19 +4,19 @@
 #   Duplicate interface definition 'OrderRequest@v2'
 
 interface OrderRequest {
-    field order_id: String
+    order_id: String
 }
 
 interface OrderRequest {
-    field id: String
+    id: String
 }
 
 interface OrderRequest @v2 {
-    field order_id: String
-    field currency: String
+    order_id: String
+    currency: String
 }
 
 interface OrderRequest @v2 {
-    field order_id: String
-    field version: Int
+    order_id: String
+    version: Int
 }

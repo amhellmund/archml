@@ -2,23 +2,23 @@
 # Expected result: no semantic errors
 
 interface ValidationResult {
-    field is_valid: Bool
-    field errors: List<String>
+    is_valid: Bool
+    errors: List<String>
 }
 
 interface OrderRequest {
-    field order_id: String
-    field amount: Float
+    order_id: String
+    amount: Float
 }
 
 interface OrderConfirmation {
-    field order_id: String
-    field confirmed: Bool
+    order_id: String
+    confirmed: Bool
 }
 
 interface PaymentRequest {
-    field order_id: String
-    field amount: Float
+    order_id: String
+    amount: Float
 }
 
 # A component with sub-components and internal routing

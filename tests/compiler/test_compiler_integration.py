@@ -265,40 +265,40 @@ enum PaymentMethod {
 }
 
 type OrderItem {
-    field product_id: String
-    field quantity: Int
-    field unit_price: Float
+    product_id: String
+    quantity: Int
+    unit_price: Float
 }
 
 interface OrderRequest {
-    field order_id: String
-    field customer_id: String
-    field items: List<OrderItem>
+    order_id: String
+    customer_id: String
+    items: List<OrderItem>
 }
 
 interface OrderRequest @v2 {
-    field order_id: String
-    field customer_id: String
-    field items: List<OrderItem>
-    field payment_method: PaymentMethod
+    order_id: String
+    customer_id: String
+    items: List<OrderItem>
+    payment_method: PaymentMethod
 }
 
 interface OrderConfirmation {
-    field order_id: String
-    field status: OrderStatus
-    field confirmed_at: Timestamp
+    order_id: String
+    status: OrderStatus
+    confirmed_at: Timestamp
 }
 
 interface PaymentRequest {
-    field order_id: String
-    field amount: Float
-    field currency: String
+    order_id: String
+    amount: Float
+    currency: String
 }
 
 interface PaymentResult {
-    field order_id: String
-    field success: Bool
-    field transaction_id: Optional<String>
+    order_id: String
+    success: Bool
+    transaction_id: Optional<String>
 }
 
 component OrderService {
@@ -346,7 +346,7 @@ enum Dup {
     B
 }
 
-type Bad { field x: UnknownType }
+type Bad { x: UnknownType }
 
 component C1 {
     requires MissingInterface
@@ -368,7 +368,7 @@ system S1 {
     def test_deeply_nested_system_structure(self) -> None:
         """Nested systems and components should all be checked recursively."""
         source = """
-interface Signal { field v: Int }
+interface Signal { v: Int }
 
 system Outer {
     system Middle {
@@ -389,7 +389,7 @@ system Outer {
     def test_deeply_nested_with_error(self) -> None:
         """An error deep in a nested structure should still be reported."""
         source = """
-interface Signal { field v: Int }
+interface Signal { v: Int }
 
 system Outer {
     system Middle {
@@ -409,7 +409,7 @@ system Outer {
         source = """
 from services import OrderService
 
-interface PaymentRequest { field amount: Float }
+interface PaymentRequest { amount: Float }
 
 system ECommerce {
     use component OrderService

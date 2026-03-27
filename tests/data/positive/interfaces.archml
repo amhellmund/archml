@@ -10,77 +10,67 @@ enum OrderStatus {
 }
 
 type OrderItem {
-    field product_id: String
-    field quantity: Int
-    field unit_price: Float
+    product_id: String
+    quantity: Int
+    unit_price: Float
 }
 
 # Unversioned interface
 interface OrderRequest {
     """Payload for placing a new customer order."""
 
-    field order_id: String
-    field customer_id: String
-    field items: List<OrderItem>
-    field total_amount: Float {
-        """Grand total including tax and shipping."""
-    }
-    field currency: String {
-        """ISO 4217 currency code."""
-    }
+    order_id: String
+    customer_id: String
+    items: List<OrderItem>
+    total_amount: Float
+    currency: String
 }
 
 # Versioned interface v2 (adds shipping_method)
 interface OrderRequest @v2 {
 
-    field order_id: String
-    field customer_id: String
-    field items: List<OrderItem>
-    field total_amount: Float
-    field currency: String
-    field shipping_method: String
+    order_id: String
+    customer_id: String
+    items: List<OrderItem>
+    total_amount: Float
+    currency: String
+    shipping_method: String
 }
 
 interface OrderConfirmation {
 
-    field order_id: String
-    field status: OrderStatus
-    field confirmed_at: Timestamp
-    field estimated_delivery: Optional<Datetime>
+    order_id: String
+    status: OrderStatus
+    confirmed_at: Timestamp
+    estimated_delivery: Optional<Datetime>
 }
 
 interface PaymentRequest {
-    field order_id: String
-    field amount: Float
-    field currency: String
+    order_id: String
+    amount: Float
+    currency: String
 }
 
 interface PaymentResult {
-    field order_id: String
-    field success: Bool
-    field transaction_id: Optional<String>
-    field error_message: Optional<String>
+    order_id: String
+    success: Bool
+    transaction_id: Optional<String>
+    error_message: Optional<String>
 }
 
 interface InventoryCheck {
-    field product_id: String
-    field requested_quantity: Int
+    product_id: String
+    requested_quantity: Int
 }
 
 interface InventoryStatus {
-    field product_id: String
-    field available: Bool
-    field available_quantity: Int
+    product_id: String
+    available: Bool
+    available_quantity: Int
 }
 
 interface ReportOutput {
-    field report: String {
-        """Monthly sales summary report."""
-    }
-    field export: String {
-        """Raw transaction data."""
-    }
-    field artifact: String {
-        """Contains report.pdf, data.csv, and metadata.json."""
-    }
+    report: String
+    export: String
+    artifact: String
 }

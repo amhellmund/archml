@@ -6,18 +6,18 @@ enum Status {
 }
 
 type Config {
-    field timeout: Int
-    field enabled: Bool
+    timeout: Int
+    enabled: Bool
 }
 
 interface DataRequest {
-    field id: String
-    field config: Config
+    id: String
+    config: Config
 }
 
 interface DataResponse {
-    field id: String
-    field status: Status
+    id: String
+    status: Status
 }
 
 component Worker {

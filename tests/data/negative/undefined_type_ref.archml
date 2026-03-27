@@ -6,17 +6,17 @@
 #   Undefined type 'BadKey' in field 'labels' of interface 'Catalog'
 
 type Order {
-    field order_id: String
-    field status: OrderStatus
-    field items: List<OrderItem>
-    field amount: Float
+    order_id: String
+    status: OrderStatus
+    items: List<OrderItem>
+    amount: Float
 }
 
 interface Response {
-    field id: String
-    field meta: Optional<UnknownMeta>
+    id: String
+    meta: Optional<UnknownMeta>
 }
 
 interface Catalog {
-    field labels: Map<BadKey, String>
+    labels: Map<BadKey, String>
 }

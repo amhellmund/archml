@@ -212,7 +212,7 @@ class TestTypeDeclarations:
         assert result.types[0].fields == []
 
     def test_type_with_single_primitive_field(self) -> None:
-        result = _parse("type Order { field order_id: String }")
+        result = _parse("type Order { order_id: String }")
         t = result.types[0]
         assert len(t.fields) == 1
         assert t.fields[0].name == "order_id"
@@ -222,9 +222,9 @@ class TestTypeDeclarations:
     def test_type_with_multiple_fields(self) -> None:
         source = """\
 type OrderItem {
-    field product_id: String
-    field quantity: Int
-    field unit_price: Float
+    product_id: String
+    quantity: Int
+    unit_price: Float
 }"""
         result = _parse(source)
         t = result.types[0]
@@ -238,34 +238,34 @@ type OrderItem {
         source = '''\
 type Order {
     """Represents an order."""
-    field id: String
+    id: String
 }'''
         result = _parse(source)
         assert result.types[0].description == "Represents an order."
 
     def test_type_with_named_type_field(self) -> None:
-        result = _parse("type Order { field item: OrderItem }")
+        result = _parse("type Order { item: OrderItem }")
         assert isinstance(result.types[0].fields[0].type, NamedTypeRef)
         assert result.types[0].fields[0].type.name == "OrderItem"
 
     def test_type_with_list_field(self) -> None:
-        result = _parse("type Order { field items: List<OrderItem> }")
+        result = _parse("type Order { items: List<OrderItem> }")
         field = result.types[0].fields[0]
         assert isinstance(field.type, ListTypeRef)
         assert isinstance(field.type.element_type, NamedTypeRef)
 
     def test_type_with_map_field(self) -> None:
-        result = _parse("type Store { field index: Map<String, Int> }")
+        result = _parse("type Store { index: Map<String, Int> }")
         field = result.types[0].fields[0]
         assert isinstance(field.type, MapTypeRef)
 
     def test_type_with_optional_field(self) -> None:
-        result = _parse("type Order { field note: Optional<String> }")
+        result = _parse("type Order { note: Optional<String> }")
         field = result.types[0].fields[0]
         assert isinstance(field.type, OptionalTypeRef)
 
     def test_multiple_types(self) -> None:
-        source = "type A { field x: String }\ntype B { field y: Int }"
+        source = "type A { x: String }\ntype B { y: Int }"
         result = _parse(source)
         assert len(result.types) == 2
         assert result.types[0].name == "A"
@@ -312,10 +312,10 @@ interface OrderRequest {
     def test_interface_with_fields(self) -> None:
         source = """\
 interface OrderRequest {
-    field order_id: String
-    field customer_id: String
-    field items: List<OrderItem>
-    field total_amount: Float
+    order_id: String
+    customer_id: String
+    items: List<OrderItem>
+    total_amount: Float
 }"""
         result = _parse(source)
         iface = result.interfaces[0]
@@ -325,23 +325,11 @@ interface OrderRequest {
         assert iface.fields[2].name == "items"
         assert isinstance(iface.fields[2].type, ListTypeRef)
 
-    def test_interface_field_with_description(self) -> None:
-        source = '''\
-interface OrderRequest {
-    field total_amount: Float {
-        """Grand total including tax and shipping."""
-    }
-}'''
-        result = _parse(source)
-        field = result.interfaces[0].fields[0]
-        assert field.name == "total_amount"
-        assert field.description == "Grand total including tax and shipping."
-
     def test_interface_with_all_attributes(self) -> None:
         source = '''\
 interface OrderRequest {
     """Payload for submitting a new customer order."""
-    field order_id: String
+    order_id: String
 }'''
         result = _parse(source)
         iface = result.interfaces[0]
@@ -351,9 +339,9 @@ interface OrderRequest {
     def test_versioned_interface_with_fields(self) -> None:
         source = """\
 interface OrderRequest @v2 {
-    field order_id: String
-    field customer_id: String
-    field shipping_method: String
+    order_id: String
+    customer_id: String
+    shipping_method: String
 }"""
         result = _parse(source)
         iface = result.interfaces[0]
@@ -376,7 +364,7 @@ interface OrderRequest @v2 {
 class TestFieldTypeReferences:
     def _parse_field_type(self, type_str: str) -> FieldDef:
         """Helper: parse a single field declaration inside a type."""
-        result = _parse(f"type T {{ field x: {type_str} }}")
+        result = _parse(f"type T {{ x: {type_str} }}")
         return result.types[0].fields[0]
 
     def test_primitive_string(self) -> None:
@@ -482,13 +470,9 @@ class TestFieldAnnotations:
         result = _parse(f"type T {{ {field_source} }}")
         return result.types[0].fields[0]
 
-    def test_field_without_annotation_has_no_description(self) -> None:
-        f = self._parse_field("field x: String")
+    def test_field_has_no_description(self) -> None:
+        f = self._parse_field("x: String")
         assert f.description is None
-
-    def test_field_with_description(self) -> None:
-        f = self._parse_field('field amount: Float { """Grand total.""" }')
-        assert f.description == "Grand total."
 
 
 # ###############
@@ -1072,25 +1056,10 @@ enum OrderStatus {
 type OrderItem {
     """Represents a single line
 item within an order."""
-    field product_id: String
+    product_id: String
 }'''
         result = _parse(source)
         assert result.types[0].description is not None
-
-    def test_triple_quoted_description_on_field(self) -> None:
-        source = '''\
-interface Report {
-    field summary: String {
-        """
-        Page 1: executive summary.
-        Page 2+: detailed breakdown by region.
-        """
-    }
-}'''
-        result = _parse(source)
-        field = result.interfaces[0].fields[0]
-        assert field.description is not None
-        assert "executive" in field.description
 
     def test_docstring_description_on_interface(self) -> None:
         result = _parse('interface I { """Simple description.""" }')
@@ -1138,8 +1107,8 @@ from interfaces/order import OrderRequest
 enum OrderStatus {
     Pending
 }
-type OrderItem { field product_id: String }
-interface OrderRequest { field order_id: String }
+type OrderItem { product_id: String }
+interface OrderRequest { order_id: String }
 component OrderService { requires OrderRequest }
 system ECommerce { use component OrderService }
 """
@@ -1189,48 +1158,45 @@ system B {
 class TestFullLanguageExamples:
     def test_complete_spec_example_types_file(self) -> None:
         """Parse the types.archml portion of the complete spec example."""
-        dq = '"""'
         source = (
             "type OrderItem {\n"
-            "    field product_id: String\n"
-            "    field quantity: Int\n"
-            "    field unit_price: Float\n"
+            "    product_id: String\n"
+            "    quantity: Int\n"
+            "    unit_price: Float\n"
             "}\n\n"
             "enum OrderStatus {\n"
             "    Pending\n    Confirmed\n    Shipped\n    Delivered\n    Cancelled\n"
             "}\n\n"
             "interface OrderRequest {\n"
-            "    field order_id: String\n"
-            "    field customer_id: String\n"
-            "    field items: List<OrderItem>\n"
+            "    order_id: String\n"
+            "    customer_id: String\n"
+            "    items: List<OrderItem>\n"
             "}\n\n"
             "interface OrderConfirmation {\n"
-            "    field order_id: String\n"
-            "    field status: OrderStatus\n"
-            "    field confirmed_at: Timestamp\n"
+            "    order_id: String\n"
+            "    status: OrderStatus\n"
+            "    confirmed_at: Timestamp\n"
             "}\n\n"
             "interface PaymentRequest {\n"
-            "    field order_id: String\n"
-            "    field amount: Float\n"
-            "    field currency: String\n"
+            "    order_id: String\n"
+            "    amount: Float\n"
+            "    currency: String\n"
             "}\n\n"
             "interface PaymentResult {\n"
-            "    field order_id: String\n"
-            "    field success: Bool\n"
-            "    field transaction_id: Optional<String>\n"
+            "    order_id: String\n"
+            "    success: Bool\n"
+            "    transaction_id: Optional<String>\n"
             "}\n\n"
             "interface InventoryCheck {\n"
-            "    field product_id: String\n"
-            "    field quantity: Int\n"
+            "    product_id: String\n"
+            "    quantity: Int\n"
             "}\n\n"
             "interface InventoryStatus {\n"
-            "    field product_id: String\n"
-            "    field available: Bool\n"
+            "    product_id: String\n"
+            "    available: Bool\n"
             "}\n\n"
             "interface ReportOutput {\n"
-            "    field report: String {\n"
-            f"        {dq}Monthly sales summary report.{dq}\n"
-            "    }\n"
+            "    report: String\n"
             "}\n"
         )
         result = _parse(source)
@@ -1263,11 +1229,10 @@ class TestFullLanguageExamples:
         assert txn_field.name == "transaction_id"
         assert isinstance(txn_field.type, OptionalTypeRef)
 
-        # Verify ReportOutput with field docstring
+        # Verify ReportOutput
         report = next(i for i in result.interfaces if i.name == "ReportOutput")
-        field = report.fields[0]
-        assert isinstance(field.type, PrimitiveTypeRef)
-        assert "Monthly sales summary" in (field.description or "")
+        assert len(report.fields) == 1
+        assert isinstance(report.fields[0].type, PrimitiveTypeRef)
 
     def test_complete_spec_example_order_service_component(self) -> None:
         """Parse the components/order_service.archml portion."""
@@ -1452,11 +1417,11 @@ class TestParseErrors:
 
     def test_missing_identifier_after_type(self) -> None:
         with pytest.raises(ParseError):
-            _parse("type { field x: String }")
+            _parse("type { x: String }")
 
     def test_missing_identifier_after_interface(self) -> None:
         with pytest.raises(ParseError):
-            _parse("interface { field x: String }")
+            _parse("interface { x: String }")
 
     def test_unexpected_token_in_component_body(self) -> None:
         with pytest.raises(ParseError) as exc_info:
@@ -1498,29 +1463,25 @@ class TestParseErrors:
         with pytest.raises(ParseError):
             _parse("system S { channel payment: }")
 
-    def test_field_missing_colon(self) -> None:
-        with pytest.raises(ParseError):
-            _parse("type T { field x String }")
-
     def test_field_missing_type(self) -> None:
         with pytest.raises(ParseError):
-            _parse("type T { field x: }")
+            _parse("type T { x: }")
 
     def test_list_type_missing_rangle(self) -> None:
         with pytest.raises(ParseError):
-            _parse("type T { field x: List<String }")
+            _parse("type T { x: List<String }")
 
     def test_map_type_missing_comma(self) -> None:
         with pytest.raises(ParseError):
-            _parse("type T { field x: Map<String String> }")
+            _parse("type T { x: Map<String String> }")
 
     def test_map_type_missing_rangle(self) -> None:
         with pytest.raises(ParseError):
-            _parse("type T { field x: Map<String, Int }")
+            _parse("type T { x: Map<String, Int }")
 
     def test_optional_type_missing_rangle(self) -> None:
         with pytest.raises(ParseError):
-            _parse("type T { field x: Optional<String }")
+            _parse("type T { x: Optional<String }")
 
     def test_unknown_token_in_component_body(self) -> None:
         with pytest.raises(ParseError):
@@ -1538,9 +1499,10 @@ class TestParseErrors:
         with pytest.raises(ParseError):
             _parse("system S {\n    connect A.p -> $ch -> B.p {\n        unknown_attr foo\n    }\n}")
 
-    def test_unknown_field_annotation(self) -> None:
+    def test_annotation_block_on_field_is_rejected(self) -> None:
+        # Annotation blocks no longer exist; { after a field starts a new construct
         with pytest.raises((ParseError, Exception)):
-            _parse("type T { field x: String { required = true } }")
+            _parse("type T { x: String { required = true } }")
 
     def test_error_has_line_number(self) -> None:
         with pytest.raises(ParseError) as exc_info:
@@ -1623,9 +1585,9 @@ component X {
     def test_interface_fields_preserve_order(self) -> None:
         source = """\
 interface I {
-    field a: String
-    field b: Int
-    field c: Bool
+    a: String
+    b: Int
+    c: Bool
 }
 """
         result = _parse(source)
@@ -1683,13 +1645,13 @@ system S {
     def test_all_primitive_types_in_interface(self) -> None:
         source = """\
 interface AllPrimitives {
-    field s: String
-    field i: Int
-    field f: Float
-    field b: Bool
-    field by: Bytes
-    field ts: Timestamp
-    field dt: Datetime
+    s: String
+    i: Int
+    f: Float
+    b: Bool
+    by: Bytes
+    ts: Timestamp
+    dt: Datetime
 }
 """
         result = _parse(source)
@@ -1721,7 +1683,7 @@ interface AllPrimitives {
         assert stub.name == "SubSystem"
 
     def test_map_with_named_key_and_value(self) -> None:
-        source = "type T { field m: Map<OrderId, OrderItem> }"
+        source = "type T { m: Map<OrderId, OrderItem> }"
         result = _parse(source)
         map_type = result.types[0].fields[0].type
         assert isinstance(map_type, MapTypeRef)
@@ -1744,10 +1706,11 @@ interface AllPrimitives {
         assert conn.dst_entity == "B"
         assert conn.dst_port == "PaymentRequest"
 
-    def test_interface_field_empty_annotation_block(self) -> None:
-        source = "interface I { field x: String {} }"
+    def test_interface_field_no_annotation_block(self) -> None:
+        source = "interface I { x: String }"
         result = _parse(source)
         field = result.interfaces[0].fields[0]
+        assert field.name == "x"
         assert field.description is None
 
 
@@ -1958,7 +1921,7 @@ artifact DeployBundle {
         source = """\
 artifact Report {}
 type Order {
-    field report: Report
+    report: Report
 }"""
         result = _parse(source)
         assert len(result.artifacts) == 1
@@ -1969,7 +1932,7 @@ type Order {
         source = """\
 artifact Bundle {}
 interface DeployRequest {
-    field bundle: Bundle
+    bundle: Bundle
 }"""
         result = _parse(source)
         assert isinstance(result.interfaces[0].fields[0].type, NamedTypeRef)
@@ -1985,9 +1948,9 @@ interface Foo {}"""
         assert len(result.artifacts) == 1
         assert len(result.interfaces) == 1
 
-    def test_artifact_body_rejects_field_keyword(self) -> None:
-        with pytest.raises(ParseError, match="Unexpected token"):
-            _parse("artifact Bad { field x: String }")
+    def test_artifact_body_rejects_field_def(self) -> None:
+        with pytest.raises((ParseError, Exception)):
+            _parse("artifact Bad { x: String }")
 
     def test_artifact_body_rejects_unknown_token(self) -> None:
         with pytest.raises((ParseError, Exception)):

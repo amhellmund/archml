@@ -2,12 +2,12 @@
 # This file defines only some of the entities that consumer.archml tries to import
 
 interface OrderRequest {
-    field order_id: String
+    order_id: String
 }
 
 type OrderItem {
-    field product_id: String
-    field quantity: Int
+    product_id: String
+    quantity: Int
 }
 
 # Note: OrderConfirmation is NOT defined here, but consumer.archml tries to import it

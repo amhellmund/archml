@@ -5,13 +5,13 @@
 
 # Only v2 exists, but a component requires @v1
 interface OrderRequest @v2 {
-    field order_id: String
-    field currency: String
+    order_id: String
+    currency: String
 }
 
 # Unversioned interface, but component requires @old
 interface PaymentRequest {
-    field amount: Float
+    amount: Float
 }
 
 component OrderService {

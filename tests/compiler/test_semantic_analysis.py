@@ -70,16 +70,16 @@ component Foo {
     def test_interface_with_primitive_fields(self) -> None:
         _assert_clean("""
 interface OrderRequest {
-    field order_id: String
-    field amount: Float
-    field count: Int
+    order_id: String
+    amount: Float
+    count: Int
 }
 """)
 
     def test_component_with_known_interface(self) -> None:
         _assert_clean("""
 interface OrderRequest {
-    field order_id: String
+    order_id: String
 }
 
 component OrderService {
@@ -96,27 +96,27 @@ enum Color {
 }
 
 type Pixel {
-    field color: Color
-    field brightness: Int
+    color: Color
+    brightness: Int
 }
 """)
 
     def test_interface_with_known_type_field(self) -> None:
         _assert_clean("""
 type Address {
-    field street: String
-    field city: String
+    street: String
+    city: String
 }
 
 interface Delivery {
-    field address: Address
+    address: Address
 }
 """)
 
     def test_system_with_components_and_connect(self) -> None:
         _assert_clean("""
 interface DataFeed {
-    field payload: String
+    payload: String
 }
 
 system Pipeline {
@@ -135,7 +135,7 @@ system Pipeline {
     def test_nested_components_with_connect(self) -> None:
         _assert_clean("""
 interface Signal {
-    field value: Bool
+    value: Bool
 }
 
 component Router {
@@ -154,7 +154,7 @@ component Router {
     def test_external_system(self) -> None:
         _assert_clean("""
 interface PaymentRequest {
-    field amount: Float
+    amount: Float
 }
 
 external system StripeAPI {
@@ -165,8 +165,8 @@ external system StripeAPI {
     def test_versioned_interface_matching_ref(self) -> None:
         _assert_clean("""
 interface OrderRequest @v2 {
-    field order_id: String
-    field version: Int
+    order_id: String
+    version: Int
 }
 
 component OrderService {
@@ -177,12 +177,12 @@ component OrderService {
     def test_multiple_interface_versions(self) -> None:
         _assert_clean("""
 interface OrderRequest {
-    field order_id: String
+    order_id: String
 }
 
 interface OrderRequest @v2 {
-    field order_id: String
-    field version: Int
+    order_id: String
+    version: Int
 }
 
 component ServiceA {
@@ -197,11 +197,11 @@ component ServiceB {
     def test_list_type_ref_with_known_type(self) -> None:
         _assert_clean("""
 type Item {
-    field name: String
+    name: String
 }
 
 interface Basket {
-    field items: List<Item>
+    items: List<Item>
 }
 """)
 
@@ -213,34 +213,34 @@ enum Language {
 }
 
 type Translation {
-    field text: String
+    text: String
 }
 
 interface Catalog {
-    field entries: Map<Language, Translation>
+    entries: Map<Language, Translation>
 }
 """)
 
     def test_optional_type_ref_with_known_type(self) -> None:
         _assert_clean("""
 type Meta {
-    field key: String
+    key: String
 }
 
 interface Response {
-    field meta: Optional<Meta>
+    meta: Optional<Meta>
 }
 """)
 
     def test_interface_used_as_type_ref_in_field(self) -> None:
         _assert_clean("""
 interface Config {
-    field host: String
-    field port: Int
+    host: String
+    port: Int
 }
 
 type ServiceSpec {
-    field config: Config
+    config: Config
 }
 """)
 
@@ -267,8 +267,8 @@ enum Status {
     def test_duplicate_type_name(self) -> None:
         _assert_error(
             """
-type Address { field street: String }
-type Address { field city: String }
+type Address { street: String }
+type Address { city: String }
 """,
             "Duplicate type name 'Address'",
         )
@@ -294,8 +294,8 @@ system ECommerce {}
     def test_duplicate_interface_same_name_no_version(self) -> None:
         _assert_error(
             """
-interface OrderRequest { field a: String }
-interface OrderRequest { field b: Int }
+interface OrderRequest { a: String }
+interface OrderRequest { b: Int }
 """,
             "Duplicate interface definition 'OrderRequest'",
         )
@@ -303,16 +303,16 @@ interface OrderRequest { field b: Int }
     def test_duplicate_interface_same_name_same_version(self) -> None:
         _assert_error(
             """
-interface OrderRequest @v2 { field a: String }
-interface OrderRequest @v2 { field b: Int }
+interface OrderRequest @v2 { a: String }
+interface OrderRequest @v2 { b: Int }
 """,
             "Duplicate interface definition 'OrderRequest@v2'",
         )
 
     def test_different_interface_versions_are_ok(self) -> None:
         _assert_clean("""
-interface OrderRequest { field a: String }
-interface OrderRequest @v2 { field b: Int }
+interface OrderRequest { a: String }
+interface OrderRequest @v2 { b: Int }
 """)
 
     def test_enum_and_type_same_name_conflict(self) -> None:
@@ -321,7 +321,7 @@ interface OrderRequest @v2 { field b: Int }
 enum Foo {
     Bar
 }
-type Foo { field x: String }
+type Foo { x: String }
 """,
             "Name 'Foo' is defined as both an enum and a type",
         )
@@ -350,8 +350,8 @@ enum Status {
 enum Status {
     Inactive
 }
-type Address { field x: String }
-type Address { field y: String }
+type Address { x: String }
+type Address { y: String }
 """)
         messages = _messages(errors)
         assert any("Duplicate enum name 'Status'" in m for m in messages)
@@ -424,9 +424,9 @@ class TestDuplicateFieldNames:
         _assert_error(
             """
 type Address {
-    field street: String
-    field city: String
-    field street: String
+    street: String
+    city: String
+    street: String
 }
 """,
             "Duplicate field name 'street' in type 'Address'",
@@ -436,8 +436,8 @@ type Address {
         _assert_error(
             """
 interface OrderRequest {
-    field order_id: String
-    field order_id: Int
+    order_id: String
+    order_id: Int
 }
 """,
             "Duplicate field name 'order_id' in interface 'OrderRequest'",
@@ -446,16 +446,16 @@ interface OrderRequest {
     def test_no_duplicate_fields_ok(self) -> None:
         _assert_clean("""
 type Payload {
-    field id: String
-    field value: Int
-    field active: Bool
+    id: String
+    value: Int
+    active: Bool
 }
 """)
 
     def test_same_field_name_in_different_types_ok(self) -> None:
         _assert_clean("""
-type A { field name: String }
-type B { field name: Int }
+type A { name: String }
+type B { name: Int }
 """)
 
 
@@ -469,7 +469,7 @@ class TestTypeReferenceResolution:
         _assert_error(
             """
 type Order {
-    field status: OrderStatus
+    status: OrderStatus
 }
 """,
             "Undefined type 'OrderStatus'",
@@ -479,7 +479,7 @@ type Order {
         _assert_error(
             """
 interface Request {
-    field item: OrderItem
+    item: OrderItem
 }
 """,
             "Undefined type 'OrderItem'",
@@ -490,26 +490,26 @@ interface Request {
 enum Status {
     Active
 }
-type Record { field status: Status }
+type Record { status: Status }
 """)
 
     def test_type_used_as_field_type_ok(self) -> None:
         _assert_clean("""
-type Item { field name: String }
-type Order { field item: Item }
+type Item { name: String }
+type Order { item: Item }
 """)
 
     def test_interface_used_as_field_type_ok(self) -> None:
         _assert_clean("""
-interface Config { field host: String }
-type Spec { field config: Config }
+interface Config { host: String }
+type Spec { config: Config }
 """)
 
     def test_undefined_type_in_list(self) -> None:
         _assert_error(
             """
 interface Batch {
-    field items: List<UnknownItem>
+    items: List<UnknownItem>
 }
 """,
             "Undefined type 'UnknownItem'",
@@ -519,7 +519,7 @@ interface Batch {
         _assert_error(
             """
 interface Catalog {
-    field entries: Map<BadKey, String>
+    entries: Map<BadKey, String>
 }
 """,
             "Undefined type 'BadKey'",
@@ -529,7 +529,7 @@ interface Catalog {
         _assert_error(
             """
 interface Catalog {
-    field entries: Map<String, BadValue>
+    entries: Map<String, BadValue>
 }
 """,
             "Undefined type 'BadValue'",
@@ -539,7 +539,7 @@ interface Catalog {
         _assert_error(
             """
 interface Response {
-    field meta: Optional<UnknownMeta>
+    meta: Optional<UnknownMeta>
 }
 """,
             "Undefined type 'UnknownMeta'",
@@ -551,21 +551,21 @@ interface Response {
 from types import OrderItem
 
 interface Basket {
-    field items: List<OrderItem>
+    items: List<OrderItem>
 }
 """)
 
     def test_primitive_types_always_valid(self) -> None:
         _assert_clean("""
 interface AllPrimitives {
-    field a: String
-    field b: Int
-    field c: Float
-    field d: Float
-    field e: Bool
-    field f: Bytes
-    field g: Timestamp
-    field h: Datetime
+    a: String
+    b: Int
+    c: Float
+    d: Float
+    e: Bool
+    f: Bytes
+    g: Timestamp
+    h: Datetime
 }
 """)
 
@@ -598,7 +598,7 @@ component Foo {
 
     def test_valid_interface_ref(self) -> None:
         _assert_clean("""
-interface OrderRequest { field id: String }
+interface OrderRequest { id: String }
 component OrderService {
     requires OrderRequest
 }
@@ -616,7 +616,7 @@ component OrderService {
     def test_wrong_interface_version_local(self) -> None:
         _assert_error(
             """
-interface OrderRequest @v2 { field id: String }
+interface OrderRequest @v2 { id: String }
 component OrderService {
     requires OrderRequest @v1
 }
@@ -626,7 +626,7 @@ component OrderService {
 
     def test_correct_versioned_ref_ok(self) -> None:
         _assert_clean("""
-interface OrderRequest @v2 { field id: String }
+interface OrderRequest @v2 { id: String }
 component OrderService {
     requires OrderRequest @v2
 }
@@ -635,7 +635,7 @@ component OrderService {
     def test_unversioned_ref_to_versioned_interface_ok(self) -> None:
         # Unversioned ref is accepted; the validation layer resolves to latest.
         _assert_clean("""
-interface OrderRequest @v2 { field id: String }
+interface OrderRequest @v2 { id: String }
 component OrderService {
     requires OrderRequest
 }
@@ -644,7 +644,7 @@ component OrderService {
     def test_versioned_ref_to_unversioned_interface_error(self) -> None:
         _assert_error(
             """
-interface OrderRequest { field id: String }
+interface OrderRequest { id: String }
 component OrderService {
     requires OrderRequest @v1
 }
@@ -681,7 +681,7 @@ system Foo {
 class TestConnectValidation:
     def test_valid_system_connect(self) -> None:
         _assert_clean("""
-interface DataFeed { field payload: String }
+interface DataFeed { payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
     component Consumer { requires DataFeed }
@@ -691,7 +691,7 @@ system Pipeline {
 
     def test_valid_component_connect(self) -> None:
         _assert_clean("""
-interface Signal { field value: Int }
+interface Signal { value: Int }
 component Processor {
     component Source { provides Signal }
     component Sink { requires Signal }
@@ -702,7 +702,7 @@ component Processor {
     def test_connect_with_unknown_src_entity(self) -> None:
         _assert_error(
             """
-interface DataFeed { field payload: String }
+interface DataFeed { payload: String }
 system Pipeline {
     component Consumer { requires DataFeed }
     connect Ghost.DataFeed -> $feed -> Consumer.DataFeed
@@ -714,7 +714,7 @@ system Pipeline {
     def test_connect_with_unknown_dst_entity(self) -> None:
         _assert_error(
             """
-interface DataFeed { field payload: String }
+interface DataFeed { payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
     connect Producer.DataFeed -> $feed -> Ghost.DataFeed
@@ -726,7 +726,7 @@ system Pipeline {
     def test_expose_with_unknown_entity(self) -> None:
         _assert_error(
             """
-interface Signal { field v: Bool }
+interface Signal { v: Bool }
 component Router {
     component Input { provides Signal }
     expose Missing.Signal
@@ -737,7 +737,7 @@ component Router {
 
     def test_valid_expose(self) -> None:
         _assert_clean("""
-interface Signal { field value: Bool }
+interface Signal { value: Bool }
 component Router {
     component Input { provides Signal }
     expose Input.Signal
@@ -748,7 +748,7 @@ component Router {
         """Exposing a port name that does not exist on the child entity is an error."""
         _assert_error(
             """
-interface Signal { field v: Bool }
+interface Signal { v: Bool }
 component Router {
     component Input { provides Signal }
     expose Input.Typo
@@ -760,7 +760,7 @@ component Router {
     def test_expose_requires_port_is_valid(self) -> None:
         """Exposing a requires port (not just provides) is valid."""
         _assert_clean("""
-interface Signal { field value: Bool }
+interface Signal { value: Bool }
 component Router {
     component Output { requires Signal }
     expose Output.Signal
@@ -770,8 +770,8 @@ component Router {
     def test_expose_of_re_exposed_port_is_valid(self) -> None:
         """A port promoted via expose is valid as a target of an outer expose."""
         _assert_clean("""
-interface OrderRequest { field id: String }
-interface Simple { field val: Int }
+interface OrderRequest { id: String }
+interface Simple { val: Int }
 system Order {
     component A {
         component SubA1 { requires OrderRequest }
@@ -787,7 +787,7 @@ system Order {
     def test_direct_connect_no_channel(self) -> None:
         _assert_error(
             """
-interface DataFeed { field payload: String }
+interface DataFeed { payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
     component Consumer { requires DataFeed }
@@ -864,7 +864,7 @@ component Router {
 
 class TestImportResolution:
     def test_entity_not_found_in_resolved_file(self) -> None:
-        source_file = parse("interface RealInterface { field x: String }")
+        source_file = parse("interface RealInterface { x: String }")
         errors = _analyze(
             "from interfaces/order import MissingInterface",
             resolved_imports={"interfaces/order": source_file},
@@ -880,8 +880,8 @@ class TestImportResolution:
 
     def test_valid_import_resolution(self) -> None:
         source_file = parse("""
-interface OrderRequest { field id: String }
-type OrderItem { field name: String }
+interface OrderRequest { id: String }
+type OrderItem { name: String }
 """)
         _assert_clean(
             "from types import OrderRequest, OrderItem",
@@ -893,7 +893,7 @@ type OrderItem { field name: String }
         _assert_clean("from missing/path import SomeEntity")
 
     def test_partial_import_failure(self) -> None:
-        source_file = parse("interface Real { field x: String }")
+        source_file = parse("interface Real { x: String }")
         errors = _analyze(
             "from src import Real, Missing",
             resolved_imports={"src": source_file},
@@ -924,7 +924,7 @@ type OrderItem { field name: String }
         )
 
     def test_multiple_import_sources_one_missing(self) -> None:
-        source_file = parse("interface Foo { field x: String }")
+        source_file = parse("interface Foo { x: String }")
         errors = _analyze(
             """
 from known/path import Foo
@@ -1118,12 +1118,12 @@ class TestQualifiedNames:
         assert arch_file.systems[0].qualified_name == "Enterprise"
 
     def test_top_level_interface_has_local_name_as_qualified_name(self) -> None:
-        arch_file = parse("interface OrderRequest { field id: String }")
+        arch_file = parse("interface OrderRequest { id: String }")
         analyze(arch_file)
         assert arch_file.interfaces[0].qualified_name == "OrderRequest"
 
     def test_versioned_interface_qualified_name_includes_version(self) -> None:
-        arch_file = parse("interface OrderRequest @v2 { field id: String }")
+        arch_file = parse("interface OrderRequest @v2 { id: String }")
         analyze(arch_file)
         assert arch_file.interfaces[0].qualified_name == "OrderRequest@v2"
 
@@ -1204,12 +1204,12 @@ component Router {
         assert arch_file.systems[0].qualified_name == "myapp/core::Enterprise"
 
     def test_file_key_prefixes_top_level_interface(self) -> None:
-        arch_file = parse("interface OrderRequest { field id: String }")
+        arch_file = parse("interface OrderRequest { id: String }")
         analyze(arch_file, file_key="myapp/types")
         assert arch_file.interfaces[0].qualified_name == "myapp/types::OrderRequest"
 
     def test_file_key_prefixes_versioned_interface(self) -> None:
-        arch_file = parse("interface OrderRequest @v2 { field id: String }")
+        arch_file = parse("interface OrderRequest @v2 { id: String }")
         analyze(arch_file, file_key="myapp/types")
         assert arch_file.interfaces[0].qualified_name == "myapp/types::OrderRequest@v2"
 
@@ -1266,8 +1266,8 @@ component RouterB {
         # interfaces across files is the responsibility of the import system
         # (duplicate import names are rejected).
         arch_file = parse("""
-interface Foo { field x: String }
-interface Foo @v2 { field x: String }
+interface Foo { x: String }
+interface Foo @v2 { x: String }
 """)
         analyze(arch_file)
         assert arch_file.interfaces[0].qualified_name == "Foo"
@@ -1380,7 +1380,7 @@ class TestPortNameUniqueness:
     def test_duplicate_implicit_port_name_in_component(self) -> None:
         _assert_error(
             """
-interface Foo { field x: String }
+interface Foo { x: String }
 component Bar {
     requires Foo
     provides Foo
@@ -1392,8 +1392,8 @@ component Bar {
     def test_duplicate_explicit_port_name_in_component(self) -> None:
         _assert_error(
             """
-interface Foo { field x: String }
-interface Baz { field y: Int }
+interface Foo { x: String }
+interface Baz { y: Int }
 component Bar {
     requires Foo as my_port
     provides Baz as my_port
@@ -1405,8 +1405,8 @@ component Bar {
     def test_duplicate_mixed_implicit_explicit_port_name(self) -> None:
         _assert_error(
             """
-interface Foo { field x: String }
-interface Baz { field y: Int }
+interface Foo { x: String }
+interface Baz { y: Int }
 component Bar {
     requires Foo
     provides Baz as Foo
@@ -1418,8 +1418,8 @@ component Bar {
     def test_duplicate_requires_port_names_in_component(self) -> None:
         _assert_error(
             """
-interface Foo { field x: String }
-interface Bar { field y: Int }
+interface Foo { x: String }
+interface Bar { y: Int }
 component Comp {
     requires Foo
     requires Bar as Foo
@@ -1430,8 +1430,8 @@ component Comp {
 
     def test_unique_port_names_ok(self) -> None:
         _assert_clean("""
-interface Foo { field x: String }
-interface Baz { field y: Int }
+interface Foo { x: String }
+interface Baz { y: Int }
 component Bar {
     requires Foo as in_port
     provides Baz as out_port
@@ -1440,8 +1440,8 @@ component Bar {
 
     def test_different_interfaces_different_names_ok(self) -> None:
         _assert_clean("""
-interface Foo { field x: String }
-interface Bar { field y: Int }
+interface Foo { x: String }
+interface Bar { y: Int }
 component Comp {
     requires Foo
     provides Bar
@@ -1451,7 +1451,7 @@ component Comp {
     def test_duplicate_port_name_in_system(self) -> None:
         _assert_error(
             """
-interface Foo { field x: String }
+interface Foo { x: String }
 system Sys {
     requires Foo
     provides Foo
@@ -1463,7 +1463,7 @@ system Sys {
     def test_duplicate_port_name_in_user(self) -> None:
         _assert_error(
             """
-interface Foo { field x: String }
+interface Foo { x: String }
 user Alice {
     requires Foo
     provides Foo
@@ -1475,7 +1475,7 @@ user Alice {
     def test_duplicate_port_name_in_nested_component(self) -> None:
         _assert_error(
             """
-interface Sig { field v: Bool }
+interface Sig { v: Bool }
 component Outer {
     component Inner {
         requires Sig
@@ -1489,7 +1489,7 @@ component Outer {
     def test_duplicate_port_name_in_system_nested_component(self) -> None:
         _assert_error(
             """
-interface Sig { field v: Bool }
+interface Sig { v: Bool }
 system Sys {
     component Worker {
         requires Sig
@@ -1510,7 +1510,7 @@ class TestTopLevelConnect:
     def test_valid_top_level_connect_full_form(self) -> None:
         """connect at file scope with full Entity.port notation is valid."""
         _assert_clean("""
-interface API { field endpoint: String }
+interface API { endpoint: String }
 system Frontend { provides API }
 system Backend { requires API }
 
@@ -1521,7 +1521,7 @@ connect Frontend.API -> $bus -> Backend.API
         """Top-level connect referencing a missing src entity is an error."""
         _assert_error(
             """
-interface API { field endpoint: String }
+interface API { endpoint: String }
 system Backend { requires API }
 
 connect Ghost.API -> $bus -> Backend.API
@@ -1533,7 +1533,7 @@ connect Ghost.API -> $bus -> Backend.API
         """Top-level connect referencing a missing dst entity is an error."""
         _assert_error(
             """
-interface API { field endpoint: String }
+interface API { endpoint: String }
 system Frontend { provides API }
 
 connect Frontend.API -> $bus -> Ghost.API
@@ -1544,7 +1544,7 @@ connect Frontend.API -> $bus -> Ghost.API
     def test_top_level_connect_between_systems_and_components(self) -> None:
         """Top-level connects can reference any top-level entity (system or component)."""
         _assert_clean("""
-interface Data { field v: String }
+interface Data { v: String }
 system Upstream { provides Data }
 component Sink { requires Data }
 
@@ -1555,7 +1555,7 @@ connect Upstream.Data -> $pipe -> Sink.Data
         """A typo in the src port of a top-level connect is a semantic error."""
         _assert_error(
             """
-interface API { field endpoint: String }
+interface API { endpoint: String }
 system Frontend { provides API }
 system Backend { requires API }
 
@@ -1568,7 +1568,7 @@ connect Frontend.Typo -> $bus -> Backend.API
         """A typo in the dst port of a top-level connect is a semantic error."""
         _assert_error(
             """
-interface API { field endpoint: String }
+interface API { endpoint: String }
 system Frontend { provides API }
 system Backend { requires API }
 
@@ -1621,7 +1621,7 @@ connect Order.OrderConfirmtion -> $conf -> Sink.OrderConfirmation
         """Unknown port name in an inner connect (within a system) is an error."""
         _assert_error(
             """
-interface Data { field v: String }
+interface Data { v: String }
 system S {
     component A { provides Data }
     component B { requires Data }
@@ -1641,7 +1641,7 @@ class TestSimplifiedConnect:
     def test_simplified_connect_resolves_unique_ports(self) -> None:
         """Simplified form A -> $ch -> B resolves to full form when ports are unique."""
         source = """
-interface DataFeed { field payload: String }
+interface DataFeed { payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
     component Consumer { requires DataFeed }
@@ -1661,7 +1661,7 @@ system Pipeline {
     def test_simplified_connect_one_sided_src(self) -> None:
         """Simplified form A -> $ch resolves src port when unique."""
         source = """
-interface Signal { field v: Bool }
+interface Signal { v: Bool }
 system S {
     component Sender { provides Signal }
     connect Sender -> $sig
@@ -1678,7 +1678,7 @@ system S {
     def test_simplified_connect_one_sided_dst(self) -> None:
         """Simplified form $ch -> B resolves dst port when unique."""
         source = """
-interface Signal { field v: Bool }
+interface Signal { v: Bool }
 system S {
     component Receiver { requires Signal }
     connect $sig -> Receiver
@@ -1696,8 +1696,8 @@ system S {
         """Simplified form on an entity with multiple provides ports is an error."""
         _assert_error(
             """
-interface A { field v: String }
-interface B { field v: String }
+interface A { v: String }
+interface B { v: String }
 system S {
     component Multi { provides A  provides B }
     component Sink { requires A }
@@ -1711,7 +1711,7 @@ system S {
         """Simplified form on an entity with no provides ports is an error."""
         _assert_error(
             """
-interface A { field v: String }
+interface A { v: String }
 system S {
     component NoOut {}
     component Sink { requires A }
@@ -1724,7 +1724,7 @@ system S {
     def test_simplified_connect_top_level_resolution(self) -> None:
         """Simplified form resolves correctly at the top-level file scope."""
         source = """
-interface API { field endpoint: String }
+interface API { endpoint: String }
 system Frontend { provides API }
 system Backend { requires API }
 
@@ -1753,7 +1753,7 @@ class TestLocalInterfaceInComponent:
         errors = _analyze("""
 component A {
     interface AInternal {
-        field id: Int
+        id: Int
     }
     component SubA1 {
         provides AInternal
@@ -1771,7 +1771,7 @@ component A {
         errors = _analyze("""
 component A {
     interface AInternal {
-        field id: Int
+        id: Int
     }
 }
 component B {
@@ -1785,7 +1785,7 @@ component B {
         src = """
 component A {
     interface Inner {
-        field x: String
+        x: String
     }
 }
 """
@@ -1797,8 +1797,8 @@ component A {
         """Duplicate local interface names within a component are reported."""
         errors = _analyze("""
 component A {
-    interface Foo { field x: Int }
-    interface Foo { field y: String }
+    interface Foo { x: Int }
+    interface Foo { y: String }
 }
 """)
         assert any("Duplicate local interface name 'Foo'" in e.message for e in errors)
@@ -1807,7 +1807,7 @@ component A {
         """Qualified names include the file key prefix for local interfaces."""
         src = """
 component A {
-    interface Inner { field x: Int }
+    interface Inner { x: Int }
 }
 """
         af = parse(src)
@@ -1818,7 +1818,7 @@ component A {
         """The parent component itself can use its own locally defined interface."""
         errors = _analyze("""
 component A {
-    interface AOut { field result: String }
+    interface AOut { result: String }
     provides AOut
 }
 """)
@@ -1832,7 +1832,7 @@ class TestLocalInterfaceInSystem:
         """A locally defined interface in a system is accepted and usable by children."""
         errors = _analyze("""
 system S {
-    interface SInternal { field val: Int }
+    interface SInternal { val: Int }
     component Producer { provides SInternal }
     component Consumer { requires SInternal }
     connect Producer -> $internal -> Consumer
@@ -1844,7 +1844,7 @@ system S {
         """A locally defined interface in a system is not visible outside the system."""
         errors = _analyze("""
 system S {
-    interface SInternal { field val: Int }
+    interface SInternal { val: Int }
 }
 component C {
     requires SInternal
@@ -1856,7 +1856,7 @@ component C {
         """Qualified names are assigned to local interfaces using the system path."""
         src = """
 system S {
-    interface Inner { field x: Int }
+    interface Inner { x: Int }
 }
 """
         af = parse(src)
@@ -1867,8 +1867,8 @@ system S {
         """Duplicate local interface names within a system are reported."""
         errors = _analyze("""
 system S {
-    interface Dup { field x: Int }
-    interface Dup { field y: String }
+    interface Dup { x: Int }
+    interface Dup { y: String }
 }
 """)
         assert any("Duplicate local interface name 'Dup'" in e.message for e in errors)
@@ -1877,7 +1877,7 @@ system S {
         """Local interface is in scope for a nested sub-system."""
         errors = _analyze("""
 system Outer {
-    interface Shared { field v: String }
+    interface Shared { v: String }
     system Inner {
         component X { provides Shared }
         component Y { requires Shared }
@@ -1890,11 +1890,11 @@ system Outer {
     def test_user_in_example_scenario(self) -> None:
         """The original user-reported scenario compiles without errors."""
         errors = _analyze("""
-interface OrderRequest { field order_id: Int }
-interface Simple { field val: String }
+interface OrderRequest { order_id: Int }
+interface Simple { val: String }
 
 component A {
-    interface AInternal { field id: Int }
+    interface AInternal { id: Int }
 
     component SubA1 {
         requires OrderRequest
@@ -1925,7 +1925,7 @@ class TestArtifactSemantics:
         _assert_clean("""\
 artifact Report {}
 type Order {
-    field report: Report
+    report: Report
 }
 """)
 
@@ -1933,7 +1933,7 @@ type Order {
         _assert_clean("""\
 artifact Bundle {}
 interface DeployRequest {
-    field bundle: Bundle
+    bundle: Bundle
 }
 """)
 
@@ -1941,7 +1941,7 @@ interface DeployRequest {
         _assert_clean("""\
 artifact Report {}
 type Order {
-    field report: Optional<Report>
+    report: Optional<Report>
 }
 """)
 
@@ -1949,7 +1949,7 @@ type Order {
         _assert_clean("""\
 artifact Report {}
 type Batch {
-    field reports: List<Report>
+    reports: List<Report>
 }
 """)
 
@@ -1979,7 +1979,7 @@ type Batch {
             """\
 from artifacts import Bundle
 interface DeployRequest {
-    field bundle: Bundle
+    bundle: Bundle
 }
 """,
             resolved_imports=resolved,

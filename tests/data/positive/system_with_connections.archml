@@ -2,35 +2,35 @@
 # Expected result: no semantic errors
 
 interface PaymentRequest {
-    field order_id: String
-    field amount: Float
-    field currency: String
+    order_id: String
+    amount: Float
+    currency: String
 }
 
 interface PaymentResult {
-    field order_id: String
-    field success: Bool
-    field transaction_id: Optional<String>
+    order_id: String
+    success: Bool
+    transaction_id: Optional<String>
 }
 
 interface InventoryCheck {
-    field product_id: String
-    field quantity: Int
+    product_id: String
+    quantity: Int
 }
 
 interface InventoryStatus {
-    field product_id: String
-    field available: Bool
+    product_id: String
+    available: Bool
 }
 
 interface OrderRequest {
-    field order_id: String
-    field customer_id: String
+    order_id: String
+    customer_id: String
 }
 
 interface OrderConfirmation {
-    field order_id: String
-    field confirmed: Bool
+    order_id: String
+    confirmed: Bool
 }
 
 # External payment provider
