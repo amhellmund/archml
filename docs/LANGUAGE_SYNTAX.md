@@ -110,21 +110,6 @@ interface OrderRequest {
 }
 ```
 
-Interfaces support versioning with the `@` suffix:
-
-```
-interface OrderRequest @v2 {
-    order_id: String
-    customer_id: String
-    items: List<OrderItem>
-    total_amount: Float
-    currency: String
-    shipping_method: String
-}
-```
-
-When a component requires or provides a versioned interface, it references the version explicitly (e.g., `requires OrderRequest @v2`). Unversioned references default to the latest version.
-
 `interface` defines a contract used on ports. `type` defines a building block used within interfaces. Both share the same field syntax (`name: type`, one per line) — the distinction is semantic: interfaces appear on ports; types compose into fields.
 
 ### Component
@@ -287,8 +272,8 @@ External entities appear in diagrams with distinct styling. They cannot be furth
 Every `requires` and `provides` declaration defines a **port** — a named connection point on the entity. The port name defaults to the interface name; use `as` to assign an explicit name:
 
 ```
-requires <Interface> [@version] [as <port_name>]
-provides <Interface> [@version] [as <port_name>]
+requires <Interface> [as <port_name>]
+provides <Interface> [as <port_name>]
 ```
 
 ```
@@ -409,29 +394,51 @@ Variants are **global** across the entire build — the same name used in differ
 
 Any entity that carries no variant annotation is **baseline** — it is present in every variant. Baseline entities form the shared core of the architecture.
 
+### Inline Variant Annotation
+
+Any entity or statement accepts an optional `<variant, ...>` annotation immediately after its keyword. The annotation lists the variants the entity or statement belongs to.
+
+**Block-level entities** (`system`, `component`, `user`): the annotation marks the entity itself and **propagates to all children**. Children inherit the enclosing entity's variant set and can extend it with their own annotation.
+
+```
+system<cloud> ECommerce {
+    component OrderService {}         # effective set: {cloud} (inherited)
+    component<hybrid> AuditLogger {}  # effective set: {cloud, hybrid}
+}
+```
+
+**Statements** (`connect`, `expose`, `requires`, `provides`): the annotation marks only that statement.
+
+```
+component OrderService {
+    requires PaymentRequest           # baseline — always present
+    requires<cloud> StripeWebhook     # only in the cloud variant
+    provides OrderConfirmation
+}
+
+connect<cloud> PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
+expose<on_premise> Processor.PaymentRequest
+```
+
 ### `variant` Blocks
 
-The primary way to introduce variant-specific content is the `variant` block inside a `system` or `component` body. All declarations inside the block belong to that variant:
+For grouping multiple declarations under shared variants, use a `variant<A, B> { ... }` block inside a `system` or `component` body. All declarations inside the block inherit the block's variants:
 
 ```
 system ECommerce {
-    # Baseline — present in every variant
-    component OrderService {
-        requires PaymentRequest
-        provides OrderConfirmation
-    }
+    component OrderService {}             # baseline
 
-    variant cloud {
+    variant<cloud, hybrid> {
         component PaymentGateway {
-                    provides PaymentRequest
+            provides PaymentRequest
         }
 
         connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
     }
 
-    variant on_premise {
+    variant<on_premise> {
         component LocalPaymentProcessor {
-                    provides PaymentRequest
+            provides PaymentRequest
         }
 
         connect LocalPaymentProcessor.PaymentRequest -> $payment -> OrderService.PaymentRequest
@@ -441,67 +448,26 @@ system ECommerce {
 }
 ```
 
-`variant` blocks appear inside `system` or `component` bodies. The block syntax (`variant cloud { ... }`) groups variant-specific declarations together within a body.
-
-### `variants` Attribute
-
-For fine-grained control, any named entity accepts a `variants` attribute — a list of variant names. This is useful when a single entity belongs to multiple variants or when grouping into a block is not natural:
-
-```
-component PaymentGateway {
-    variants = ["cloud", "hybrid"]
-    provides PaymentRequest
-}
-
-component LocalPaymentProcessor {
-    variants = ["on_premise"]
-    provides PaymentRequest
-}
-```
-
-`connect` and `expose` statements support `variants` in their optional attribute block:
-
-```
-connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-    variants = ["cloud", "hybrid"]
-}
-
-expose Processor.PaymentRequest {
-    variants = ["on_premise"]
-}
-```
-
-### Variant-Scoped Ports
-
-Individual `requires` and `provides` declarations accept an optional inline block for port-level variant annotations. This avoids duplicating an entire component just to add a conditional port:
-
-```
-component OrderService {
-    requires PaymentRequest              # baseline — always present
-    requires StripeWebhook {            # only in the "cloud" variant
-        variants = ["cloud"]
-    }
-    provides OrderConfirmation
-}
-```
+A `variant` block can name multiple variants, which is useful when a group of declarations belongs to more than one variant without duplicating the block.
 
 ### Union Semantics
 
 The effective variant set of an entity is the **union** of:
 
-- Variants inherited from any enclosing `variant` blocks.
-- Variants listed in the entity's own `variants` attribute.
+- Variants inherited from any enclosing block-level entities (`system<>`, `component<>`, `user<>`).
+- Variants inherited from any enclosing `variant<>` blocks.
+- Variants in the entity's own `<>` annotation.
 
-An entity with neither is baseline (present in all variants). The two mechanisms can be combined freely:
+An entity with no annotation and no enclosing annotation source is baseline. Variants are orthogonal tags, not mutually exclusive alternatives — `{cloud, hybrid}` means the entity is present when both tags are active simultaneously. The mechanisms compose freely at any nesting depth:
 
 ```
-variant cloud {
-    component PaymentGateway {
-        variants = ["hybrid"]   # effective set: ["cloud", "hybrid"]
-        provides PaymentRequest
-    }
+system<cloud> ABC {
+    component CDE {}              # effective set: {cloud} (inherited)
+    component<hybrid> XYZ {}      # effective set: {cloud, hybrid}
 }
 ```
+
+Here `XYZ` is present in configurations where both `cloud` and `hybrid` are active, while `CDE` is present in any `cloud` configuration.
 
 ### Validation per Variant
 
@@ -509,13 +475,13 @@ All consistency checks — port coverage, dangling references, unused interfaces
 
 ### Variants and Imported Entities
 
-Because variants are global, variant annotations on imported entities are directly meaningful in the importing scope — no re-declaration or mapping is needed. A component defined in one file with `variants = ["cloud"]` on a port is treated identically to one defined inline. The importing scope can also wrap `use` statements inside its own `variant` blocks to make the inclusion of an entity conditional:
+Because variants are global, variant annotations on imported entities are directly meaningful in the importing scope — no re-declaration or mapping is needed. The importing scope can use `variant<>` blocks or inline annotations to make the inclusion of an entity conditional:
 
 ```
 system Enterprise {
-    use component OrderService   # baseline — present in every variant
+    use component OrderService          # baseline — present in every variant
 
-    variant cloud {
+    variant<cloud> {
         use component CloudAuditLogger
         connect CloudAuditLogger -> $audit -> OrderService
     }
@@ -785,7 +751,7 @@ system ECommerce {
 | `system`        | Group of components or sub-systems with a shared goal.                                                             |
 | `component`     | Module with a clear responsibility; may nest sub-components.                                                       |
 | `user`          | Human actor (role or persona) that interacts with the system; a leaf node.                                         |
-| `interface`     | Named contract of typed data fields. Supports versioning via `@v1`, `@v2`, etc.                                    |
+| `interface`     | Named contract of typed data fields used on ports.                                                                 |
 | `type`          | Reusable data structure (used within interfaces).                                                                  |
 | `enum`          | Constrained set of named values.                                                                                   |
 | `artifact`      | Abstract data artifact (file, directory, blob, etc.) whose concrete form is given in the deployment architecture.  |
@@ -801,8 +767,7 @@ system ECommerce {
 | `import`        | Names the specific entities to bring into scope; always paired with `from` (`from path import Name`).              |
 | `use`           | Places an imported entity into a system or component (e.g., `use component X`, `use system X`, `use user X`).      |
 | `external`      | Marks a system, component, or user as outside the development boundary.                                            |
-| `variant`       | Opens a variant block inside a `system` or `component` body that conditionally includes its contents (`variant cloud { ... }`).     |
-| `variants`      | Lists the variants an entity belongs to as an inline attribute (`variants = ["cloud"]`). |
+| `variant`       | Opens a variant block inside a `system` or `component` body that conditionally includes its contents (`variant<cloud> { ... }`). |
 | `description`   | Longer explanation of an entity's purpose.                                                                         |
 
 ## Scope Boundaries
