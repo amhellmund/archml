@@ -162,35 +162,14 @@ external system StripeAPI {
 }
 """)
 
-    def test_versioned_interface_matching_ref(self) -> None:
+    def test_variant_annotated_interface(self) -> None:
         _assert_clean("""
-interface OrderRequest @v2 {
+interface<cloud> OrderRequest {
     order_id: String
-    version: Int
 }
 
 component OrderService {
-    requires OrderRequest @v2
-}
-""")
-
-    def test_multiple_interface_versions(self) -> None:
-        _assert_clean("""
-interface OrderRequest {
-    order_id: String
-}
-
-interface OrderRequest @v2 {
-    order_id: String
-    version: Int
-}
-
-component ServiceA {
     requires OrderRequest
-}
-
-component ServiceB {
-    requires OrderRequest @v2
 }
 """)
 
@@ -291,29 +270,14 @@ system ECommerce {}
             "Duplicate system name 'ECommerce'",
         )
 
-    def test_duplicate_interface_same_name_no_version(self) -> None:
+    def test_duplicate_interface_name(self) -> None:
         _assert_error(
             """
 interface OrderRequest { a: String }
 interface OrderRequest { b: Int }
 """,
-            "Duplicate interface definition 'OrderRequest'",
+            "Duplicate interface name 'OrderRequest'",
         )
-
-    def test_duplicate_interface_same_name_same_version(self) -> None:
-        _assert_error(
-            """
-interface OrderRequest @v2 { a: String }
-interface OrderRequest @v2 { b: Int }
-""",
-            "Duplicate interface definition 'OrderRequest@v2'",
-        )
-
-    def test_different_interface_versions_are_ok(self) -> None:
-        _assert_clean("""
-interface OrderRequest { a: String }
-interface OrderRequest @v2 { b: Int }
-""")
 
     def test_enum_and_type_same_name_conflict(self) -> None:
         _assert_error(
@@ -612,45 +576,6 @@ component OrderService {
     requires OrderRequest
 }
 """)
-
-    def test_wrong_interface_version_local(self) -> None:
-        _assert_error(
-            """
-interface OrderRequest @v2 { id: String }
-component OrderService {
-    requires OrderRequest @v1
-}
-""",
-            "no version 'v1' of interface 'OrderRequest' is defined",
-        )
-
-    def test_correct_versioned_ref_ok(self) -> None:
-        _assert_clean("""
-interface OrderRequest @v2 { id: String }
-component OrderService {
-    requires OrderRequest @v2
-}
-""")
-
-    def test_unversioned_ref_to_versioned_interface_ok(self) -> None:
-        # Unversioned ref is accepted; the validation layer resolves to latest.
-        _assert_clean("""
-interface OrderRequest @v2 { id: String }
-component OrderService {
-    requires OrderRequest
-}
-""")
-
-    def test_versioned_ref_to_unversioned_interface_error(self) -> None:
-        _assert_error(
-            """
-interface OrderRequest { id: String }
-component OrderService {
-    requires OrderRequest @v1
-}
-""",
-            "no version 'v1' of interface 'OrderRequest' is defined",
-        )
 
     def test_system_with_undefined_requires(self) -> None:
         _assert_error(
@@ -961,7 +886,7 @@ class TestDirectModelConstruction:
 
     def test_connect_with_known_interface_model(self) -> None:
         arch_file = ArchFile(
-            interfaces=[InterfaceDef(name="Signal", version=None)],
+            interfaces=[InterfaceDef(name="Signal")],
             systems=[
                 System(
                     name="Sys",
@@ -1122,11 +1047,6 @@ class TestQualifiedNames:
         analyze(arch_file)
         assert arch_file.interfaces[0].qualified_name == "OrderRequest"
 
-    def test_versioned_interface_qualified_name_includes_version(self) -> None:
-        arch_file = parse("interface OrderRequest @v2 { id: String }")
-        analyze(arch_file)
-        assert arch_file.interfaces[0].qualified_name == "OrderRequest@v2"
-
     def test_component_in_system_gets_coloncolon_qualified_name(self) -> None:
         arch_file = parse("""
 system SystemA {
@@ -1208,11 +1128,6 @@ component Router {
         analyze(arch_file, file_key="myapp/types")
         assert arch_file.interfaces[0].qualified_name == "myapp/types::OrderRequest"
 
-    def test_file_key_prefixes_versioned_interface(self) -> None:
-        arch_file = parse("interface OrderRequest @v2 { id: String }")
-        analyze(arch_file, file_key="myapp/types")
-        assert arch_file.interfaces[0].qualified_name == "myapp/types::OrderRequest@v2"
-
     def test_file_key_propagates_through_nested_entities(self) -> None:
         arch_file = parse("""
 system Enterprise {
@@ -1258,20 +1173,10 @@ component RouterB {
 }
 """)
 
-    def test_multiple_top_level_interfaces_with_same_name_from_different_files_represented_distinctly(
-        self,
-    ) -> None:
-        # Each file independently defines its own interface; the qualified name
-        # is simply the local name (possibly with version).  Distinguishing
-        # interfaces across files is the responsibility of the import system
-        # (duplicate import names are rejected).
-        arch_file = parse("""
-interface Foo { x: String }
-interface Foo @v2 { x: String }
-""")
-        analyze(arch_file)
-        assert arch_file.interfaces[0].qualified_name == "Foo"
-        assert arch_file.interfaces[1].qualified_name == "Foo@v2"
+    def test_file_key_prefixes_user(self) -> None:
+        arch_file = parse("user Customer {}")
+        analyze(arch_file, file_key="myapp/actors")
+        assert arch_file.users[0].qualified_name == "myapp/actors::Customer"
 
 
 # ###############
@@ -1362,12 +1267,6 @@ component B { requires I }
         _assert_clean("""
 interface I {}
 external user ExternalClient { provides I }
-""")
-
-    def test_user_versioned_interface_ref(self) -> None:
-        _assert_clean("""
-interface I @v2 {}
-user Customer { requires I @v2 }
 """)
 
 

@@ -103,18 +103,11 @@ def test_interface_definition() -> None:
         ],
     )
     assert iface.name == "OrderRequest"
-    assert iface.version is None
     assert len(iface.fields) == 4
     items_field = iface.fields[2]
     assert isinstance(items_field.type, ListTypeRef)
     assert isinstance(items_field.type.element_type, NamedTypeRef)
     assert items_field.type.element_type.name == "OrderItem"
-
-
-def test_versioned_interface() -> None:
-    """An InterfaceDef can carry a version label."""
-    iface = InterfaceDef(name="OrderRequest", version="v2")
-    assert iface.version == "v2"
 
 
 def test_component_with_requires_and_provides() -> None:

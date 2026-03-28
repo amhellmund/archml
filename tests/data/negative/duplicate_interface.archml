@@ -1,7 +1,6 @@
-# Negative: duplicate interface name+version
+# Negative: duplicate interface name
 # Expected errors:
-#   Duplicate interface definition 'OrderRequest'
-#   Duplicate interface definition 'OrderRequest@v2'
+#   Duplicate interface name 'OrderRequest'
 
 interface OrderRequest {
     order_id: String
@@ -9,14 +8,4 @@ interface OrderRequest {
 
 interface OrderRequest {
     id: String
-}
-
-interface OrderRequest @v2 {
-    order_id: String
-    currency: String
-}
-
-interface OrderRequest @v2 {
-    order_id: String
-    version: Int
 }

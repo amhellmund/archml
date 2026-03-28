@@ -4,14 +4,18 @@
 """Semantic model for ArchML (systems, components, interfaces, etc.)."""
 
 from archml.model.entities import (
+    ArchEntity,
     ArchFile,
+    ArtifactDef,
     Component,
     ConnectDef,
+    ContainerEntity,
     EnumDef,
     ExposeDef,
     ImportDeclaration,
     InterfaceDef,
     InterfaceRef,
+    NamedDef,
     System,
     TypeDef,
     UserDef,
@@ -37,10 +41,15 @@ __all__ = [
     "NamedTypeRef",
     "TypeRef",
     "FieldDef",
+    # Base classes
+    "NamedDef",
+    "ArchEntity",
+    "ContainerEntity",
     # Entities
     "InterfaceRef",
     "EnumDef",
     "TypeDef",
+    "ArtifactDef",
     "InterfaceDef",
     "ConnectDef",
     "ExposeDef",

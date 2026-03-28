@@ -147,9 +147,7 @@ class _SemanticAnalyzer:
             | {a.name for a in self._file.artifacts}
             | {i.name for i in self._file.interfaces}
         )
-        local_interface_defs: dict[tuple[str, str | None], InterfaceDef] = {
-            (i.name, i.version): i for i in self._file.interfaces
-        }
+        local_interface_defs: dict[str, InterfaceDef] = {i.name: i for i in self._file.interfaces}
         imported_names: set[str] = {name for imp in self._file.imports for name in imp.entities}
 
         # Combined sets used for reference resolution.
@@ -241,7 +239,7 @@ class _SemanticAnalyzer:
         comp: Component,
         all_type_names: set[str],
         all_interface_names: set[str],
-        local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
+        local_interface_defs: dict[str, InterfaceDef],
         imported_names: set[str],
     ) -> list[SemanticError]:
         errors: list[SemanticError] = []
@@ -267,7 +265,7 @@ class _SemanticAnalyzer:
 
         # Merge locally-defined interfaces into scope for this component and its children.
         merged_interface_names = all_interface_names | {i.name for i in comp.interfaces}
-        merged_interface_defs = {**local_interface_defs, **{(i.name, i.version): i for i in comp.interfaces}}
+        merged_interface_defs = {**local_interface_defs, **{i.name: i for i in comp.interfaces}}
 
         # Check requires / provides interface references.
         for ref in comp.requires:
@@ -325,7 +323,7 @@ class _SemanticAnalyzer:
         system: System,
         all_type_names: set[str],
         all_interface_names: set[str],
-        local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
+        local_interface_defs: dict[str, InterfaceDef],
         imported_names: set[str],
     ) -> list[SemanticError]:
         errors: list[SemanticError] = []
@@ -342,7 +340,7 @@ class _SemanticAnalyzer:
 
         # Merge locally-defined interfaces into scope for this system and its children.
         merged_interface_names = all_interface_names | {i.name for i in system.interfaces}
-        merged_interface_defs = {**local_interface_defs, **{(i.name, i.version): i for i in system.interfaces}}
+        merged_interface_defs = {**local_interface_defs, **{i.name: i for i in system.interfaces}}
 
         # Check for duplicate component names within this system.
         errors.extend(
@@ -513,9 +511,7 @@ def _assign_qualified_names(arch_file: ArchFile, *, file_key: str | None = None)
     """
     file_prefix = file_key  # treated as the parent prefix for top-level entities
     for iface in arch_file.interfaces:
-        ver_str = f"@{iface.version}" if iface.version else ""
-        local = f"{iface.name}{ver_str}"
-        iface.qualified_name = f"{file_prefix}::{local}" if file_prefix else local
+        iface.qualified_name = f"{file_prefix}::{iface.name}" if file_prefix else iface.name
     for comp in arch_file.components:
         _assign_component_qualified_names(comp, prefix=file_prefix)
     for system in arch_file.systems:
@@ -528,8 +524,7 @@ def _assign_component_qualified_names(comp: Component, prefix: str | None) -> No
     """Recursively set qualified names for a component and its sub-components."""
     comp.qualified_name = f"{prefix}::{comp.name}" if prefix else comp.name
     for iface in comp.interfaces:
-        ver_str = f"@{iface.version}" if iface.version else ""
-        iface.qualified_name = f"{comp.qualified_name}::{iface.name}{ver_str}"
+        iface.qualified_name = f"{comp.qualified_name}::{iface.name}"
     for sub in comp.components:
         _assign_component_qualified_names(sub, prefix=comp.qualified_name)
 
@@ -543,8 +538,7 @@ def _assign_system_qualified_names(system: System, prefix: str | None) -> None:
     """Recursively set qualified names for a system and all its children."""
     system.qualified_name = f"{prefix}::{system.name}" if prefix else system.name
     for iface in system.interfaces:
-        ver_str = f"@{iface.version}" if iface.version else ""
-        iface.qualified_name = f"{system.qualified_name}::{iface.name}{ver_str}"
+        iface.qualified_name = f"{system.qualified_name}::{iface.name}"
     for comp in system.components:
         _assign_component_qualified_names(comp, prefix=system.qualified_name)
     for sub_sys in system.systems:
@@ -664,25 +658,13 @@ def _check_top_level_duplicates(arch_file: ArchFile, filename: str | None = None
         )
     )
 
-    # Interfaces are keyed by (name, version) — two interfaces with the same
-    # name but different versions are legal.
-    seen_ifaces: set[tuple[str, str | None]] = set()
-    reported_ifaces: set[tuple[str, str | None]] = set()
-    for iface in arch_file.interfaces:
-        key = (iface.name, iface.version)
-        if key in seen_ifaces:
-            if key not in reported_ifaces:
-                ver_str = f"@{iface.version}" if iface.version else ""
-                errors.append(
-                    SemanticError(
-                        message=f"Duplicate interface definition '{iface.name}{ver_str}'",
-                        filename=filename,
-                        line=iface.line,
-                    )
-                )
-                reported_ifaces.add(key)
-        else:
-            seen_ifaces.add(key)
+    errors.extend(
+        _check_duplicate_name_lines(
+            [(i.name, i.line) for i in arch_file.interfaces],
+            "Duplicate interface name '{}'",
+            filename,
+        )
+    )
 
     errors.extend(
         _check_duplicate_name_lines(
@@ -780,49 +762,21 @@ def _check_interface_ref(
     ctx: str,
     ref: InterfaceRef,
     all_interface_names: set[str],
-    local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
+    local_interface_defs: dict[str, InterfaceDef],
     imported_names: set[str],
     keyword: str,
     filename: str | None = None,
 ) -> list[SemanticError]:
-    """Check that an interface reference resolves to a known interface.
-
-    When the referenced interface is locally defined (not imported), a
-    versioned reference is additionally checked against the declared version.
-    """
-    errors: list[SemanticError] = []
-    ver_str = f"@{ref.version}" if ref.version else ""
-
+    """Check that an interface reference resolves to a known interface."""
     if ref.name not in all_interface_names:
-        errors.append(
+        return [
             SemanticError(
-                message=f"{ctx}: '{keyword} {ref.name}{ver_str}' refers to unknown interface '{ref.name}'",
+                message=f"{ctx}: '{keyword} {ref.name}' refers to unknown interface '{ref.name}'",
                 filename=filename,
                 line=ref.line,
             )
-        )
-        return errors
-
-    # Only validate the version when the interface is locally defined and not
-    # also imported (an imported version could satisfy the reference).
-    if (
-        ref.version is not None
-        and ref.name not in imported_names
-        and (ref.name, ref.version) not in local_interface_defs
-    ):
-        errors.append(
-            SemanticError(
-                message=(
-                    f"{ctx}: '{keyword} {ref.name}@{ref.version}'"
-                    f" — no version '{ref.version}' of interface"
-                    f" '{ref.name}' is defined"
-                ),
-                filename=filename,
-                line=ref.line,
-            )
-        )
-
-    return errors
+        ]
+    return []
 
 
 def _valid_connect_port_names(entity: Component | System | UserDef) -> set[str] | None:
@@ -1064,7 +1018,7 @@ def _check_port_names(
 def _check_user(
     user: UserDef,
     all_interface_names: set[str],
-    local_interface_defs: dict[tuple[str, str | None], InterfaceDef],
+    local_interface_defs: dict[str, InterfaceDef],
     imported_names: set[str],
     filename: str | None = None,
 ) -> list[SemanticError]:

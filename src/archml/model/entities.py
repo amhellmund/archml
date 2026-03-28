@@ -16,7 +16,7 @@ from archml.model.types import FieldDef
 
 
 class InterfaceRef(BaseModel):
-    """A reference to an interface by name, optionally pinned to a version.
+    """A reference to an interface by name.
 
     The optional ``port_name`` holds the explicit port alias assigned with the
     ``as`` keyword (e.g. ``requires PaymentRequest as pay_in``).  When absent
@@ -27,42 +27,36 @@ class InterfaceRef(BaseModel):
     """
 
     name: str
-    version: str | None = None
     port_name: str | None = None
     variants: list[str] = _Field(default_factory=list)
     line: int = 0
 
 
-class EnumDef(BaseModel):
+class NamedDef(BaseModel):
+    """Base class for named definition entities.
+
+    Shared by ``EnumDef``, ``TypeDef``, ``ArtifactDef``, and ``InterfaceDef``.
+    """
+
+    name: str
+    description: str | None = None
+    attributes: dict[str, list[str]] = _Field(default_factory=dict)
+    line: int = 0
+
+
+class EnumDef(NamedDef):
     """An enumeration definition."""
 
-    name: str
     values: list[str] = _Field(default_factory=list)
-    description: str | None = None
-    line: int = 0
 
 
-class TypeDef(BaseModel):
+class TypeDef(NamedDef):
     """A reusable composite data type definition."""
 
-    name: str
     fields: list[FieldDef] = _Field(default_factory=list)
-    description: str | None = None
-    line: int = 0
 
 
-class InterfaceDef(BaseModel):
-    """An interface definition — a named, versioned contract of typed fields."""
-
-    name: str
-    version: str | None = None
-    fields: list[FieldDef] = _Field(default_factory=list)
-    description: str | None = None
-    qualified_name: str = ""
-    line: int = 0
-
-
-class ArtifactDef(BaseModel):
+class ArtifactDef(NamedDef):
     """An abstract data artifact definition.
 
     Describes a named, abstract data artifact (file, directory, blob, stream,
@@ -70,9 +64,13 @@ class ArtifactDef(BaseModel):
     Artifacts can be used as field types within types and interfaces.
     """
 
-    name: str
-    description: str | None = None
-    line: int = 0
+
+class InterfaceDef(NamedDef):
+    """An interface definition — a named contract of typed fields."""
+
+    variants: list[str] = _Field(default_factory=list)
+    fields: list[FieldDef] = _Field(default_factory=list)
+    qualified_name: str = ""
 
 
 class ConnectDef(BaseModel):
@@ -109,7 +107,7 @@ class ConnectDef(BaseModel):
 class ExposeDef(BaseModel):
     """An ``expose`` statement promoting a sub-entity's port to the enclosing boundary.
 
-    ``expose Entity.port_name [as new_name] [{ variants = [...] }]``
+    ``expose Entity.port_name [as new_name]``
 
     ``variants`` lists the variant names for which this exposure is active.
     An empty list means the exposure is baseline (present in all variants).
@@ -122,11 +120,10 @@ class ExposeDef(BaseModel):
     line: int = 0
 
 
-class UserDef(BaseModel):
-    """A human actor (role or persona) that interacts with the system.
+class ArchEntity(BaseModel):
+    """Base class for architectural actor entities.
 
-    Users are leaf nodes: they declare required and provided interfaces but
-    cannot contain sub-entities or channels.
+    Shared by ``UserDef``, ``Component``, and ``System``.
     """
 
     name: str
@@ -134,47 +131,44 @@ class UserDef(BaseModel):
     variants: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
+    attributes: dict[str, list[str]] = _Field(default_factory=dict)
     is_external: bool = False
     qualified_name: str = ""
     line: int = 0
 
 
-class Component(BaseModel):
-    """A module with declared interface bindings and optional nested sub-components."""
+class UserDef(ArchEntity):
+    """A human actor (role or persona) that interacts with the system.
 
-    name: str
-    description: str | None = None
-    variants: list[str] = _Field(default_factory=list)
-    requires: list[InterfaceRef] = _Field(default_factory=list)
-    provides: list[InterfaceRef] = _Field(default_factory=list)
+    Users are leaf nodes: they declare required and provided interfaces but
+    cannot contain sub-entities or channels.
+    """
+
+
+class ContainerEntity(ArchEntity):
+    """Base class for entities that can contain sub-components and channels.
+
+    Shared by ``Component`` and ``System``.
+    """
+
     interfaces: list[InterfaceDef] = _Field(default_factory=list)
-    components: list[Component] = _Field(default_factory=list)
     connects: list[ConnectDef] = _Field(default_factory=list)
     exposes: list[ExposeDef] = _Field(default_factory=list)
-    is_external: bool = False
     is_stub: bool = False
-    qualified_name: str = ""
-    line: int = 0
 
 
-class System(BaseModel):
+class Component(ContainerEntity):
+    """A module with declared interface bindings and optional nested sub-components."""
+
+    components: list[Component] = _Field(default_factory=list)
+
+
+class System(ContainerEntity):
     """A group of components (or sub-systems) working toward a shared goal."""
 
-    name: str
-    description: str | None = None
-    variants: list[str] = _Field(default_factory=list)
-    requires: list[InterfaceRef] = _Field(default_factory=list)
-    provides: list[InterfaceRef] = _Field(default_factory=list)
-    interfaces: list[InterfaceDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)
     users: list[UserDef] = _Field(default_factory=list)
-    connects: list[ConnectDef] = _Field(default_factory=list)
-    exposes: list[ExposeDef] = _Field(default_factory=list)
-    is_external: bool = False
-    is_stub: bool = False
-    qualified_name: str = ""
-    line: int = 0
 
 
 class ImportDeclaration(BaseModel):

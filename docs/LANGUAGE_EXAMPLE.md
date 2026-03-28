@@ -104,7 +104,7 @@ component OrderService {
     """Accepts, validates, and processes customer orders."""
 
     @team: platform
-    @tags: critical orders
+    @tags: critical, orders
 
     # Sub-components are private implementation detail.
     # Their ports must all be accounted for within this body.
@@ -149,7 +149,7 @@ system ECommerce {
     """Customer-facing online store."""
 
     @domain: commerce
-    @tags: customer-facing
+    @tags: customer-facing, commerce
 
     # user is a leaf node representing a human actor.
     # It declares the same requires/provides ports as components.

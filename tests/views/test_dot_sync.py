@@ -132,14 +132,12 @@ def _build_nested() -> VizDiagram:
         id="App__Front__Ui.prov.IFace",
         node_id="App__Front__Ui",
         interface_name="IFace",
-        interface_version=None,
         direction="provides",
     )
     api_port = VizPort(
         id="App__Back__Api.req.IFace",
         node_id="App__Back__Api",
         interface_name="IFace",
-        interface_version=None,
         direction="requires",
     )
     ui = VizNode(

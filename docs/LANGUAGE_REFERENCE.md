@@ -29,12 +29,12 @@ component OrderService {
 }
 ```
 
-**Custom Attributes** attach metadata to any entity using the `@name: values` syntax. Values are space-separated identifiers (no strings, no special characters). Attributes are user-defined; the tooling does not interpret them — they can express tags, ownership, or any other domain-specific classification.
+**Custom Attributes** attach metadata to any entity using the `@name: values` syntax. Values are comma-separated identifiers (no strings, no spaces within values). Attributes are user-defined; the tooling does not interpret them — they can express tags, ownership, or any other domain-specific classification.
 
 ```
 component OrderService {
     @team: platform
-    @tags: critical payments
+    @tags: critical, payments
 
     requires PaymentRequest
     provides OrderConfirmation
@@ -233,7 +233,6 @@ connect $<channel> -> <dst_port>
 `<src_port>` and `<dst_port>` are either:
 
 - `Entity.port_name` — explicit port on a named child entity
-- `Entity` — child entity with exactly one unambiguous port (tooling infers the port; ambiguous cases are errors)
 
 The arrow direction follows data flow: a `provides` port (producer) is always on the left; a `requires` port (consumer) is always on the right.
 
@@ -417,12 +416,5 @@ The `name` under `source-imports` matches the `@repo-name` prefix in import path
 | `use`         | Places an imported entity into a system or component (`use component X`).                |
 | `external`    | Marks a system, component, or user as outside the development boundary.                  |
 | `<v1, v2>`   | Variant annotation on an entity or statement.                                            |
-| `@attr: ...`  | Custom attribute on an entity; values are space-separated identifiers.                   |
+| `@attr: ...`  | Custom attribute on an entity; values are comma-separated identifiers.                   |
 | `"""..."""`   | Markdown description at the top of any entity body.                                      |
-
----
-
-## Scope Boundaries
-
-- A channel introduced by `connect` is local to the scope where it appears.
-- Views are not part of the architecture language. They are defined in a separate view DSL that references entities from the architecture model.

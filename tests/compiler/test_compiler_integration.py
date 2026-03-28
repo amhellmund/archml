@@ -131,8 +131,7 @@ class TestNegativeExamples:
         path = NEGATIVE_DIR / "duplicate_interface.archml"
         _assert_errors(
             path,
-            "Duplicate interface definition 'OrderRequest'",
-            "Duplicate interface definition 'OrderRequest@v2'",
+            "Duplicate interface name 'OrderRequest'",
         )
 
     def test_duplicate_component_name(self) -> None:
@@ -186,12 +185,12 @@ class TestNegativeExamples:
             "Missing",
         )
 
-    def test_wrong_interface_version(self) -> None:
+    def test_wrong_interface_ref(self) -> None:
         path = NEGATIVE_DIR / "wrong_interface_version.archml"
         _assert_errors(
             path,
-            "no version 'v1' of interface 'OrderRequest' is defined",
-            "no version 'old' of interface 'PaymentRequest' is defined",
+            "refers to unknown interface 'UnknownRequest'",
+            "refers to unknown interface 'GhostPayment'",
         )
 
     def test_component_system_name_conflict(self) -> None:
@@ -276,7 +275,7 @@ interface OrderRequest {
     items: List<OrderItem>
 }
 
-interface OrderRequest @v2 {
+interface OrderRequestV2 {
     order_id: String
     customer_id: String
     items: List<OrderItem>
@@ -302,7 +301,7 @@ interface PaymentResult {
 }
 
 component OrderService {
-    requires OrderRequest @v2
+    requires OrderRequestV2
     requires PaymentRequest
     provides OrderConfirmation
 }
@@ -319,7 +318,7 @@ external system StripeAPI {
 
 system ECommerce {
     component OrderServiceInst {
-        requires OrderRequest @v2
+        requires OrderRequestV2
         requires PaymentRequest
         provides OrderConfirmation
     }

@@ -699,15 +699,16 @@ class TestStructuralPatterns:
             TokenType.RBRACE,
         ]
 
-    def test_variants_colon_syntax(self) -> None:
-        source = "variants: cloud, on_premise"
+    def test_inline_variant_annotation_syntax(self) -> None:
+        source = "component<cloud, on_premise>"
         types = _types(source)
         assert types == [
-            TokenType.VARIANTS,
-            TokenType.COLON,
+            TokenType.COMPONENT,
+            TokenType.LANGLE,
             TokenType.IDENTIFIER,
             TokenType.COMMA,
             TokenType.IDENTIFIER,
+            TokenType.RANGLE,
         ]
 
     def test_docstring_description(self) -> None:
@@ -735,11 +736,14 @@ class TestStructuralPatterns:
         types = _types(source)
         assert types == [TokenType.IDENTIFIER]
 
-    def test_connect_with_variants_block(self) -> None:
-        source = "connect A.PaymentRequest -> $payment -> B.PaymentRequest { variants: cloud }"
+    def test_connect_with_inline_variant(self) -> None:
+        source = "connect<cloud> A.PaymentRequest -> $payment -> B.PaymentRequest"
         types = _types(source)
         assert types == [
             TokenType.CONNECT,
+            TokenType.LANGLE,
+            TokenType.IDENTIFIER,
+            TokenType.RANGLE,
             TokenType.IDENTIFIER,
             TokenType.DOT,
             TokenType.IDENTIFIER,
@@ -750,11 +754,6 @@ class TestStructuralPatterns:
             TokenType.IDENTIFIER,
             TokenType.DOT,
             TokenType.IDENTIFIER,
-            TokenType.LBRACE,
-            TokenType.VARIANTS,
-            TokenType.COLON,
-            TokenType.IDENTIFIER,
-            TokenType.RBRACE,
         ]
 
     def test_cross_repo_import(self) -> None:
@@ -875,42 +874,58 @@ class TestFullExample:
 # ###############
 
 
-class TestVariantKeywords:
-    """Tests for the variant and variants keyword tokens."""
+class TestVariantAndAttributeSyntax:
+    """Tests for inline <variant> annotation and @attribute syntax tokens."""
 
-    def test_variant_keyword(self) -> None:
-        assert _types("variant") == [TokenType.VARIANT]
+    def test_variant_is_plain_identifier(self) -> None:
+        # 'variant' is no longer a keyword — it scans as IDENTIFIER
+        assert _types("variant") == [TokenType.IDENTIFIER]
 
-    def test_variants_keyword(self) -> None:
-        assert _types("variants") == [TokenType.VARIANTS]
+    def test_variants_is_plain_identifier(self) -> None:
+        # 'variants' is no longer a keyword — it scans as IDENTIFIER
+        assert _types("variants") == [TokenType.IDENTIFIER]
 
-    def test_variant_in_declaration(self) -> None:
-        types = _types("variant cloud")
-        assert types == [TokenType.VARIANT, TokenType.IDENTIFIER]
+    def test_system_with_single_variant(self) -> None:
+        types = _types("system<cloud>")
+        assert types == [TokenType.SYSTEM, TokenType.LANGLE, TokenType.IDENTIFIER, TokenType.RANGLE]
 
-    def test_variants_in_declaration(self) -> None:
-        types = _types("variants cloud, on_premise")
+    def test_component_with_multiple_variants(self) -> None:
+        types = _types("component<cloud, on_premise>")
         assert types == [
-            TokenType.VARIANTS,
+            TokenType.COMPONENT,
+            TokenType.LANGLE,
             TokenType.IDENTIFIER,
             TokenType.COMMA,
             TokenType.IDENTIFIER,
+            TokenType.RANGLE,
         ]
 
-    def test_variants_colon_attribute(self) -> None:
-        types = _types("variants: cloud")
+    def test_requires_with_variant(self) -> None:
+        types = _types("requires<cloud> PaymentRequest")
         assert types == [
-            TokenType.VARIANTS,
+            TokenType.REQUIRES,
+            TokenType.LANGLE,
+            TokenType.IDENTIFIER,
+            TokenType.RANGLE,
+            TokenType.IDENTIFIER,
+        ]
+
+    def test_custom_attribute_single_value(self) -> None:
+        types = _types("@team: platform")
+        assert types == [
+            TokenType.AT,
+            TokenType.IDENTIFIER,
             TokenType.COLON,
             TokenType.IDENTIFIER,
         ]
 
-    def test_variant_not_identifier(self) -> None:
-        tokens = _tokens_no_eof("variant")
-        assert tokens[0].type == TokenType.VARIANT
-        assert tokens[0].value == "variant"
-
-    def test_variants_not_identifier(self) -> None:
-        tokens = _tokens_no_eof("variants")
-        assert tokens[0].type == TokenType.VARIANTS
-        assert tokens[0].value == "variants"
+    def test_custom_attribute_multiple_values(self) -> None:
+        types = _types("@tags: critical, payments")
+        assert types == [
+            TokenType.AT,
+            TokenType.IDENTIFIER,
+            TokenType.COLON,
+            TokenType.IDENTIFIER,
+            TokenType.COMMA,
+            TokenType.IDENTIFIER,
+        ]

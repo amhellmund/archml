@@ -338,17 +338,17 @@ class TestImports:
         assert imp.entities == ["TypeA", "TypeB"]
 
 
-class TestVersionedInterface:
-    def test_versioned_interface_roundtrip(self) -> None:
+class TestVariantAnnotatedInterface:
+    def test_variant_interface_roundtrip(self) -> None:
         af = ArchFile(
             interfaces=[
-                InterfaceDef(name="MyIface", version="v2"),
-                InterfaceDef(name="MyIface", version=None),
+                InterfaceDef(name="MyIface", variants=["cloud", "on_premise"]),
+                InterfaceDef(name="OtherIface"),
             ]
         )
         result = _roundtrip(af)
-        assert result.interfaces[0].version == "v2"
-        assert result.interfaces[1].version is None
+        assert result.interfaces[0].variants == ["cloud", "on_premise"]
+        assert result.interfaces[1].variants == []
 
 
 # ###############

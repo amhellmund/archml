@@ -283,22 +283,22 @@ class TestInterfaceDeclarations:
         assert len(result.interfaces) == 1
         iface = result.interfaces[0]
         assert iface.name == "Empty"
-        assert iface.version is None
+        assert iface.variants == []
         assert iface.fields == []
 
-    def test_interface_with_version(self) -> None:
-        result = _parse("interface OrderRequest @v2 {}")
+    def test_interface_with_variant_annotation(self) -> None:
+        result = _parse("interface<cloud> OrderRequest {}")
         iface = result.interfaces[0]
         assert iface.name == "OrderRequest"
-        assert iface.version == "v2"
+        assert iface.variants == ["cloud"]
 
-    def test_interface_version_v1(self) -> None:
-        result = _parse("interface OrderRequest @v1 {}")
-        assert result.interfaces[0].version == "v1"
+    def test_interface_with_multiple_variants(self) -> None:
+        result = _parse("interface<cloud, hybrid> OrderRequest {}")
+        assert result.interfaces[0].variants == ["cloud", "hybrid"]
 
-    def test_interface_without_version(self) -> None:
+    def test_interface_without_variant_annotation(self) -> None:
         result = _parse("interface OrderRequest {}")
-        assert result.interfaces[0].version is None
+        assert result.interfaces[0].variants == []
 
     def test_interface_with_description(self) -> None:
         source = '''\
@@ -336,16 +336,16 @@ interface OrderRequest {
         assert iface.description == "Payload for submitting a new customer order."
         assert len(iface.fields) == 1
 
-    def test_versioned_interface_with_fields(self) -> None:
+    def test_variant_annotated_interface_with_fields(self) -> None:
         source = """\
-interface OrderRequest @v2 {
+interface<cloud> OrderRequest {
     order_id: String
     customer_id: String
     shipping_method: String
 }"""
         result = _parse(source)
         iface = result.interfaces[0]
-        assert iface.version == "v2"
+        assert iface.variants == ["cloud"]
         assert len(iface.fields) == 3
 
     def test_multiple_interfaces(self) -> None:
@@ -506,7 +506,6 @@ class TestComponentDeclarations:
         comp = result.components[0]
         assert len(comp.requires) == 1
         assert comp.requires[0].name == "OrderRequest"
-        assert comp.requires[0].version is None
 
     def test_component_with_multiple_requires(self) -> None:
         source = """\
@@ -530,17 +529,17 @@ component X {
         assert len(comp.provides) == 1
         assert comp.provides[0].name == "OrderConfirmation"
 
-    def test_component_with_versioned_requires(self) -> None:
-        result = _parse("component X { requires OrderRequest @v2 }")
+    def test_component_with_variant_requires(self) -> None:
+        result = _parse("component X { requires<cloud> OrderRequest }")
         ref = result.components[0].requires[0]
         assert ref.name == "OrderRequest"
-        assert ref.version == "v2"
+        assert ref.variants == ["cloud"]
 
-    def test_component_with_versioned_provides(self) -> None:
-        result = _parse("component X { provides OrderConfirmation @v1 }")
+    def test_component_with_variant_provides(self) -> None:
+        result = _parse("component X { provides<on_premise> OrderConfirmation }")
         ref = result.components[0].provides[0]
         assert ref.name == "OrderConfirmation"
-        assert ref.version == "v1"
+        assert ref.variants == ["on_premise"]
 
     def test_component_with_requires_and_provides(self) -> None:
         source = '''\
@@ -921,11 +920,11 @@ component OrderService {
         assert ref.name == "OrderConfirmation"
         assert ref.port_name == "confirmed"
 
-    def test_requires_versioned_with_as(self) -> None:
-        result = _parse("component X { requires PaymentRequest @v2 as pay_in }")
+    def test_requires_with_variant_and_as(self) -> None:
+        result = _parse("component X { requires<cloud> PaymentRequest as pay_in }")
         ref = result.components[0].requires[0]
         assert ref.name == "PaymentRequest"
-        assert ref.version == "v2"
+        assert ref.variants == ["cloud"]
         assert ref.port_name == "pay_in"
 
     def test_requires_without_as_has_none_port_name(self) -> None:
@@ -1072,7 +1071,7 @@ item within an order."""
 
 
 class TestTagsParsing:
-    """Tags no longer exist; repurposed as a guard that tag syntax is rejected."""
+    """Old tag syntax is rejected; @attributes are the replacement."""
 
     def test_unknown_keyword_in_component_body(self) -> None:
         with pytest.raises((ParseError, Exception)):
@@ -1093,6 +1092,51 @@ class TestTagsParsing:
     def test_unknown_keyword_on_interface(self) -> None:
         with pytest.raises(ParseError):
             _parse("interface I { requires X }")
+
+
+class TestCustomAttributes:
+    """Tests for the @attr: val1, val2 custom attribute syntax."""
+
+    def test_component_single_attribute(self) -> None:
+        f = _parse("component Foo {\n    @team: platform\n    provides Bar\n}")
+        assert f.components[0].attributes == {"team": ["platform"]}
+
+    def test_component_attribute_multiple_values(self) -> None:
+        f = _parse("component Foo {\n    @tags: critical, payments\n    provides Bar\n}")
+        assert f.components[0].attributes == {"tags": ["critical", "payments"]}
+
+    def test_component_multiple_attributes(self) -> None:
+        src = "component Foo {\n    @team: platform\n    @tags: critical\n    provides Bar\n}"
+        f = _parse(src)
+        assert f.components[0].attributes == {"team": ["platform"], "tags": ["critical"]}
+
+    def test_system_attribute(self) -> None:
+        f = _parse("system S {\n    @domain: commerce\n}")
+        assert f.systems[0].attributes == {"domain": ["commerce"]}
+
+    def test_user_attribute(self) -> None:
+        f = _parse("user U {\n    @role: admin, operator\n    provides Cmd\n}")
+        assert f.users[0].attributes == {"role": ["admin", "operator"]}
+
+    def test_interface_attribute(self) -> None:
+        f = _parse("interface I {\n    @owner: platform\n    x: String\n}")
+        assert f.interfaces[0].attributes == {"owner": ["platform"]}
+
+    def test_no_attributes_defaults_empty(self) -> None:
+        f = _parse("component Foo { provides Bar }")
+        assert f.components[0].attributes == {}
+
+    def test_attribute_after_description(self) -> None:
+        src = 'component Foo {\n    """A component."""\n    @team: infra\n    provides Bar\n}'
+        f = _parse(src)
+        assert f.components[0].description == "A component."
+        assert f.components[0].attributes == {"team": ["infra"]}
+
+    def test_attribute_with_variant_annotation(self) -> None:
+        src = "component<cloud> Foo {\n    @team: platform\n    provides Bar\n}"
+        f = _parse(src)
+        assert f.components[0].variants == ["cloud"]
+        assert f.components[0].attributes == {"team": ["platform"]}
 
 
 # ###############
@@ -1542,9 +1586,9 @@ class TestEdgeCases:
         with pytest.raises((ParseError, Exception)):
             _parse("component X { unknown_attr foo }")
 
-    def test_interface_version_with_alphanumeric(self) -> None:
-        result = _parse("interface X @v10 {}")
-        assert result.interfaces[0].version == "v10"
+    def test_interface_with_attribute(self) -> None:
+        result = _parse("interface X {\n    @owner: platform\n}")
+        assert result.interfaces[0].attributes == {"owner": ["platform"]}
 
     def test_connect_with_versioned_interface(self) -> None:
         source = (
@@ -1558,13 +1602,13 @@ class TestEdgeCases:
         assert conn.channel == "feed"
         assert conn.dst_entity == "B"
 
-    def test_requires_with_version(self) -> None:
-        result = _parse("component X { requires Interface @v2 }")
-        assert result.components[0].requires[0].version == "v2"
+    def test_requires_with_inline_variant(self) -> None:
+        result = _parse("component X { requires<cloud> Interface }")
+        assert result.components[0].requires[0].variants == ["cloud"]
 
-    def test_provides_with_version(self) -> None:
-        result = _parse("component X { provides Interface @v1 }")
-        assert result.components[0].provides[0].version == "v1"
+    def test_provides_with_inline_variant(self) -> None:
+        result = _parse("component X { provides<on_premise> Interface }")
+        assert result.components[0].provides[0].variants == ["on_premise"]
 
     def test_comments_in_source(self) -> None:
         source = """\
@@ -1737,8 +1781,8 @@ class TestUserDeclarations:
         u = result.users[0]
         assert u.description == "An end user."
 
-    def test_user_with_variants(self) -> None:
-        result = _parse("user Customer { variants: cloud }")
+    def test_user_with_variant_annotation(self) -> None:
+        result = _parse("user<cloud> Customer {}")
         u = result.users[0]
         assert u.variants == ["cloud"]
 
@@ -1747,7 +1791,6 @@ class TestUserDeclarations:
         u = result.users[0]
         assert len(u.requires) == 1
         assert u.requires[0].name == "OrderConfirmation"
-        assert u.requires[0].version is None
 
     def test_user_with_provides(self) -> None:
         result = _parse("user Customer { provides OrderRequest }")
@@ -1755,10 +1798,10 @@ class TestUserDeclarations:
         assert len(u.provides) == 1
         assert u.provides[0].name == "OrderRequest"
 
-    def test_user_with_versioned_interface(self) -> None:
-        result = _parse("user Customer { requires OrderConfirmation @v2 }")
+    def test_user_with_variant_port(self) -> None:
+        result = _parse("user Customer { requires<cloud> OrderConfirmation }")
         u = result.users[0]
-        assert u.requires[0].version == "v2"
+        assert u.requires[0].variants == ["cloud"]
 
     def test_user_with_multiple_interfaces(self) -> None:
         source = "user Customer { requires OrderConfirmation provides OrderRequest }"
@@ -1962,109 +2005,54 @@ interface Foo {}"""
 # ###############
 
 
-class TestVariantsAttribute:
-    """Tests for the inline variants: ... attribute on entities."""
+class TestInlineVariantAnnotation:
+    """Tests for the inline <variant> annotation on entities and statements."""
 
-    def test_component_variants_attr(self) -> None:
-        f = _parse("component Foo {\n  variants: cloud\n  provides Bar\n}")
+    def test_component_single_variant(self) -> None:
+        f = _parse("component<cloud> Foo { provides Bar }")
         assert f.components[0].variants == ["cloud"]
 
-    def test_component_variants_multiple(self) -> None:
-        f = _parse("component Foo {\n  variants: cloud, hybrid\n  provides Bar\n}")
+    def test_component_multiple_variants(self) -> None:
+        f = _parse("component<cloud, hybrid> Foo { provides Bar }")
         assert f.components[0].variants == ["cloud", "hybrid"]
 
-    def test_system_variants_attr(self) -> None:
-        f = _parse("system S {\n  variants: on_premise\n}")
+    def test_system_single_variant(self) -> None:
+        f = _parse("system<on_premise> S {}")
         assert f.systems[0].variants == ["on_premise"]
 
-    def test_user_variants_attr(self) -> None:
-        f = _parse("user U {\n  variants: mobile\n  provides Cmd\n}")
+    def test_user_single_variant(self) -> None:
+        f = _parse("user<mobile> U { provides Cmd }")
         assert f.users[0].variants == ["mobile"]
 
-    def test_no_variants_attr_defaults_empty(self) -> None:
+    def test_no_annotation_defaults_empty(self) -> None:
         f = _parse("component Foo { provides Bar }")
         assert f.components[0].variants == []
 
+    def test_system_child_inherits_parent_variant(self) -> None:
+        f = _parse("system<cloud> S { component C { provides P } }")
+        assert f.systems[0].components[0].variants == ["cloud"]
 
-class TestVariantBlockInSystem:
-    """Tests for variant { ... } blocks inside system bodies."""
+    def test_child_own_annotation_extends_parent(self) -> None:
+        f = _parse("system<cloud> S { component<hybrid> C { provides P } }")
+        assert set(f.systems[0].components[0].variants) == {"cloud", "hybrid"}
 
-    def test_system_variant_block_adds_component(self) -> None:
-        src = """
-system S {
-    component Base { provides Iface }
-    variant cloud {
-        component Cloud { provides Iface }
-    }
-}
-"""
-        f = _parse(src)
-        system = f.systems[0]
-        assert len(system.components) == 2
-        base = next(c for c in system.components if c.name == "Base")
-        cloud = next(c for c in system.components if c.name == "Cloud")
-        assert base.variants == []
-        assert cloud.variants == ["cloud"]
-
-    def test_system_variant_block_adds_connect(self) -> None:
-        src = """
-system S {
-    variant cloud {
-        connect A.p -> $ch -> B.q
-    }
-}
-"""
-        f = _parse(src)
-        assert f.systems[0].connects[0].variants == ["cloud"]
-
-    def test_system_variant_block_adds_expose(self) -> None:
-        src = """
-system S {
-    component C { provides P }
-    variant cloud {
-        expose C.P
-    }
-}
-"""
-        f = _parse(src)
-        assert f.systems[0].exposes[0].variants == ["cloud"]
-
-    def test_system_variant_block_use_statement(self) -> None:
-        src = """
-system S {
-    variant cloud {
-        use component Imported
-    }
-}
-"""
-        f = _parse(src)
+    def test_use_stub_inherits_parent_variant(self) -> None:
+        f = _parse("system<cloud> S { use component Imported }")
         stub = f.systems[0].components[0]
-        assert stub.name == "Imported"
         assert stub.is_stub is True
-        assert stub.variants == ["cloud"]
+        assert "cloud" in stub.variants
 
-    def test_system_variant_block_external(self) -> None:
-        src = """
-system S {
-    variant cloud {
-        external component Ext { provides P }
-    }
-}
-"""
-        f = _parse(src)
+    def test_external_component_inherits_parent_variant(self) -> None:
+        f = _parse("system<cloud> S { external component Ext { provides P } }")
         comp = f.systems[0].components[0]
         assert comp.is_external is True
         assert comp.variants == ["cloud"]
 
-    def test_system_two_variant_blocks(self) -> None:
+    def test_two_variant_siblings(self) -> None:
         src = """
 system S {
-    variant cloud {
-        component A { provides P }
-    }
-    variant on_premise {
-        component B { provides P }
-    }
+    component<cloud> A { provides P }
+    component<on_premise> B { provides P }
 }
 """
         f = _parse(src)
@@ -2072,159 +2060,87 @@ system S {
         assert comps["A"] == ["cloud"]
         assert comps["B"] == ["on_premise"]
 
+    def test_duplicate_variant_not_added_twice(self) -> None:
+        f = _parse("system<cloud> S { component<cloud> C { provides P } }")
+        assert f.systems[0].components[0].variants.count("cloud") == 1
 
-class TestVariantBlockInComponent:
-    """Tests for variant { ... } blocks inside component bodies."""
-
-    def test_component_variant_block_adds_sub_component(self) -> None:
-        src = """
-component Parent {
-    provides Iface
-    variant cloud {
-        component Sub { provides SubIface }
-    }
-}
-"""
+    def test_deep_nesting_propagates_variants(self) -> None:
+        src = "system<cloud> S { component<hybrid> Outer { component Inner { provides P } } }"
         f = _parse(src)
-        sub = f.components[0].components[0]
-        assert sub.name == "Sub"
-        assert sub.variants == ["cloud"]
-
-    def test_component_variant_block_adds_connect(self) -> None:
-        src = """
-component Parent {
-    variant cloud {
-        connect A.p -> $ch -> B.q
-    }
-}
-"""
-        f = _parse(src)
-        assert f.components[0].connects[0].variants == ["cloud"]
-
-    def test_component_variant_block_adds_expose(self) -> None:
-        src = """
-component Parent {
-    component Sub { provides P }
-    variant cloud {
-        expose Sub.P
-    }
-}
-"""
-        f = _parse(src)
-        assert f.components[0].exposes[0].variants == ["cloud"]
+        inner = f.systems[0].components[0].components[0]
+        assert set(inner.variants) == {"cloud", "hybrid"}
 
 
 class TestVariantUnionSemantics:
-    """Tests for union semantics when block and attribute variants combine."""
+    """Tests for union semantics of variant inheritance."""
 
-    def test_block_and_attr_are_unioned(self) -> None:
-        src = """
-system S {
-    variant cloud {
-        component Foo {
-            variants: hybrid
-            provides Bar
-        }
-    }
-}
-"""
+    def test_parent_and_own_variants_are_unioned(self) -> None:
+        src = "system<cloud> S { component<hybrid> Foo { provides Bar } }"
         f = _parse(src)
         assert set(f.systems[0].components[0].variants) == {"cloud", "hybrid"}
 
     def test_duplicate_not_added_twice(self) -> None:
-        src = """
-system S {
-    variant cloud {
-        component Foo {
-            variants: cloud
-            provides Bar
-        }
-    }
-}
-"""
+        src = "system<cloud> S { component<cloud> Foo { provides Bar } }"
         f = _parse(src)
         assert f.systems[0].components[0].variants.count("cloud") == 1
 
 
 class TestPortLevelVariants:
-    """Tests for variants: ... on individual requires/provides ports."""
+    """Tests for inline <variant> annotation on requires/provides ports."""
 
     def test_requires_port_variant(self) -> None:
-        src = """
-component Foo {
-    requires Bar { variants: cloud }
-    provides Baz
-}
-"""
-        f = _parse(src)
+        f = _parse("component Foo { requires<cloud> Bar provides Baz }")
         req = f.components[0].requires[0]
         assert req.name == "Bar"
         assert req.variants == ["cloud"]
 
     def test_provides_port_variant(self) -> None:
-        src = """
-component Foo {
-    provides Baz { variants: on_premise }
-}
-"""
-        f = _parse(src)
+        f = _parse("component Foo { provides<on_premise> Baz }")
         prov = f.components[0].provides[0]
         assert prov.variants == ["on_premise"]
 
     def test_requires_with_as_and_variant(self) -> None:
-        src = """
-component Foo {
-    requires Bar as b { variants: cloud }
-}
-"""
-        f = _parse(src)
+        f = _parse("component Foo { requires<cloud> Bar as b }")
         req = f.components[0].requires[0]
         assert req.port_name == "b"
-        assert req.variants == ["cloud"]
-
-    def test_requires_with_version_and_variant(self) -> None:
-        src = """
-component Foo {
-    requires Bar @v2 { variants: cloud }
-}
-"""
-        f = _parse(src)
-        req = f.components[0].requires[0]
-        assert req.version == "v2"
         assert req.variants == ["cloud"]
 
     def test_baseline_port_has_empty_variants(self) -> None:
         f = _parse("component Foo { requires Bar }")
         assert f.components[0].requires[0].variants == []
 
+    def test_multiple_variants_on_port(self) -> None:
+        f = _parse("component Foo { requires<cloud, hybrid> Bar }")
+        assert f.components[0].requires[0].variants == ["cloud", "hybrid"]
+
 
 class TestConnectAndExposeVariants:
-    """Tests for variants on connect and expose statements."""
+    """Tests for inline <variant> annotation on connect and expose statements."""
 
-    def test_connect_variants_attr(self) -> None:
-        src = "connect A.p -> $ch -> B.q { variants: cloud }"
+    def test_connect_inline_variant(self) -> None:
+        src = "connect<cloud> A.p -> $ch -> B.q"
         f = _parse(src)
         assert f.connects[0].variants == ["cloud"]
 
-    def test_connect_no_variants_is_baseline(self) -> None:
+    def test_connect_no_variant_is_baseline(self) -> None:
         f = _parse("connect A.p -> $ch -> B.q")
         assert f.connects[0].variants == []
 
-    def test_expose_variants_attr(self) -> None:
+    def test_expose_inline_variant(self) -> None:
         src = """
 component Foo {
     component Sub { provides P }
-    expose Sub.P { variants: cloud }
+    expose<cloud> Sub.P
 }
 """
         f = _parse(src)
         assert f.components[0].exposes[0].variants == ["cloud"]
 
-    def test_expose_with_as_and_variants(self) -> None:
+    def test_expose_with_as_and_variant(self) -> None:
         src = """
 component Foo {
     component Sub { provides P }
-    expose Sub.P as renamed { variants: cloud }
+    expose<cloud> Sub.P as renamed
 }
 """
         f = _parse(src)
@@ -2232,27 +2148,19 @@ component Foo {
         assert exp.as_name == "renamed"
         assert exp.variants == ["cloud"]
 
+    def test_connect_multiple_variants(self) -> None:
+        src = "connect<cloud, hybrid> A.p -> $ch -> B.q"
+        f = _parse(src)
+        assert f.connects[0].variants == ["cloud", "hybrid"]
+
 
 class TestVariantParseErrors:
-    """Tests for parse errors in variant syntax."""
+    """Tests for parse errors in variant annotation syntax."""
 
-    def test_variant_block_rejects_invalid_token(self) -> None:
-        with pytest.raises(ParseError, match="Unexpected token"):
-            _parse("variant cloud { enum Foo {} }")
+    def test_unclosed_variant_annotation(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("component<cloud Foo {}")
 
-    def test_component_variant_block_rejects_system(self) -> None:
-        with pytest.raises(ParseError, match="Unexpected token"):
-            _parse("component C { variant cloud { system S {} } }")
-
-    def test_connect_block_rejects_unknown_attr(self) -> None:
-        with pytest.raises(ParseError, match="Unexpected token"):
-            _parse("connect A.p -> $ch -> B.q { title foo }")
-
-    def test_expose_block_rejects_unknown_attr(self) -> None:
-        with pytest.raises(ParseError, match="Unexpected token"):
-            _parse("""
-component Foo {
-    component Sub { provides P }
-    expose Sub.P { title foo }
-}
-""")
+    def test_empty_variant_annotation(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("component<> Foo {}")

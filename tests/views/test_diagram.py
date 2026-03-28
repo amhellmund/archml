@@ -20,8 +20,8 @@ from archml.views.topology import build_viz_diagram
 _SVG_NS = "http://www.w3.org/2000/svg"
 
 
-def _iref(name: str, version: str | None = None) -> InterfaceRef:
-    return InterfaceRef(name=name, version=version)
+def _iref(name: str) -> InterfaceRef:
+    return InterfaceRef(name=name)
 
 
 def _connect(src_entity: str, src_port: str, dst_entity: str, dst_port: str, channel: str | None = None) -> ConnectDef:
@@ -226,15 +226,15 @@ def test_render_provides_terminal_label_present(tmp_path: Path) -> None:
     assert "Result" in _text_content(root)
 
 
-def test_render_versioned_terminal_label(tmp_path: Path) -> None:
-    """Versioned interface label (e.g. ``API@v2``) appears in the SVG."""
+def test_render_variant_terminal_label(tmp_path: Path) -> None:
+    """Interface with a variant annotation still renders by its plain name."""
     comp = Component(
         name="Sys",
-        provides=[_iref("API", version="v2")],
+        provides=[_iref("API")],
         components=[Component(name="A")],
     )
     root = _render_and_parse(comp, tmp_path)
-    assert "API@v2" in _text_content(root)
+    assert "API" in _text_content(root)
 
 
 # ###############

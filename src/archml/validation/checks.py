@@ -202,9 +202,9 @@ def _check_type_cycles(arch_file: ArchFile) -> list[ValidationError]:
     return errors
 
 
-def _iface_key(ref: InterfaceRef) -> tuple[str, str | None]:
-    """Return a hashable key for an interface reference (name, version)."""
-    return (ref.name, ref.version)
+def _iface_key(ref: InterfaceRef) -> str:
+    """Return a hashable key for an interface reference."""
+    return ref.name
 
 
 def _check_interface_propagation(arch_file: ArchFile) -> list[ValidationError]:

@@ -93,8 +93,6 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.IMPORT,
         TokenType.USE,
         TokenType.EXTERNAL,
-        TokenType.VARIANT,
-        TokenType.VARIANTS,
         TokenType.ARTIFACT,
     }
 )
@@ -209,24 +207,24 @@ class _Parser:
         elif tok.type == TokenType.ARTIFACT:
             result.artifacts.append(self._parse_artifact_def())
         elif tok.type == TokenType.INTERFACE:
-            result.interfaces.append(self._parse_interface())
+            result.interfaces.append(self._parse_interface(parent_variants=[]))
         elif tok.type == TokenType.COMPONENT:
-            result.components.append(self._parse_component(is_external=False))
+            result.components.append(self._parse_component(is_external=False, parent_variants=[]))
         elif tok.type == TokenType.SYSTEM:
-            result.systems.append(self._parse_system(is_external=False))
+            result.systems.append(self._parse_system(is_external=False, parent_variants=[]))
         elif tok.type == TokenType.USER:
-            result.users.append(self._parse_user(is_external=False))
+            result.users.append(self._parse_user(is_external=False, parent_variants=[]))
         elif tok.type == TokenType.CONNECT:
             result.connects.append(self._parse_connect())
         elif tok.type == TokenType.EXTERNAL:
             self._advance()  # consume 'external'
             inner = self._current()
             if inner.type == TokenType.COMPONENT:
-                result.components.append(self._parse_component(is_external=True))
+                result.components.append(self._parse_component(is_external=True, parent_variants=[]))
             elif inner.type == TokenType.SYSTEM:
-                result.systems.append(self._parse_system(is_external=True))
+                result.systems.append(self._parse_system(is_external=True, parent_variants=[]))
             elif inner.type == TokenType.USER:
-                result.users.append(self._parse_user(is_external=True))
+                result.users.append(self._parse_user(is_external=True, parent_variants=[]))
             else:
                 raise ParseError(
                     f"Expected 'component', 'system', or 'user' after 'external', got {inner.value!r}",
@@ -288,7 +286,7 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_enum(self) -> EnumDef:
-        """Parse: enum <Name> { [\"\"\"docstring\"\"\"] <Value>* }
+        """Parse: enum <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* <Value>* }
 
         An optional triple-quoted docstring may appear as the first item in the
         body.  Each enum value must appear on its own line (line number strictly
@@ -300,6 +298,9 @@ class _Parser:
         enum_def = EnumDef(name=name_tok.value, line=name_tok.line)
         if self._check(TokenType.TRIPLE_STRING):
             enum_def.description = self._advance().value
+        while self._check(TokenType.AT):
+            attr_name, attr_values = self._parse_attribute()
+            enum_def.attributes[attr_name] = attr_values
         last_value_line = lbrace.line
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TRIPLE_STRING):
@@ -338,13 +339,16 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_type_def(self) -> TypeDef:
-        """Parse: type <Name> { [\"\"\"docstring\"\"\"] field* }"""
+        """Parse: type <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* field* }"""
         self._expect(TokenType.TYPE)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
         type_def = TypeDef(name=name_tok.value, line=name_tok.line)
         if self._check(TokenType.TRIPLE_STRING):
             type_def.description = self._advance().value
+        while self._check(TokenType.AT):
+            attr_name, attr_values = self._parse_attribute()
+            type_def.attributes[attr_name] = attr_values
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TRIPLE_STRING):
                 tok = self._current()
@@ -372,13 +376,16 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_artifact_def(self) -> ArtifactDef:
-        """Parse: artifact <Name> { [\"\"\"docstring\"\"\"] }"""
+        """Parse: artifact <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* }"""
         self._expect(TokenType.ARTIFACT)
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
         artifact = ArtifactDef(name=name_tok.value, line=name_tok.line)
         if self._check(TokenType.TRIPLE_STRING):
             artifact.description = self._advance().value
+        while self._check(TokenType.AT):
+            attr_name, attr_values = self._parse_attribute()
+            artifact.attributes[attr_name] = attr_values
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             tok = self._current()
             if self._check(TokenType.TRIPLE_STRING):
@@ -401,19 +408,22 @@ class _Parser:
     # Interface declarations
     # ------------------------------------------------------------------
 
-    def _parse_interface(self) -> InterfaceDef:
-        """Parse: interface <Name> [@version] { [\"\"\"docstring\"\"\"] field* }"""
+    def _parse_interface(self, parent_variants: list[str]) -> InterfaceDef:
+        """Parse: interface[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* field* }"""
         self._expect(TokenType.INTERFACE)
+        own_variants = self._parse_variant_annotation()
         name_tok = self._expect(TokenType.IDENTIFIER)
-        version: str | None = None
-        if self._check(TokenType.AT):
-            self._advance()  # consume @
-            ver_tok = self._expect(TokenType.IDENTIFIER)
-            version = ver_tok.value
         self._expect(TokenType.LBRACE)
-        iface = InterfaceDef(name=name_tok.value, version=version, line=name_tok.line)
+        iface = InterfaceDef(
+            name=name_tok.value,
+            variants=_union_variants(parent_variants, own_variants),
+            line=name_tok.line,
+        )
         if self._check(TokenType.TRIPLE_STRING):
             iface.description = self._advance().value
+        while self._check(TokenType.AT):
+            attr_name, attr_values = self._parse_attribute()
+            iface.attributes[attr_name] = attr_values
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TRIPLE_STRING):
                 tok = self._current()
@@ -440,14 +450,24 @@ class _Parser:
     # Component declarations
     # ------------------------------------------------------------------
 
-    def _parse_component(self, is_external: bool) -> Component:
-        """Parse: [external] component <Name> { [\"\"\"docstring\"\"\"] ... }"""
+    def _parse_component(self, is_external: bool, parent_variants: list[str]) -> Component:
+        """Parse: [external] component[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] ... }"""
         self._expect(TokenType.COMPONENT)
+        own_variants = self._parse_variant_annotation()
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
-        comp = Component(name=name_tok.value, is_external=is_external, line=name_tok.line)
+        effective_variants = _union_variants(parent_variants, own_variants)
+        comp = Component(
+            name=name_tok.value,
+            is_external=is_external,
+            variants=effective_variants,
+            line=name_tok.line,
+        )
         if self._check(TokenType.TRIPLE_STRING):
             comp.description = self._advance().value
+        while self._check(TokenType.AT):
+            attr_name, attr_values = self._parse_attribute()
+            comp.attributes[attr_name] = attr_values
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TRIPLE_STRING):
                 tok = self._current()
@@ -457,27 +477,23 @@ class _Parser:
                     tok.column,
                     self._filename,
                 )
-            elif self._check(TokenType.VARIANTS):
-                comp.variants = self._parse_variants_attr()
             elif self._check(TokenType.REQUIRES):
                 comp.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 comp.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
             elif self._check(TokenType.INTERFACE):
-                comp.interfaces.append(self._parse_interface())
+                comp.interfaces.append(self._parse_interface(parent_variants=effective_variants))
             elif self._check(TokenType.COMPONENT):
-                comp.components.append(self._parse_component(is_external=False))
+                comp.components.append(self._parse_component(is_external=False, parent_variants=effective_variants))
             elif self._check(TokenType.CONNECT):
                 comp.connects.append(self._parse_connect())
             elif self._check(TokenType.EXPOSE):
                 comp.exposes.append(self._parse_expose())
-            elif self._check(TokenType.VARIANT):
-                self._parse_variant_block_component(comp)
             elif self._check(TokenType.EXTERNAL):
                 self._advance()  # consume 'external'
                 inner = self._current()
                 if inner.type == TokenType.COMPONENT:
-                    comp.components.append(self._parse_component(is_external=True))
+                    comp.components.append(self._parse_component(is_external=True, parent_variants=effective_variants))
                 else:
                     raise ParseError(
                         f"Expected 'component' after 'external' inside component body, got {inner.value!r}",
@@ -500,14 +516,24 @@ class _Parser:
     # System declarations
     # ------------------------------------------------------------------
 
-    def _parse_system(self, is_external: bool) -> System:
-        """Parse: [external] system <Name> { [\"\"\"docstring\"\"\"] ... }"""
+    def _parse_system(self, is_external: bool, parent_variants: list[str]) -> System:
+        """Parse: [external] system[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] ... }"""
         self._expect(TokenType.SYSTEM)
+        own_variants = self._parse_variant_annotation()
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
-        system = System(name=name_tok.value, is_external=is_external, line=name_tok.line)
+        effective_variants = _union_variants(parent_variants, own_variants)
+        system = System(
+            name=name_tok.value,
+            is_external=is_external,
+            variants=effective_variants,
+            line=name_tok.line,
+        )
         if self._check(TokenType.TRIPLE_STRING):
             system.description = self._advance().value
+        while self._check(TokenType.AT):
+            attr_name, attr_values = self._parse_attribute()
+            system.attributes[attr_name] = attr_values
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TRIPLE_STRING):
                 tok = self._current()
@@ -517,35 +543,33 @@ class _Parser:
                     tok.column,
                     self._filename,
                 )
-            elif self._check(TokenType.VARIANTS):
-                system.variants = self._parse_variants_attr()
             elif self._check(TokenType.REQUIRES):
                 system.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 system.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
             elif self._check(TokenType.INTERFACE):
-                system.interfaces.append(self._parse_interface())
+                system.interfaces.append(self._parse_interface(parent_variants=effective_variants))
             elif self._check(TokenType.COMPONENT):
-                system.components.append(self._parse_component(is_external=False))
+                system.components.append(self._parse_component(is_external=False, parent_variants=effective_variants))
             elif self._check(TokenType.SYSTEM):
-                system.systems.append(self._parse_system(is_external=False))
+                system.systems.append(self._parse_system(is_external=False, parent_variants=effective_variants))
             elif self._check(TokenType.USER):
-                system.users.append(self._parse_user(is_external=False))
+                system.users.append(self._parse_user(is_external=False, parent_variants=effective_variants))
             elif self._check(TokenType.CONNECT):
                 system.connects.append(self._parse_connect())
             elif self._check(TokenType.EXPOSE):
                 system.exposes.append(self._parse_expose())
-            elif self._check(TokenType.VARIANT):
-                self._parse_variant_block_system(system)
             elif self._check(TokenType.EXTERNAL):
                 self._advance()  # consume 'external'
                 inner = self._current()
                 if inner.type == TokenType.COMPONENT:
-                    system.components.append(self._parse_component(is_external=True))
+                    system.components.append(
+                        self._parse_component(is_external=True, parent_variants=effective_variants)
+                    )
                 elif inner.type == TokenType.SYSTEM:
-                    system.systems.append(self._parse_system(is_external=True))
+                    system.systems.append(self._parse_system(is_external=True, parent_variants=effective_variants))
                 elif inner.type == TokenType.USER:
-                    system.users.append(self._parse_user(is_external=True))
+                    system.users.append(self._parse_user(is_external=True, parent_variants=effective_variants))
                 else:
                     raise ParseError(
                         f"Expected 'component', 'system', or 'user' after 'external'"
@@ -555,7 +579,7 @@ class _Parser:
                         self._filename,
                     )
             elif self._check(TokenType.USE):
-                entity = self._parse_use_statement()
+                entity = self._parse_use_statement(parent_variants=effective_variants)
                 _append_to_system(system, entity)
             else:
                 tok = self._current()
@@ -568,26 +592,25 @@ class _Parser:
         self._expect(TokenType.RBRACE)
         return system
 
-    def _parse_use_statement(self) -> Component | System | UserDef:
+    def _parse_use_statement(self, parent_variants: list[str]) -> Component | System | UserDef:
         """Parse: use component <Name> | use system <Name> | use user <Name>.
 
-        Returns the stub entity; the caller is responsible for appending it to
-        the appropriate collection and applying any inherited variant context.
+        The stub entity inherits the parent scope's variant context.
         """
         self._expect(TokenType.USE)
         kind = self._current()
         if kind.type == TokenType.COMPONENT:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
-            return Component(name=name_tok.value, is_stub=True, line=name_tok.line)
+            return Component(name=name_tok.value, is_stub=True, variants=list(parent_variants), line=name_tok.line)
         elif kind.type == TokenType.SYSTEM:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
-            return System(name=name_tok.value, is_stub=True, line=name_tok.line)
+            return System(name=name_tok.value, is_stub=True, variants=list(parent_variants), line=name_tok.line)
         elif kind.type == TokenType.USER:
             self._advance()
             name_tok = self._expect(TokenType.IDENTIFIER)
-            return UserDef(name=name_tok.value, line=name_tok.line)
+            return UserDef(name=name_tok.value, variants=list(parent_variants), line=name_tok.line)
         else:
             raise ParseError(
                 f"Expected 'component', 'system', or 'user' after 'use', got {kind.value!r}",
@@ -600,18 +623,27 @@ class _Parser:
     # User declarations
     # ------------------------------------------------------------------
 
-    def _parse_user(self, is_external: bool) -> UserDef:
-        """Parse: [external] user <Name> { [\"\"\"docstring\"\"\"] (requires|provides)* }
+    def _parse_user(self, is_external: bool, parent_variants: list[str]) -> UserDef:
+        """Parse: [external] user[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* (requires|provides)* }
 
-        Users are leaf nodes: they support an optional docstring, variants,
-        requires, and provides, but no sub-entities or channels.
+        Users are leaf nodes: they support an optional docstring, attributes,
+        variant annotation, requires, and provides, but no sub-entities or channels.
         """
         self._expect(TokenType.USER)
+        own_variants = self._parse_variant_annotation()
         name_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.LBRACE)
-        user = UserDef(name=name_tok.value, is_external=is_external, line=name_tok.line)
+        user = UserDef(
+            name=name_tok.value,
+            is_external=is_external,
+            variants=_union_variants(parent_variants, own_variants),
+            line=name_tok.line,
+        )
         if self._check(TokenType.TRIPLE_STRING):
             user.description = self._advance().value
+        while self._check(TokenType.AT):
+            attr_name, attr_values = self._parse_attribute()
+            user.attributes[attr_name] = attr_values
         while not self._check(TokenType.RBRACE, TokenType.EOF):
             if self._check(TokenType.TRIPLE_STRING):
                 tok = self._current()
@@ -621,8 +653,6 @@ class _Parser:
                     tok.column,
                     self._filename,
                 )
-            elif self._check(TokenType.VARIANTS):
-                user.variants = self._parse_variants_attr()
             elif self._check(TokenType.REQUIRES):
                 user.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
@@ -646,29 +676,31 @@ class _Parser:
         """Parse a connect statement.
 
         Four forms:
-            connect <src_port> -> $<channel> -> <dst_port>
-            connect <src_port> -> $<channel>
-            connect $<channel> -> <dst_port>
-            connect <src_port> -> <dst_port>
+            connect[<v1, v2>] <src_port> -> $<channel> -> <dst_port>
+            connect[<v1, v2>] <src_port> -> $<channel>
+            connect[<v1, v2>] $<channel> -> <dst_port>
+            connect[<v1, v2>] <src_port> -> <dst_port>
 
         Where <src_port> / <dst_port> is either ``Entity.port`` or just
         ``port`` (port on the current scope's own boundary).
         """
         connect_tok = self._expect(TokenType.CONNECT)
-        connect_def = ConnectDef(line=connect_tok.line)
+        variants = self._parse_variant_annotation()
+        connect_def = ConnectDef(variants=variants, line=connect_tok.line)
 
         # Parse left-hand side: either $channel or Entity.port / port
         if self._check(TokenType.DOLLAR):
             # Form: connect $channel -> <dst_port>
             self._advance()  # consume $
             ch_tok = self._expect(TokenType.IDENTIFIER)
-            connect_def = ConnectDef(channel=ch_tok.value, line=connect_tok.line)
+            connect_def = ConnectDef(channel=ch_tok.value, variants=variants, line=connect_tok.line)
             self._expect(TokenType.ARROW)
             entity, port = self._parse_port_ref(connect_tok)
             connect_def = ConnectDef(
                 channel=ch_tok.value,
                 dst_entity=entity,
                 dst_port=port,
+                variants=variants,
                 line=connect_tok.line,
             )
         else:
@@ -689,6 +721,7 @@ class _Parser:
                         channel=ch_tok.value,
                         dst_entity=dst_entity,
                         dst_port=dst_port,
+                        variants=variants,
                         line=connect_tok.line,
                     )
                 else:
@@ -697,6 +730,7 @@ class _Parser:
                         src_entity=src_entity,
                         src_port=src_port,
                         channel=ch_tok.value,
+                        variants=variants,
                         line=connect_tok.line,
                     )
             else:
@@ -707,24 +741,9 @@ class _Parser:
                     src_port=src_port,
                     dst_entity=dst_entity,
                     dst_port=dst_port,
+                    variants=variants,
                     line=connect_tok.line,
                 )
-
-        # Optional attribute block: { variants = [...] }
-        if self._check(TokenType.LBRACE):
-            self._advance()  # consume {
-            while not self._check(TokenType.RBRACE, TokenType.EOF):
-                if self._check(TokenType.VARIANTS):
-                    connect_def.variants = self._parse_variants_attr()
-                else:
-                    tok = self._current()
-                    raise ParseError(
-                        f"Unexpected token {tok.value!r} in connect block",
-                        tok.line,
-                        tok.column,
-                        self._filename,
-                    )
-            self._expect(TokenType.RBRACE)
 
         return connect_def
 
@@ -745,8 +764,9 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_expose(self) -> ExposeDef:
-        """Parse: expose <Entity>.<port> [as <new_name>] [{ variants = [...] }]"""
+        """Parse: expose[<v1, v2>] <Entity>.<port> [as <new_name>]"""
         expose_tok = self._expect(TokenType.EXPOSE)
+        variants = self._parse_variant_annotation()
         entity_tok = self._expect(TokenType.IDENTIFIER)
         self._expect(TokenType.DOT)
         port_tok = self._expect(TokenType.IDENTIFIER)
@@ -755,22 +775,13 @@ class _Parser:
             self._advance()  # consume 'as'
             as_tok = self._expect(TokenType.IDENTIFIER)
             as_name = as_tok.value
-        exp = ExposeDef(entity=entity_tok.value, port=port_tok.value, as_name=as_name, line=expose_tok.line)
-        if self._check(TokenType.LBRACE):
-            self._advance()  # consume {
-            while not self._check(TokenType.RBRACE, TokenType.EOF):
-                if self._check(TokenType.VARIANTS):
-                    exp.variants = self._parse_variants_attr()
-                else:
-                    tok = self._current()
-                    raise ParseError(
-                        f"Unexpected token {tok.value!r} in expose block",
-                        tok.line,
-                        tok.column,
-                        self._filename,
-                    )
-            self._expect(TokenType.RBRACE)
-        return exp
+        return ExposeDef(
+            entity=entity_tok.value,
+            port=port_tok.value,
+            as_name=as_name,
+            variants=variants,
+            line=expose_tok.line,
+        )
 
     # ------------------------------------------------------------------
     # Field declarations
@@ -830,171 +841,56 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_interface_ref(self, keyword: TokenType) -> InterfaceRef:
-        """Parse: requires/provides <Name> [@version] [as <port_name>] [{ variants = [...] }]"""
+        """Parse: requires/provides[<v1, v2>] <Name> [as <port_name>]"""
         self._expect(keyword)
+        variants = self._parse_variant_annotation()
         name_tok = self._expect(TokenType.IDENTIFIER)
-        version: str | None = None
-        if self._check(TokenType.AT):
-            self._advance()
-            ver_tok = self._expect(TokenType.IDENTIFIER)
-            version = ver_tok.value
         port_name: str | None = None
         if self._check(TokenType.AS):
             self._advance()  # consume 'as'
             alias_tok = self._expect(TokenType.IDENTIFIER)
             port_name = alias_tok.value
-        ref = InterfaceRef(name=name_tok.value, version=version, port_name=port_name, line=name_tok.line)
-        if self._check(TokenType.LBRACE):
-            self._advance()  # consume {
-            while not self._check(TokenType.RBRACE, TokenType.EOF):
-                if self._check(TokenType.VARIANTS):
-                    ref.variants = self._parse_variants_attr()
-                else:
-                    tok = self._current()
-                    raise ParseError(
-                        f"Unexpected token {tok.value!r} in port annotation block",
-                        tok.line,
-                        tok.column,
-                        self._filename,
-                    )
-            self._expect(TokenType.RBRACE)
-        return ref
+        return InterfaceRef(name=name_tok.value, port_name=port_name, variants=variants, line=name_tok.line)
 
     # ------------------------------------------------------------------
-    # Common attribute parsers
+    # Variant annotation and attribute parsers
     # ------------------------------------------------------------------
 
-    def _parse_variants_attr(self) -> list[str]:
-        """Parse: variants: name1, name2, ..."""
-        self._expect(TokenType.VARIANTS)
-        self._expect(TokenType.COLON)
+    def _parse_variant_annotation(self) -> list[str]:
+        """Parse an optional inline variant annotation: [<id1, id2, ...>].
+
+        Returns the list of variant names, or an empty list if no annotation
+        is present.
+        """
+        if not self._check(TokenType.LANGLE):
+            return []
+        self._advance()  # consume <
         variants: list[str] = []
         first = self._expect(TokenType.IDENTIFIER)
         variants.append(first.value)
         while self._check(TokenType.COMMA):
-            self._advance()
+            self._advance()  # consume ,
             v = self._expect(TokenType.IDENTIFIER)
             variants.append(v.value)
+        self._expect(TokenType.RANGLE)
         return variants
 
-    # ------------------------------------------------------------------
-    # Variant blocks
-    # ------------------------------------------------------------------
+    def _parse_attribute(self) -> tuple[str, list[str]]:
+        """Parse a custom attribute line: @<name>: <id1>, <id2>, ...
 
-    def _parse_variant_block_system(self, system: System) -> None:
-        """Parse a 'variant <name> { ... }' block inside a system body.
-
-        All entities defined inside the block get the variant name added to
-        their effective variant set (union semantics).
+        Returns a tuple of (attribute_name, [value, ...]).
         """
-        self._expect(TokenType.VARIANT)
-        name_tok = self._expect(TokenType.IDENTIFIER)
-        name = name_tok.value
-        self._expect(TokenType.LBRACE)
-        while not self._check(TokenType.RBRACE, TokenType.EOF):
-            tok = self._current()
-            if tok.type == TokenType.COMPONENT:
-                comp = self._parse_component(is_external=False)
-                _union_variant(comp.variants, name)
-                system.components.append(comp)
-            elif tok.type == TokenType.SYSTEM:
-                sub = self._parse_system(is_external=False)
-                _union_variant(sub.variants, name)
-                system.systems.append(sub)
-            elif tok.type == TokenType.USER:
-                user = self._parse_user(is_external=False)
-                _union_variant(user.variants, name)
-                system.users.append(user)
-            elif tok.type == TokenType.CONNECT:
-                conn = self._parse_connect()
-                _union_variant(conn.variants, name)
-                system.connects.append(conn)
-            elif tok.type == TokenType.EXPOSE:
-                exp = self._parse_expose()
-                _union_variant(exp.variants, name)
-                system.exposes.append(exp)
-            elif tok.type == TokenType.EXTERNAL:
-                self._advance()  # consume 'external'
-                inner = self._current()
-                if inner.type == TokenType.COMPONENT:
-                    comp = self._parse_component(is_external=True)
-                    _union_variant(comp.variants, name)
-                    system.components.append(comp)
-                elif inner.type == TokenType.SYSTEM:
-                    sub = self._parse_system(is_external=True)
-                    _union_variant(sub.variants, name)
-                    system.systems.append(sub)
-                elif inner.type == TokenType.USER:
-                    user = self._parse_user(is_external=True)
-                    _union_variant(user.variants, name)
-                    system.users.append(user)
-                else:
-                    raise ParseError(
-                        f"Expected 'component', 'system', or 'user' after 'external'"
-                        f" inside variant block, got {inner.value!r}",
-                        inner.line,
-                        inner.column,
-                        self._filename,
-                    )
-            elif tok.type == TokenType.USE:
-                entity = self._parse_use_statement()
-                _union_variant(entity.variants, name)
-                _append_to_system(system, entity)
-            else:
-                raise ParseError(
-                    f"Unexpected token {tok.value!r} in variant block",
-                    tok.line,
-                    tok.column,
-                    self._filename,
-                )
-        self._expect(TokenType.RBRACE)
-
-    def _parse_variant_block_component(self, comp: Component) -> None:
-        """Parse a 'variant <name> { ... }' block inside a component body.
-
-        All entities defined inside the block get the variant name added to
-        their effective variant set (union semantics).
-        """
-        self._expect(TokenType.VARIANT)
-        name_tok = self._expect(TokenType.IDENTIFIER)
-        name = name_tok.value
-        self._expect(TokenType.LBRACE)
-        while not self._check(TokenType.RBRACE, TokenType.EOF):
-            tok = self._current()
-            if tok.type == TokenType.COMPONENT:
-                sub = self._parse_component(is_external=False)
-                _union_variant(sub.variants, name)
-                comp.components.append(sub)
-            elif tok.type == TokenType.CONNECT:
-                conn = self._parse_connect()
-                _union_variant(conn.variants, name)
-                comp.connects.append(conn)
-            elif tok.type == TokenType.EXPOSE:
-                exp = self._parse_expose()
-                _union_variant(exp.variants, name)
-                comp.exposes.append(exp)
-            elif tok.type == TokenType.EXTERNAL:
-                self._advance()  # consume 'external'
-                inner = self._current()
-                if inner.type == TokenType.COMPONENT:
-                    sub = self._parse_component(is_external=True)
-                    _union_variant(sub.variants, name)
-                    comp.components.append(sub)
-                else:
-                    raise ParseError(
-                        f"Expected 'component' after 'external' inside variant block, got {inner.value!r}",
-                        inner.line,
-                        inner.column,
-                        self._filename,
-                    )
-            else:
-                raise ParseError(
-                    f"Unexpected token {tok.value!r} in variant block",
-                    tok.line,
-                    tok.column,
-                    self._filename,
-                )
-        self._expect(TokenType.RBRACE)
+        self._expect(TokenType.AT)
+        name_tok = self._expect_name_token()
+        self._expect(TokenType.COLON)
+        values: list[str] = []
+        first = self._expect_name_token()
+        values.append(first.value)
+        while self._check(TokenType.COMMA):
+            self._advance()  # consume ,
+            v = self._expect_name_token()
+            values.append(v.value)
+        return name_tok.value, values
 
 
 # ################
@@ -1002,10 +898,13 @@ class _Parser:
 # ################
 
 
-def _union_variant(variants: list[str], name: str) -> None:
-    """Add *name* to *variants* if not already present (union semantics)."""
-    if name not in variants:
-        variants.append(name)
+def _union_variants(parent: list[str], own: list[str]) -> list[str]:
+    """Return the union of *parent* and *own* variant sets, preserving order."""
+    result = list(parent)
+    for v in own:
+        if v not in result:
+            result.append(v)
+    return result
 
 
 def _append_to_system(system: System, entity: Component | System | UserDef) -> None:

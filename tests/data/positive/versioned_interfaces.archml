@@ -1,37 +1,24 @@
-# Versioned interfaces: multiple versions of the same interface
+# Variant-annotated interfaces: multiple deployment variants of the same interface
 # Expected result: no semantic errors
 
-# Unversioned baseline
 interface OrderRequest {
     order_id: String
     amount: Float
 }
 
-# Version 2 adds currency
-interface OrderRequest @v2 {
-    order_id: String
-    amount: Float
-    currency: String
-}
-
-# Version 3 adds shipping
-interface OrderRequest @v3 {
+interface OrderRequestExtended {
     order_id: String
     amount: Float
     currency: String
     shipping_method: String
 }
 
-# Component referencing specific version
+# Components referencing specific interface variants
 component LegacyOrderService {
     requires OrderRequest
 }
 
-component OrderServiceV2 {
-    requires OrderRequest @v2 as request_in
-    provides OrderRequest @v3 as request_out
-}
-
 component ModernOrderService {
-    requires OrderRequest @v3
+    requires OrderRequestExtended as request_in
+    provides OrderRequest as request_out
 }

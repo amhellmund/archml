@@ -18,8 +18,8 @@ from archml.views.topology import (
 # ###############
 
 
-def _iref(name: str, version: str | None = None) -> InterfaceRef:
-    return InterfaceRef(name=name, version=version)
+def _iref(name: str) -> InterfaceRef:
+    return InterfaceRef(name=name)
 
 
 def _connect(
@@ -223,14 +223,6 @@ def test_root_boundary_provides_port() -> None:
     assert ports["Result"].direction == "provides"
 
 
-def test_root_port_versioned_interface() -> None:
-    comp = Component(name="C", provides=[_iref("API", version="v2")])
-    diag = build_viz_diagram(comp)
-    port = diag.root.ports[0]
-    assert port.interface_version == "v2"
-    assert "v2" in port.id
-
-
 def test_root_port_node_id_matches_root_id() -> None:
     comp = Component(name="C", requires=[_iref("X")])
     diag = build_viz_diagram(comp)
@@ -313,13 +305,6 @@ def test_terminal_port_direction_faces_boundary() -> None:
     prov_terminal = by_id["terminal.prov.Out"]
     assert req_terminal.ports[0].direction == "provides"
     assert prov_terminal.ports[0].direction == "requires"
-
-
-def test_versioned_terminal_label_includes_version() -> None:
-    comp = Component(name="C", provides=[_iref("API", version="v2")])
-    diag = build_viz_diagram(comp)
-    ids = _node_ids(diag.peripheral_nodes)
-    assert "terminal.prov.API@v2" in ids
 
 
 def test_no_terminals_for_leaf_without_interfaces() -> None:
@@ -413,18 +398,6 @@ def test_edge_label_is_interface_name() -> None:
     diag = build_viz_diagram(parent)
     # Both edges carry the interface name as label.
     assert all(e.label == "PayReq" for e in diag.edges)
-
-
-def test_edge_label_includes_version() -> None:
-    a = Component(name="A", requires=[_iref("API", "v2")])
-    b = Component(name="B", provides=[_iref("API", "v2")])
-    parent = System(
-        name="S",
-        connects=[ConnectDef(src_entity="B", src_port="API", channel="ch", dst_entity="A", dst_port="API")],
-        components=[a, b],
-    )
-    diag = build_viz_diagram(parent)
-    assert all(e.label == "API@v2" for e in diag.edges)
 
 
 def test_edge_source_port_is_src_entity_port() -> None:

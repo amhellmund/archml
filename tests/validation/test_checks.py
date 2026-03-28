@@ -33,9 +33,9 @@ from archml.validation.checks import (
 # ###############
 
 
-def _iref(name: str, version: str | None = None) -> InterfaceRef:
+def _iref(name: str) -> InterfaceRef:
     """Create an InterfaceRef."""
-    return InterfaceRef(name=name, version=version)
+    return InterfaceRef(name=name)
 
 
 def _pfield(name: str) -> FieldDef:
@@ -327,31 +327,6 @@ class TestInterfacePropagation:
         )
         arch = ArchFile(systems=[sys_])
         _assert_no_error(arch)
-
-    def test_versioned_interface_exact_match_passes(self) -> None:
-        comp = Component(name="C", provides=[_iref("I", "v2")])
-        sys_ = System(
-            name="S",
-            provides=[_iref("I", "v2")],
-            components=[comp],
-            exposes=[ExposeDef(entity="C", port="I")],
-        )
-        arch = ArchFile(systems=[sys_])
-        _assert_no_error(arch)
-
-    def test_versioned_interface_version_mismatch_error(self) -> None:
-        # System provides I@v1 but member provides I@v2 — mismatch.
-        comp = Component(name="C", provides=[_iref("I", "v2")])
-        sys_ = System(name="S", provides=[_iref("I", "v1")], components=[comp])
-        arch = ArchFile(systems=[sys_])
-        _assert_error(arch, "provides interface 'I'")
-
-    def test_versioned_vs_unversioned_mismatch_error(self) -> None:
-        # System provides I@v1 but member provides unversioned I.
-        comp = Component(name="C", provides=[_iref("I")])
-        sys_ = System(name="S", provides=[_iref("I", "v1")], components=[comp])
-        arch = ArchFile(systems=[sys_])
-        _assert_error(arch, "provides interface 'I'")
 
     def test_nested_system_propagation_checked_recursively(self) -> None:
         # Both outer and inner must satisfy propagation independently.

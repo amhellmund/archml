@@ -1,6 +1,6 @@
 # ArchML
 
-ArchML is a text-based DSL for defining software architecture alongside your code. Architecture files live in the repository, are version-controlled like any other source file, and stay in sync with the system they describe.
+ArchML is a text-based DSL for defining software architecture next to your code. Architecture files live in the repository, are version-controlled like any other source file, and stay in sync with the system they describe.
 
 The core idea: define your architecture once as a model, then derive multiple views from it — interactive web diagrams, consistency reports, and embedded Sphinx documentation — without maintaining separate diagrams per tool.
 
@@ -27,27 +27,32 @@ A small e-commerce backend expressed in ArchML. The example shows the core princ
 
 type OrderItem {
     product_id: String
-    quantity:   Int
+    quantity: Int
     unit_price: Float
 }
 
-enum OrderStatus { Pending  Confirmed  Shipped  Cancelled }
+enum OrderStatus { 
+    Pending
+    Confirmed
+    Shipped
+    Cancelled
+}
 
 interface OrderRequest {
-    order_id:    String
+    order_id: String
     customer_id: String
-    items:        List<OrderItem>
+    items: List<OrderItem>
 }
 
 interface OrderConfirmation {
-    order_id:     String
-    status:       OrderStatus
+    order_id: String
+    status: OrderStatus
     confirmed_at: Timestamp
 }
 
 interface PaymentRequest {
     order_id: String
-    amount:   Float
+    amount: Float
     currency: String
 }
 ```
@@ -71,7 +76,7 @@ system ECommerce {
         """Accepts, validates, and processes customer orders."""
 
         @team: platform
-        @tags: critical
+        @tags: critical, orders
 
         component Validator {
             requires OrderRequest
@@ -114,7 +119,7 @@ system ECommerce {
 - **Internal wiring** — `connect` introduces a named channel (`$validation`) between sub-component ports. The channel is local to the enclosing scope.
 - **Exposure** — `expose` promotes a sub-component's port to the enclosing boundary. Every sub-component port must be either wired or exposed — the tooling reports a validation error otherwise.
 - **User actors** — `user` is a leaf node with the same port model as components.
-- **Custom attributes** — `@team: platform` and `@tags: critical pci-scope` attach user-defined metadata. Values are identifiers; the tooling does not interpret them.
+- **Custom attributes** — `@team: platform` and `@tags: critical, pci-scope` attach user-defined metadata. Values are comma-separated identifiers; the tooling does not interpret them.
 
 Large architectures split across files with `from ... import`. `use component X` places an imported component inside a system without redefining it. Remote repositories are referenced with `@repo-name` prefixes for multi-repo workspaces. Variants (`<cloud, on_premise>`) model multiple configurations within a single file.
 
@@ -135,7 +140,7 @@ Large architectures split across files with `from ... import`. `use component X`
 | `expose Entity.port [as name]` | Promote a sub-entity's port to the enclosing boundary                  |
 | `external`                     | Marks a system, component, or user as outside the development boundary  |
 | `<v1, v2>`                     | Variant annotation on an entity or statement                            |
-| `@attr: val1 val2`             | Custom attribute; values are space-separated identifiers                |
+| `@attr: val1, val2`            | Custom attribute; values are comma-separated identifiers                |
 | `from … import` / `use`        | Bring definitions from another file into scope                          |
 
 Primitive types: `String`, `Int`, `Float`, `Bool`, `Bytes`, `Timestamp`, `Datetime`

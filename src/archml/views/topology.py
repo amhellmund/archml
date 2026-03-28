@@ -71,9 +71,7 @@ class VizPort:
         id: Diagram-unique stable identifier used by :class:`VizEdge` and
             renderers (e.g. ``"ECommerce__OrderService.req.PaymentRequest"``).
         node_id: ID of the owning :class:`VizNode` or :class:`VizBoundary`.
-        interface_name: Base interface name without the version suffix.
-        interface_version: Version string (e.g. ``"v2"``), or ``None`` for
-            unversioned interfaces.
+        interface_name: Interface name.
         direction: ``"requires"`` for input ports; ``"provides"`` for output
             ports.
         description: Optional human-readable description of the interface.
@@ -82,7 +80,6 @@ class VizPort:
     id: str
     node_id: str
     interface_name: str
-    interface_version: str | None
     direction: Literal["requires", "provides"]
     description: str | None = None
 
@@ -175,10 +172,8 @@ class VizEdge:
             (e.g. ``"edge.A.req.IFace--B.prov.IFace"``).
         source_port_id: ID of the source :class:`VizPort`.
         target_port_id: ID of the target :class:`VizPort`.
-        label: Human-readable label shown on the edge
-            (``"InterfaceName"`` or ``"InterfaceName@vN"``).
-        interface_name: Base interface name without version suffix.
-        interface_version: Version string, or ``None``.
+        label: Human-readable label shown on the edge.
+        interface_name: Interface name.
     """
 
     id: str
@@ -186,7 +181,6 @@ class VizEdge:
     target_port_id: str
     label: str
     interface_name: str
-    interface_version: str | None = None
 
 
 @dataclass
@@ -419,7 +413,6 @@ def build_viz_diagram(
                     target_port_id=root_port_id,
                     label=_iref_label(ref),
                     interface_name=ref.name,
-                    interface_version=ref.version,
                 )
             )
     for ref in entity.provides:
@@ -436,7 +429,6 @@ def build_viz_diagram(
                     target_port_id=terminal_port_id,
                     label=_iref_label(ref),
                     interface_name=ref.name,
-                    interface_version=ref.version,
                 )
             )
     # Expose-based terminal edges: connect each expose terminal to the appropriate
@@ -532,7 +524,6 @@ def build_viz_diagram(
                         target_port_id=_conn_port_id,
                         label=_iref_label(_exp_ref),
                         interface_name=_exp_ref.name,
-                        interface_version=_exp_ref.version,
                     )
                 )
         else:
@@ -548,7 +539,6 @@ def build_viz_diagram(
                         target_port_id=_term_port_id,
                         label=_iref_label(_exp_ref),
                         interface_name=_exp_ref.name,
-                        interface_version=_exp_ref.version,
                     )
                 )
 
@@ -729,14 +719,13 @@ def _make_id(entity_path: str) -> str:
 
 def _iref_label(ref: InterfaceRef) -> str:
     """Return a display label for an interface reference."""
-    return f"{ref.name}@{ref.version}" if ref.version else ref.name
+    return ref.name
 
 
 def _port_id(node_id: str, direction: Literal["requires", "provides"], ref: InterfaceRef) -> str:
     """Construct a stable port ID from its owner, direction, and interface."""
     dir_tag = "req" if direction == "requires" else "prov"
-    suffix = f"{ref.name}@{ref.version}" if ref.version else ref.name
-    return f"{node_id}.{dir_tag}.{suffix}"
+    return f"{node_id}.{dir_tag}.{ref.name}"
 
 
 def _make_port(
@@ -749,7 +738,6 @@ def _make_port(
         id=_port_id(node_id, direction, ref),
         node_id=node_id,
         interface_name=ref.name,
-        interface_version=ref.version,
         direction=direction,
     )
 
@@ -820,7 +808,6 @@ def _make_terminal_node(
         id=f"{node_id}.port",
         node_id=node_id,
         interface_name=ref.name,
-        interface_version=ref.version,
         direction=port_direction,
     )
     return VizNode(
@@ -890,14 +877,12 @@ def _collect_channel_nodes(
                 id=f"{ch_id}.in",
                 node_id=ch_id,
                 interface_name=display_iface,
-                interface_version=None,
                 direction="requires",
             ),
             VizPort(
                 id=f"{ch_id}.out",
                 node_id=ch_id,
                 interface_name=display_iface,
-                interface_version=None,
                 direction="provides",
             ),
         ]
@@ -920,7 +905,7 @@ def _find_port_id(
 ) -> str | None:
     """Return the port ID matching *direction* and *ref* on *node*, or ``None``."""
     for p in node.ports:
-        if p.direction == direction and p.interface_name == ref.name and p.interface_version == ref.version:
+        if p.direction == direction and p.interface_name == ref.name:
             return p.id
     return None
 
@@ -1037,7 +1022,6 @@ def _build_edges_from_connect(
                         target_port_id=ch_in_port.id,
                         label=_iref_label(src_ref),
                         interface_name=src_ref.name,
-                        interface_version=src_ref.version,
                     )
                 )
 
@@ -1061,7 +1045,6 @@ def _build_edges_from_connect(
                         target_port_id=dst_port_id,
                         label=_iref_label(dst_ref),
                         interface_name=dst_ref.name,
-                        interface_version=dst_ref.version,
                     )
                 )
 
@@ -1120,7 +1103,6 @@ def _build_direct_edge(
         target_port_id=dst_port_id,
         label=label,
         interface_name=src_ref.name,
-        interface_version=src_ref.version,
     )
 
 
@@ -1351,14 +1333,12 @@ def _collect_channel_nodes_resolve(
                 id=f"{ch_id}.in",
                 node_id=ch_id,
                 interface_name=display_iface,
-                interface_version=None,
                 direction="requires",
             ),
             VizPort(
                 id=f"{ch_id}.out",
                 node_id=ch_id,
                 interface_name=display_iface,
-                interface_version=None,
                 direction="provides",
             ),
         ]
@@ -1527,7 +1507,6 @@ def _build_edges_for_connect(
                 target_port_id=dst_port_id,
                 label=_iref_label(src_ref),
                 interface_name=src_ref.name,
-                interface_version=src_ref.version,
             )
         ]
 
@@ -1559,7 +1538,6 @@ def _build_edges_for_connect(
                         target_port_id=ch_in_port.id,
                         label=_iref_label(src_ref),
                         interface_name=src_ref.name,
-                        interface_version=src_ref.version,
                     )
                 )
 
@@ -1582,7 +1560,6 @@ def _build_edges_for_connect(
                         target_port_id=dst_port_id,
                         label=_iref_label(dst_ref),
                         interface_name=dst_ref.name,
-                        interface_version=dst_ref.version,
                     )
                 )
     return edges

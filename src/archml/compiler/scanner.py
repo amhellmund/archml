@@ -34,8 +34,6 @@ class TokenType(enum.Enum):
     IMPORT = "import"
     USE = "use"
     EXTERNAL = "external"
-    VARIANT = "variant"
-    VARIANTS = "variants"
     # Symbols and operators
     LBRACE = "{"
     RBRACE = "}"
@@ -135,8 +133,6 @@ _KEYWORDS: dict[str, TokenType] = {
     "import": TokenType.IMPORT,
     "use": TokenType.USE,
     "external": TokenType.EXTERNAL,
-    "variant": TokenType.VARIANT,
-    "variants": TokenType.VARIANTS,
 }
 
 _SINGLE_CHAR_TOKENS: dict[str, TokenType] = {

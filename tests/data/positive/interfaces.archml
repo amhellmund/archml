@@ -1,4 +1,4 @@
-# Interface definitions with versioning and type references
+# Interface definitions with variant annotations and type references
 # Expected result: no semantic errors
 
 enum OrderStatus {
@@ -15,7 +15,6 @@ type OrderItem {
     unit_price: Float
 }
 
-# Unversioned interface
 interface OrderRequest {
     """Payload for placing a new customer order."""
 
@@ -26,8 +25,8 @@ interface OrderRequest {
     currency: String
 }
 
-# Versioned interface v2 (adds shipping_method)
-interface OrderRequest @v2 {
+interface OrderRequestV2 {
+    """Payload for placing a new customer order (extended)."""
 
     order_id: String
     customer_id: String
