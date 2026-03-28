@@ -56,7 +56,8 @@ A feature without tests is not done.
 
 ## ArchML Language Quick Reference
 
-Full syntax specification: `docs/LANGUAGE_SYNTAX.md`
+Full language reference: `docs/LANGUAGE_REFERENCE.md`
+Annotated example: `docs/LANGUAGE_EXAMPLE.md`
 
 
 

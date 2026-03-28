@@ -1,0 +1,11 @@
+system<variant1> MyOrderService {
+    """
+    This a lengthy description in markdown
+    """
+    @tags: my-tag, this-is-good, another_tag
+    @owners: lde, vde
+
+    component ABC {
+        @tags: sdfs
+    }
+}

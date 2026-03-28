@@ -16,67 +16,62 @@ ArchML sits between these extremes:
 - **Navigable views** — drill down from system landscape to individual component internals.
 - **Sphinx-native** — embed live architecture views directly in your documentation.
 
+Three architecture domains are covered: **functional** (systems, components, interfaces — implemented), **behavioral** (control flow, sequences — planned), and **deployment** (infrastructure mapping — planned).
+
 ## Quick Example
 
-A small e-commerce backend expressed in ArchML:
+A small e-commerce backend expressed in ArchML. The example shows the core principles: shared interfaces, a composite component with internal wiring, a user actor, and custom metadata attributes.
 
 ```
-// types.archml
+# types.archml — shared data contracts
 
 type OrderItem {
-    field product_id: String
-    field quantity:   Int
-    field unit_price: Decimal
+    product_id: String
+    quantity:   Int
+    unit_price: Float
 }
 
-enum OrderStatus {
-    Pending
-    Confirmed
-    Shipped
-    Delivered
-    Cancelled
-}
+enum OrderStatus { Pending  Confirmed  Shipped  Cancelled }
 
 interface OrderRequest {
-    field order_id:   String
-    field customer_id: String
-    field items:      List<OrderItem>
+    order_id:    String
+    customer_id: String
+    items:        List<OrderItem>
 }
 
 interface OrderConfirmation {
-    field order_id:     String
-    field status:       OrderStatus
-    field confirmed_at: Timestamp
+    order_id:     String
+    status:       OrderStatus
+    confirmed_at: Timestamp
 }
 
 interface PaymentRequest {
-    field order_id: String
-    field amount:   Decimal
-    field currency: String
-}
-
-interface InventoryCheck {
-    field product_id: String
-    field quantity:   Int
+    order_id: String
+    amount:   Float
+    currency: String
 }
 ```
 
 ```
-// systems/ecommerce.archml
-from types import OrderRequest, OrderConfirmation, PaymentRequest, InventoryCheck
+# systems/ecommerce.archml
+
+from types import OrderRequest, OrderConfirmation, PaymentRequest
 
 system ECommerce {
-    title = "E-Commerce Platform"
-    description = "Customer-facing online store."
+    """Customer-facing online store."""
 
+    # Human actor — same port model as components
     user Customer {
         provides OrderRequest
         requires OrderConfirmation
     }
 
+    # Composite component: internal structure is hidden behind exposed ports
     component OrderService {
-        title = "Order Service"
-        description = "Accepts, validates, and processes customer orders."
+        """Accepts, validates, and processes customer orders."""
+
+        @team: platform
+        @tags: critical
 
         component Validator {
             requires OrderRequest
@@ -86,87 +81,68 @@ system ECommerce {
         component Processor {
             requires ValidationResult
             requires PaymentRequest
-            requires InventoryCheck
             provides OrderConfirmation
         }
 
-        // Internal wiring: Validator feeds Processor via an implicit channel
+        # Internal channel: wires Validator output to Processor input
         connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
 
-        // Remaining ports must be explicitly exposed at the OrderService boundary
+        # Remaining ports are promoted to the OrderService boundary
         expose Validator.OrderRequest
         expose Processor.PaymentRequest
-        expose Processor.InventoryCheck
         expose Processor.OrderConfirmation
     }
 
     component PaymentGateway {
-        title = "Payment Gateway"
-        tags = ["critical", "pci-scope"]
-
+        @tags: pci-scope
         provides PaymentRequest
     }
 
-    component InventoryManager {
-        title = "Inventory Manager"
+    # Wire customer to order pipeline
+    connect Customer.OrderRequest            -> $order_in  -> OrderService.OrderRequest
+    connect OrderService.OrderConfirmation   -> $order_out -> Customer.OrderConfirmation
 
-        provides InventoryCheck
-    }
-
-    // Wire customer to order pipeline
-    connect Customer.OrderRequest -> $order_in -> OrderService.OrderRequest
-    connect OrderService.OrderConfirmation -> $order_out -> Customer.OrderConfirmation
-
-    // Wire OrderService to backing services
-    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest {
-        protocol = "gRPC"
-        async = true
-    }
-    connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck {
-        protocol = "HTTP"
-    }
+    # Wire OrderService to backing services
+    connect PaymentGateway.PaymentRequest    -> $payment   -> OrderService.PaymentRequest
 }
 ```
 
-Large architectures split naturally across files. A `from ... import` statement brings named definitions into scope; `use component X` places an imported component inside a system without redefining it. Its exposed ports are available as `Entity.port_name` in `connect` and `expose` statements. Remote repositories can be referenced with `@repo-name` prefixes for multi-repo workspace setups.
+**What this demonstrates:**
+
+- **Interfaces and types** — `type` defines building blocks; `interface` defines port contracts. Fields use `name: Type` syntax.
+- **Ports** — `requires` and `provides` declare connection points. Port names default to the interface name; `as` assigns an explicit alias.
+- **Internal wiring** — `connect` introduces a named channel (`$validation`) between sub-component ports. The channel is local to the enclosing scope.
+- **Exposure** — `expose` promotes a sub-component's port to the enclosing boundary. Every sub-component port must be either wired or exposed — the tooling reports a validation error otherwise.
+- **User actors** — `user` is a leaf node with the same port model as components.
+- **Custom attributes** — `@team: platform` and `@tags: critical pci-scope` attach user-defined metadata. Values are identifiers; the tooling does not interpret them.
+
+Large architectures split across files with `from ... import`. `use component X` places an imported component inside a system without redefining it. Remote repositories are referenced with `@repo-name` prefixes for multi-repo workspaces. Variants (`<cloud, on_premise>`) model multiple configurations within a single file.
 
 ## Language at a Glance
 
-| Keyword                            | Purpose                                                                           |
-| ---------------------------------- | --------------------------------------------------------------------------------- |
-| `system`                           | Group of components or sub-systems with a shared goal                             |
-| `component`                        | Module with a clear responsibility; may nest sub-components                       |
-| `user`                             | Human actor (role or persona) that interacts with the system                      |
-| `interface`                        | Named contract of typed data fields; supports `@v1`, `@v2` versioning             |
-| `type`                             | Reusable data structure (used within interfaces)                                  |
-| `artifact`                         | Abstract data artifact (file, directory, blob, etc.) used as a field type         |
-| `enum`                             | Constrained set of named values                                                   |
-| `field`                            | Named, typed data element with optional `description` and `schema`                |
-| `requires` / `provides`            | Declare a port that consumes or exposes an interface                              |
-| `requires X as port`               | Assign an explicit name to a port                                                 |
-| `connect A.p -> $ch -> B.p`        | Wire two ports via a named implicit channel                                       |
-| `connect A.p -> B.p`               | Wire two ports directly (no named channel)                                        |
-| `expose Entity.port [as name]`     | Explicitly surface a sub-entity's port at the enclosing boundary                 |
-| `external`                         | Marks a system, component, or user as outside the development boundary            |
-| `from … import`                    | Bring specific definitions from another file into scope                           |
-| `use component X`                  | Place an imported entity inside a system                                          |
-| `tags`                             | Arbitrary labels for filtering and view generation                                |
+| Keyword / Syntax               | Purpose                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| `system`                       | Group of components or sub-systems with a shared goal                   |
+| `component`                    | Module with a clear responsibility; may nest sub-components             |
+| `user`                         | Human actor (role or persona); leaf node                                |
+| `interface`                    | Named contract of typed fields used on ports                            |
+| `type`                         | Reusable data structure composed into interface fields                  |
+| `artifact`                     | Abstract data artifact (file, blob, stream) used as a field type        |
+| `enum`                         | Constrained set of named values                                         |
+| `requires` / `provides`        | Declare a port that consumes or exposes an interface                    |
+| `requires X as port`           | Assign an explicit name to a port                                       |
+| `connect A.p -> $ch -> B.p`    | Wire two ports via a named channel                                      |
+| `expose Entity.port [as name]` | Promote a sub-entity's port to the enclosing boundary                  |
+| `external`                     | Marks a system, component, or user as outside the development boundary  |
+| `<v1, v2>`                     | Variant annotation on an entity or statement                            |
+| `@attr: val1 val2`             | Custom attribute; values are space-separated identifiers                |
+| `from … import` / `use`        | Bring definitions from another file into scope                          |
 
-Primitive types: `String`, `Int`, `Float`, `Decimal`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
+Primitive types: `String`, `Int`, `Float`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
 
-Multi-line descriptions use triple-quoted strings:
-
-```
-description = """
-Accepts and validates customer orders.
-Delegates payment to PaymentGateway.
-"""
-```
-
-Enum values each occupy their own line — no commas needed.
-
-Full syntax reference: [docs/LANGUAGE_SYNTAX.md](docs/LANGUAGE_SYNTAX.md)
+Full language reference: [docs/LANGUAGE_REFERENCE.md](docs/LANGUAGE_REFERENCE.md)
+Annotated example: [docs/LANGUAGE_EXAMPLE.md](docs/LANGUAGE_EXAMPLE.md)
 
 ## Installation
 
@@ -212,9 +188,8 @@ archml visualize ECommerce diagram.svg
 archml visualize ECommerce::OrderService order_service.png
 ```
 
-> [!NOTE]  
+> [!NOTE]
 > This command exists, but is not yet working properly.
-
 
 ---
 
@@ -228,7 +203,7 @@ archml serve --port 9000
 archml serve --host 0.0.0.0 --port 8080
 ```
 
-> [!NOTE]  
+> [!NOTE]
 > This command exists, but is not yet working properly.
 
 ---
@@ -256,8 +231,6 @@ archml sync-remote
 ## Project Status
 
 ArchML is in early development. The functional architecture domain (systems, components, interfaces, ports, and channels) is implemented. Behavioral and deployment domains are planned.
-
-See [docs/PROJECT_SCOPE.md](docs/PROJECT_SCOPE.md) for the full vision and roadmap.
 
 ## License
 
