@@ -193,23 +193,15 @@ archml visualize ECommerce diagram.svg
 archml visualize ECommerce::OrderService order_service.png
 ```
 
-> [!NOTE]
-> This command exists, but is not yet working properly.
-
 ---
 
-### `archml serve [directory]`
+### `archml export [directory]`
 
-Launch an interactive web-based architecture viewer. Opens a browser UI for exploring the full architecture with drill-down navigation.
+Exports a single-file interactive web-based architecture viewer for exploring the full architecture with drill-down navigation.
 
 ```bash
-archml serve
-archml serve --port 9000
-archml serve --host 0.0.0.0 --port 8080
+archml export some_dir
 ```
-
-> [!NOTE]
-> This command exists, but is not yet working properly.
 
 ---
 
