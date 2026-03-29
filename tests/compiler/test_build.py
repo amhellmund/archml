@@ -684,3 +684,120 @@ class TestReturnValue:
 
         result = compile_files([src / "app.archml"], build, {("", "app"): src, ("", "ext"): lib})
         assert "ext/iface" in result
+
+
+# ###############
+# Parallel compilation
+# ###############
+
+
+class TestParallelCompilation:
+    """compile_files processes independent files concurrently and respects
+    topological ordering for files with dependencies."""
+
+    def test_compiles_many_independent_files(self, tmp_path: Path) -> None:
+        """Multiple independent files are all compiled and returned."""
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        n = 8
+        sources = []
+        for i in range(n):
+            f = src / f"comp{i}.archml"
+            _write(f, f"component C{i} {{}}")
+            sources.append(f)
+
+        result = compile_files(sources, build, {("", "app"): src})
+        assert len(result) == n
+        for i in range(n):
+            key = f"app/comp{i}"
+            assert key in result
+            assert result[key].components[0].name == f"C{i}"
+
+    def test_all_artifacts_written_for_independent_files(self, tmp_path: Path) -> None:
+        """An artifact is written for every compiled file."""
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        n = 6
+        sources = []
+        for i in range(n):
+            f = src / f"file{i}.archml"
+            _write(f, f"interface I{i} {{ v: Int }}")
+            sources.append(f)
+
+        compile_files(sources, build, {("", "app"): src})
+        for i in range(n):
+            assert _artifact(build, f"app/file{i}").exists()
+
+    def test_dependency_compiled_once_when_shared_by_multiple_files(self, tmp_path: Path) -> None:
+        """A shared dependency is compiled exactly once even with many dependents."""
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "shared.archml", "interface Common { v: Int }")
+        for i in range(4):
+            _write(
+                src / f"user{i}.archml",
+                f"from app/shared import Common\ncomponent User{i} {{ requires Common }}",
+            )
+        sources = [src / f"user{i}.archml" for i in range(4)] + [src / "shared.archml"]
+
+        result = compile_files(sources, build, {("", "app"): src})
+        assert "app/shared" in result
+        for i in range(4):
+            assert f"app/user{i}" in result
+
+    def test_three_level_dependency_chain(self, tmp_path: Path) -> None:
+        """A → B → C dependency chain compiles correctly in the right order."""
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "c.archml", "interface Base { id: Int }")
+        _write(src / "b.archml", "from app/c import Base\ninterface Mid { b: Int }")
+        _write(
+            src / "a.archml",
+            "from app/b import Mid\nfrom app/c import Base\ncomponent Top { requires Mid }",
+        )
+
+        result = compile_files([src / "a.archml"], build, {("", "app"): src})
+        assert "app/a" in result
+        assert "app/b" in result
+        assert "app/c" in result
+
+    def test_parallel_compilation_with_diamond_dependency(self, tmp_path: Path) -> None:
+        """Diamond: A and B both depend on C, D depends on both A and B."""
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "c.archml", "interface Base { id: Int }")
+        _write(src / "a.archml", "from app/c import Base\ninterface A { x: Int }")
+        _write(src / "b.archml", "from app/c import Base\ninterface B { y: Int }")
+        _write(
+            src / "d.archml",
+            "from app/a import A\nfrom app/b import B\ncomponent D { requires A }",
+        )
+
+        result = compile_files([src / "d.archml"], build, {("", "app"): src})
+        assert {"app/c", "app/a", "app/b", "app/d"} == set(result.keys())
+
+    def test_duplicate_file_in_input_list_compiled_once(self, tmp_path: Path) -> None:
+        """The same file listed multiple times is compiled only once."""
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        f = src / "x.archml"
+        _write(f, "component X {}")
+        result = compile_files([f, f, f], build, {("", "app"): src})
+        assert list(result.keys()) == ["app/x"]
+
+    def test_parallel_cache_hit_does_not_rewrite_artifacts(self, tmp_path: Path) -> None:
+        """All-cache-hit scenario: no artifacts are rewritten."""
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        n = 5
+        sources = [src / f"f{i}.archml" for i in range(n)]
+        for i, f in enumerate(sources):
+            _write(f, f"component F{i} {{}}")
+
+        compile_files(sources, build, {("", "app"): src})
+        mtimes_after_first = [_artifact(build, f"app/f{i}").stat().st_mtime for i in range(n)]
+
+        compile_files(sources, build, {("", "app"): src})
+        mtimes_after_second = [_artifact(build, f"app/f{i}").stat().st_mtime for i in range(n)]
+
+        assert mtimes_after_first == mtimes_after_second

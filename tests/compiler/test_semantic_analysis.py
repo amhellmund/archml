@@ -1883,3 +1883,199 @@ interface DeployRequest {
             "from artifacts import Report",
             resolved_imports=resolved,
         )
+
+
+# ###############
+# Markdown Description Validation
+# ###############
+
+
+class TestMarkdownDescriptions:
+    """Descriptions must be structurally valid markdown (no unclosed code fences)."""
+
+    def test_valid_description_on_component(self) -> None:
+        _assert_clean(
+            '''
+component Worker {
+    """Plain prose description."""
+}
+'''
+        )
+
+    def test_fenced_code_block_in_description_is_rejected(self) -> None:
+        _assert_error(
+            '''
+component Worker {
+    """Example:
+    ```
+    archml build
+    ```
+    """
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_tilde_fenced_block_in_description_is_rejected(self) -> None:
+        _assert_error(
+            '''
+component Worker {
+    """Example:
+    ~~~
+    code here
+    ~~~
+    """
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_inline_code_in_description_is_valid(self) -> None:
+        _assert_clean(
+            '''
+component Worker {
+    """Use `archml build` to compile."""
+}
+'''
+        )
+
+    def test_fence_on_system(self) -> None:
+        _assert_error(
+            '''
+system MySystem {
+    """Start:
+    ```
+    """
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_fence_on_enum(self) -> None:
+        _assert_error(
+            '''
+enum Status {
+    """Docs:
+    ```
+    Active
+    """
+    Active
+    Inactive
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_fence_on_type(self) -> None:
+        _assert_error(
+            '''
+type Payload {
+    """Schema:
+    ```
+    """
+    id: Int
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_fence_on_interface(self) -> None:
+        _assert_error(
+            '''
+interface Signal {
+    """Wire format:
+    ```
+    """
+    value: Int
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_fence_on_artifact(self) -> None:
+        _assert_error(
+            '''
+artifact Report {
+    """Binary layout:
+    ```
+    header: 4 bytes
+    """
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_fence_on_user(self) -> None:
+        _assert_error(
+            '''
+interface OrderAPI { id: Int }
+user Customer {
+    """Usage:
+    ```
+    """
+    requires OrderAPI
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_fence_on_nested_component(self) -> None:
+        _assert_error(
+            '''
+component Outer {
+    component Inner {
+        """Docs:
+        ```
+        """
+    }
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_fence_on_nested_system(self) -> None:
+        _assert_error(
+            '''
+system Outer {
+    system Inner {
+        """Docs:
+        ```
+        """
+    }
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_fence_on_inline_interface(self) -> None:
+        _assert_error(
+            '''
+component Worker {
+    interface Local {
+        """Docs:
+        ```
+        """
+        value: Int
+    }
+}
+''',
+            "fenced code blocks are not allowed",
+        )
+
+    def test_no_description_produces_no_error(self) -> None:
+        _assert_clean("component Empty {}")
+
+    def test_prose_with_headings_and_lists_is_valid(self) -> None:
+        _assert_clean(
+            '''
+component Worker {
+    """# Worker
+    Processes jobs from the queue.
+
+    ## Responsibilities
+    - Consume tasks
+    - Emit results
+    """
+}
+'''
+        )

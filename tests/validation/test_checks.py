@@ -723,3 +723,428 @@ class TestValidationResult:
         result = validate(ArchFile())
         assert result == ValidationResult()
         assert not result.has_errors
+
+
+# ###############
+# Per-Variant Unwired Ports
+# ###############
+
+
+def _iref_v(name: str, *variants: str) -> InterfaceRef:
+    """Create an InterfaceRef with variant annotations."""
+    return InterfaceRef(name=name, variants=list(variants))
+
+
+def _conn(src_e: str, src_p: str, dst_e: str, dst_p: str, *variants: str) -> ConnectDef:
+    """Create a ConnectDef between two entity.port pairs, optionally variant-scoped."""
+    return ConnectDef(
+        src_entity=src_e,
+        src_port=src_p,
+        channel="ch",
+        dst_entity=dst_e,
+        dst_port=dst_p,
+        variants=list(variants),
+    )
+
+
+def _exp(entity: str, port: str, *variants: str) -> ExposeDef:
+    """Create an ExposeDef, optionally variant-scoped."""
+    return ExposeDef(entity=entity, port=port, variants=list(variants))
+
+
+class TestVariantUnwiredPorts:
+    """Per-variant unwired-port checks."""
+
+    # --- Baseline behaviour unchanged ---
+
+    def test_no_variants_baseline_port_wired_no_error(self) -> None:
+        a = Component(name="A", provides=[_iref("I")])
+        b = Component(name="B", requires=[_iref("I")])
+        outer = Component(name="Outer", components=[a, b], connects=[_conn("A", "I", "B", "I")])
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_no_variants_baseline_port_unwired_error_has_no_variant_label(self) -> None:
+        sub = Component(name="Sub", provides=[_iref("I")])
+        outer = Component(name="Outer", components=[sub])
+        result = validate(ArchFile(components=[outer]))
+        msgs = _errors(result)
+        assert any("port 'Sub.I'" in m for m in msgs)
+        assert not any("[variant" in m for m in msgs)
+
+    # --- Variant-specific entity not checked in wrong variant ---
+
+    def test_cloud_only_entity_not_checked_in_on_premise_variant(self) -> None:
+        # A is cloud-only; B is on_premise-only.  Each is wired only in its own variant.
+        # No cross-variant wiring needed.
+        a = Component(name="A", variants=["cloud"], provides=[_iref("CloudPort")])
+        b = Component(name="B", variants=["on_premise"], provides=[_iref("PremPort")])
+        outer = Component(
+            name="Outer",
+            components=[a, b],
+            exposes=[_exp("A", "CloudPort", "cloud"), _exp("B", "PremPort", "on_premise")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_variant_entity_port_not_wired_in_own_variant_is_error(self) -> None:
+        a = Component(name="A", variants=["cloud"], provides=[_iref("CloudPort")])
+        outer = Component(name="Outer", components=[a])  # port not wired
+        result = validate(ArchFile(components=[outer]))
+        msgs = _errors(result)
+        assert any("port 'A.CloudPort'" in m for m in msgs)
+        assert any("[variant 'cloud']" in m for m in msgs)
+
+    # --- Baseline port must be wired in every declared variant ---
+
+    def test_baseline_port_wired_only_in_cloud_error_in_on_premise(self) -> None:
+        # A and B are baseline (present in all variants).
+        # The connect wires them only in cloud.
+        # When on_premise is declared (via C), A.I and B.I are unwired in on_premise.
+        a = Component(name="A", provides=[_iref("I")])
+        b = Component(name="B", requires=[_iref("I")])
+        c = Component(name="C", variants=["on_premise"], provides=[_iref("P")])
+        outer = Component(
+            name="Outer",
+            components=[a, b, c],
+            connects=[_conn("A", "I", "B", "I", "cloud")],
+            exposes=[_exp("C", "P", "on_premise")],
+        )
+        result = validate(ArchFile(components=[outer]))
+        msgs = _errors(result)
+        assert any("port 'A.I'" in m and "[variant 'on_premise']" in m for m in msgs)
+        assert any("port 'B.I'" in m and "[variant 'on_premise']" in m for m in msgs)
+        # Cloud variant: both wired → no cloud error
+        assert not any("port 'A.I'" in m and "[variant 'cloud']" in m for m in msgs)
+
+    def test_baseline_port_wired_in_all_declared_variants_no_error(self) -> None:
+        a = Component(name="A", provides=[_iref("I")])
+        b = Component(name="B", requires=[_iref("I")])
+        c = Component(name="C", variants=["on_premise"], provides=[_iref("P")])
+        outer = Component(
+            name="Outer",
+            components=[a, b, c],
+            connects=[_conn("A", "I", "B", "I", "cloud"), _conn("A", "I", "B", "I", "on_premise")],
+            exposes=[_exp("C", "P", "on_premise")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_variant_port_wired_in_its_variant_no_error(self) -> None:
+        a = Component(name="A", provides=[_iref_v("CloudPort", "cloud")])
+        b = Component(name="B", requires=[_iref_v("CloudPort", "cloud")])
+        outer = Component(
+            name="Outer",
+            components=[a, b],
+            connects=[_conn("A", "CloudPort", "B", "CloudPort", "cloud")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_variant_port_unwired_in_its_variant_is_error(self) -> None:
+        a = Component(name="A", provides=[_iref_v("CloudPort", "cloud")])
+        outer = Component(name="Outer", components=[a])  # not wired
+        result = validate(ArchFile(components=[outer]))
+        msgs = _errors(result)
+        assert any("port 'A.CloudPort'" in m and "[variant 'cloud']" in m for m in msgs)
+
+    def test_variant_port_not_reported_in_other_variant(self) -> None:
+        # A is cloud-only; B is on_premise-only.
+        # In the on_premise check A is inactive → no error about A.CloudPort.
+        a = Component(name="A", variants=["cloud"], provides=[_iref("CloudPort")])
+        b = Component(name="B", variants=["on_premise"], provides=[_iref("PremPort")])
+        outer = Component(
+            name="Outer",
+            components=[a, b],
+            exposes=[_exp("A", "CloudPort", "cloud"), _exp("B", "PremPort", "on_premise")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+    # --- System scope ---
+
+    def test_system_variant_member_port_not_wired_is_error(self) -> None:
+        comp = Component(name="Svc", variants=["cloud"], provides=[_iref("API")])
+        sys_ = System(name="S", components=[comp])  # API not wired
+        result = validate(ArchFile(systems=[sys_]))
+        msgs = _errors(result)
+        assert any("port 'Svc.API'" in m and "[variant 'cloud']" in m for m in msgs)
+
+    def test_system_baseline_port_wired_in_all_variants_no_error(self) -> None:
+        a = Component(name="A", provides=[_iref("I")])
+        b = Component(name="B", requires=[_iref("I")])
+        extra = Component(name="Extra", variants=["v1"], provides=[_iref("X")])
+        sys_ = System(
+            name="S",
+            components=[a, b, extra],
+            connects=[_conn("A", "I", "B", "I")],  # baseline connect → wired in all variants
+            exposes=[_exp("Extra", "X", "v1")],
+        )
+        _assert_no_error(ArchFile(systems=[sys_]))
+
+    def test_system_user_variant_port_not_wired_is_error(self) -> None:
+        user = UserDef(name="Admin", variants=["cloud"], provides=[_iref("AdminAPI")])
+        sys_ = System(name="S", users=[user])  # port not wired
+        result = validate(ArchFile(systems=[sys_]))
+        msgs = _errors(result)
+        assert any("port 'Admin.AdminAPI'" in m and "[variant 'cloud']" in m for m in msgs)
+
+    def test_system_user_variant_port_wired_no_error(self) -> None:
+        user = UserDef(name="Admin", variants=["cloud"], provides=[_iref("AdminAPI")])
+        svc = Component(name="Svc", requires=[_iref("AdminAPI")])
+        sys_ = System(
+            name="S",
+            components=[svc],
+            users=[user],
+            connects=[_conn("Admin", "AdminAPI", "Svc", "AdminAPI", "cloud")],
+        )
+        _assert_no_error(ArchFile(systems=[sys_]))
+
+    def test_expose_variant_wires_port_in_that_variant_only(self) -> None:
+        a = Component(name="A", variants=["cloud"], provides=[_iref("P")])
+        b = Component(name="B", variants=["on_premise"], provides=[_iref("Q")])
+        outer = Component(
+            name="Outer",
+            components=[a, b],
+            exposes=[_exp("A", "P", "cloud"), _exp("B", "Q", "on_premise")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+
+# ###############
+# Per-Variant Interface Propagation
+# ###############
+
+
+class TestVariantInterfacePropagation:
+    """Per-variant interface propagation checks."""
+
+    def test_no_variants_baseline_error_has_no_variant_label(self) -> None:
+        comp = Component(name="C", requires=[_iref("Other")])
+        sys_ = System(name="S", provides=[_iref("I")], components=[comp])
+        result = validate(ArchFile(systems=[sys_]))
+        msgs = _errors(result)
+        assert any("provides interface 'I'" in m for m in msgs)
+        assert not any("[variant" in m for m in msgs)
+
+    def test_variant_member_satisfies_propagation_in_its_variant(self) -> None:
+        # System provides I; only the cloud component provides it.
+        cloud_comp = Component(name="CloudSvc", variants=["cloud"], provides=[_iref("I")])
+        sys_ = System(
+            name="S",
+            provides=[_iref_v("I", "cloud")],
+            components=[cloud_comp],
+            exposes=[_exp("CloudSvc", "I", "cloud")],
+        )
+        _assert_no_error(ArchFile(systems=[sys_]))
+
+    def test_variant_member_not_active_in_other_variant_propagation_error(self) -> None:
+        # System provides I in both variants, but only cloud_comp provides I (cloud-only).
+        # In on_premise, no member provides I → error.
+        cloud_comp = Component(name="CloudSvc", variants=["cloud"], provides=[_iref("I")])
+        prem_comp = Component(name="PremSvc", variants=["on_premise"], provides=[_iref("Other")])
+        sys_ = System(
+            name="S",
+            provides=[_iref("I")],  # baseline provides — required in all variants
+            components=[cloud_comp, prem_comp],
+        )
+        result = validate(ArchFile(systems=[sys_]))
+        msgs = _errors(result)
+        # on_premise: no member provides I
+        assert any("provides interface 'I'" in m and "[variant 'on_premise']" in m for m in msgs)
+        # cloud: cloud_comp provides I → no cloud propagation error for I
+        assert not any("provides interface 'I'" in m and "[variant 'cloud']" in m for m in msgs)
+
+    def test_component_propagation_per_variant(self) -> None:
+        sub_cloud = Component(name="SubCloud", variants=["cloud"], provides=[_iref("I")])
+        outer = Component(
+            name="Outer",
+            provides=[_iref_v("I", "cloud")],
+            components=[sub_cloud],
+            exposes=[_exp("SubCloud", "I", "cloud")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_component_propagation_missing_in_variant_is_error(self) -> None:
+        # Outer provides I (baseline). SubCloud provides I (cloud-only).
+        # In on_premise no active member provides I → error [variant 'on_premise'].
+        # In cloud SubCloud provides I → no error.
+        sub_cloud = Component(name="SubCloud", variants=["cloud"], provides=[_iref("I")])
+        sub_prem = Component(name="SubPrem", variants=["on_premise"], provides=[_iref("Other")])
+        outer = Component(
+            name="Outer",
+            provides=[_iref("I")],  # baseline: must be grounded in every variant
+            components=[sub_cloud, sub_prem],
+        )
+        result = validate(ArchFile(components=[outer]))
+        msgs = _errors(result)
+        assert any("provides interface 'I'" in m and "[variant 'on_premise']" in m for m in msgs)
+        assert not any("provides interface 'I'" in m and "[variant 'cloud']" in m for m in msgs)
+
+
+# ###############
+# Fully Connected
+# ###############
+
+
+class TestFullyConnected:
+    """Every non-stub entity must have at least one port active in each variant."""
+
+    # --- Baseline (no variants) ---
+
+    def test_component_with_provides_is_connected(self) -> None:
+        arch = ArchFile(components=[Component(name="C", provides=[_iref("I")])])
+        _assert_no_error(arch)
+
+    def test_component_with_requires_is_connected(self) -> None:
+        arch = ArchFile(components=[Component(name="C", requires=[_iref("I")])])
+        _assert_no_error(arch)
+
+    def test_component_with_no_ports_is_error(self) -> None:
+        arch = ArchFile(components=[Component(name="C")])
+        _assert_error(arch, "Component 'C'")
+        _assert_error(arch, "has no ports (requires or provides)")
+
+    def test_error_has_no_variant_label_when_no_variants(self) -> None:
+        arch = ArchFile(components=[Component(name="C")])
+        result = validate(arch)
+        msgs = _errors(result)
+        assert any("has no ports" in m for m in msgs)
+        assert not any("[variant" in m for m in msgs)
+
+    def test_leaf_system_with_no_ports_is_error(self) -> None:
+        arch = ArchFile(systems=[System(name="S")])
+        _assert_error(arch, "System 'S'")
+        _assert_error(arch, "has no ports (requires or provides)")
+
+    def test_top_level_user_with_no_ports_is_error(self) -> None:
+        arch = ArchFile(users=[UserDef(name="Admin")])
+        _assert_error(arch, "User 'Admin'")
+        _assert_error(arch, "has no ports (requires or provides)")
+
+    def test_top_level_user_with_requires_is_connected(self) -> None:
+        arch = ArchFile(users=[UserDef(name="Admin", requires=[_iref("AdminAPI")])])
+        _assert_no_error(arch)
+
+    # --- Stub entities are exempt ---
+
+    def test_stub_component_with_no_ports_no_error(self) -> None:
+        arch = ArchFile(components=[Component(name="Stub", is_stub=True)])
+        _assert_no_error(arch)
+
+    def test_stub_system_with_no_ports_no_error(self) -> None:
+        arch = ArchFile(systems=[System(name="Stub", is_stub=True)])
+        _assert_no_error(arch)
+
+    # --- Sub-entities within containers ---
+
+    def test_sub_component_with_no_ports_is_error(self) -> None:
+        sub = Component(name="Sub")
+        outer = Component(name="Outer", provides=[_iref("I")], components=[sub])
+        arch = ArchFile(components=[outer])
+        _assert_error(arch, "Component 'Sub'")
+        _assert_error(arch, "has no ports (requires or provides)")
+
+    def test_sub_component_with_ports_no_error(self) -> None:
+        sub = Component(name="Sub", provides=[_iref("I")])
+        outer = Component(
+            name="Outer",
+            provides=[_iref("I")],
+            components=[sub],
+            exposes=[ExposeDef(entity="Sub", port="I")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_user_inside_system_with_no_ports_is_error(self) -> None:
+        user = UserDef(name="Client")
+        sys_ = System(name="S", provides=[_iref("I")], users=[user])
+        _assert_error(ArchFile(systems=[sys_]), "User 'Client'")
+
+    def test_leaf_subsystem_with_no_ports_is_error(self) -> None:
+        sub = System(name="Sub")
+        outer = System(name="Outer", provides=[_iref("I")], systems=[sub])
+        _assert_error(ArchFile(systems=[outer]), "System 'Sub'")
+
+    def test_container_system_with_no_own_ports_but_has_children_no_error(self) -> None:
+        comp = Component(name="C", provides=[_iref("I")])
+        sys_ = System(name="S", components=[comp], exposes=[ExposeDef(entity="C", port="I")])
+        _assert_no_error(ArchFile(systems=[sys_]))
+
+    def test_container_component_with_no_own_ports_but_has_children_no_error(self) -> None:
+        sub = Component(name="Sub", provides=[_iref("I")])
+        outer = Component(name="Outer", components=[sub], exposes=[ExposeDef(entity="Sub", port="I")])
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_qualified_name_used_in_error(self) -> None:
+        comp = Component(name="C", qualified_name="ns::C")
+        arch = ArchFile(components=[comp])
+        _assert_error(arch, "'ns::C'")
+
+    # --- Per-variant: entity only active in one variant ---
+
+    def test_variant_entity_with_ports_in_its_variant_no_error(self) -> None:
+        # cloud-only component has a cloud-only port → fine in cloud, not checked in on_premise.
+        a = Component(name="A", variants=["cloud"], provides=[_iref_v("P", "cloud")])
+        outer = Component(
+            name="Outer",
+            provides=[_iref_v("P", "cloud")],
+            components=[a],
+            exposes=[_exp("A", "P", "cloud")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_baseline_component_with_no_ports_error_has_no_variant_label(self) -> None:
+        # Even when variants exist in the scope, a baseline portless component
+        # produces errors for every checked variant — no variant label in baseline mode
+        # only applies when the whole scope has no variants.  When variants ARE present,
+        # the error message will carry a variant label.
+        a = Component(name="A")  # no ports, baseline
+        b = Component(name="B", variants=["cloud"], provides=[_iref("X")])
+        outer = Component(name="Outer", provides=[_iref("X")], components=[a, b])
+        result = validate(ArchFile(components=[outer]))
+        msgs = _errors(result)
+        # A is portless in every variant → error for cloud (the only named variant here)
+        assert any("Component 'A'" in m and "[variant 'cloud']" in m for m in msgs)
+
+    def test_cloud_entity_has_no_ports_in_on_premise_check_not_run(self) -> None:
+        # cloud-only component with cloud-scoped port is only checked in cloud variant.
+        a = Component(name="A", variants=["cloud"], provides=[_iref("P")])
+        b = Component(name="B", variants=["on_premise"], provides=[_iref("Q")])
+        outer = Component(
+            name="Outer",
+            provides=[_iref_v("P", "cloud"), _iref_v("Q", "on_premise")],
+            components=[a, b],
+            exposes=[_exp("A", "P", "cloud"), _exp("B", "Q", "on_premise")],
+        )
+        _assert_no_error(ArchFile(components=[outer]))
+
+    def test_entity_port_only_in_other_variant_reports_portless_error(self) -> None:
+        # Component A has a cloud-only port but is baseline (present in all variants).
+        # In on_premise, A has no active ports → error.
+        a = Component(name="A", provides=[_iref_v("P", "cloud")])
+        b = Component(name="B", variants=["on_premise"], provides=[_iref("Q")])
+        outer = Component(
+            name="Outer",
+            provides=[_iref_v("P", "cloud"), _iref("Q")],
+            components=[a, b],
+            exposes=[_exp("A", "P", "cloud"), _exp("B", "Q", "on_premise")],
+        )
+        result = validate(ArchFile(components=[outer]))
+        msgs = _errors(result)
+        assert any("Component 'A'" in m and "[variant 'on_premise']" in m for m in msgs)
+        assert not any("Component 'A'" in m and "[variant 'cloud']" in m for m in msgs)
+
+    def test_system_variant_member_portless_is_error(self) -> None:
+        inner = System(name="Inner", variants=["cloud"])  # no ports
+        outer = System(name="Outer", provides=[_iref_v("I", "cloud")], systems=[inner])
+        result = validate(ArchFile(systems=[outer]))
+        msgs = _errors(result)
+        assert any("System 'Inner'" in m and "[variant 'cloud']" in m for m in msgs)
+
+    def test_user_in_system_variant_portless_is_error(self) -> None:
+        user = UserDef(name="Admin", variants=["cloud"])  # no ports
+        comp = Component(name="Svc", provides=[_iref("I")])
+        sys_ = System(
+            name="S",
+            components=[comp],
+            users=[user],
+            exposes=[ExposeDef(entity="Svc", port="I")],
+        )
+        result = validate(ArchFile(systems=[sys_]))
+        msgs = _errors(result)
+        assert any("User 'Admin'" in m and "[variant 'cloud']" in m for m in msgs)

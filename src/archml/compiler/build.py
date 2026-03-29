@@ -4,8 +4,10 @@
 """Incremental compiler workflow for .archml files.
 
 Implements a CMake-style cache: an artifact is reused when it already exists
-and is strictly newer than the corresponding source file.  Dependencies are
-compiled recursively before the dependent file is validated.
+and is strictly newer than the corresponding source file.  All files are
+parsed in parallel; semantic validation is then performed in topological
+waves so that each wave's files run concurrently once their dependencies
+have been compiled.
 
 Two forms of cross-file import are supported:
 
@@ -32,6 +34,8 @@ source file's repository.
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
 
@@ -76,14 +80,16 @@ def compile_files(
     build_dir: Path,
     source_import_map: dict[SourceImportKey, Path],
 ) -> dict[str, ArchFile]:
-    """Compile a list of .archml source files.
+    """Compile a list of .archml source files in parallel.
 
     For each file, the compiler:
     1. Checks whether an up-to-date artifact already exists (cache hit).
     2. On a cache hit, validates that all declared imports still exist so that
        a file moved to a different path triggers a recompile of its dependents.
-    3. Parses the source file if no valid cache is found.
-    4. Recursively compiles all declared imports before the current file.
+    3. Parses all files and their transitive dependencies in parallel.
+    4. Compiles files in topological waves: each wave consists of all files
+       whose dependencies are fully compiled, and all files in a wave are
+       compiled concurrently.
     5. Runs semantic validation with the resolved import map.
     6. Writes the artifact to *build_dir* (mirroring the source layout).
 
@@ -108,17 +114,33 @@ def compile_files(
         CompilerError: On parse errors, missing imports, unsupported remote
             imports, semantic errors, or circular dependencies.
     """
-    compiled: dict[str, ArchFile] = {}
-    in_progress: set[str] = set()
-    for f in files:
-        _compile_file(f, build_dir, source_import_map, compiled, in_progress)
-
-    return compiled
+    results = _discover_all(files, build_dir, source_import_map)
+    return _compile_in_waves(results, build_dir)
 
 
 # ################
 # Implementation
 # ################
+
+
+@dataclass
+class _ParseResult:
+    """Intermediate state for a single .archml file after the parse phase."""
+
+    key: str
+    """Canonical key, e.g. ``"myapp/types"`` or ``"@payments/lib/types"``."""
+
+    source_path: Path
+    """Absolute path to the source file."""
+
+    arch_file: ArchFile
+    """Parsed (or cache-loaded) model."""
+
+    dep_items: list[tuple[str, Path]] = field(default_factory=list)
+    """``(dep_key, dep_source_path)`` pairs for each declared import."""
+
+    is_cached: bool = False
+    """True when *arch_file* was loaded from an existing up-to-date artifact."""
 
 
 def _get_source_repo(source_file: Path, source_import_map: dict[SourceImportKey, Path]) -> str:
@@ -247,50 +269,27 @@ def _resolve_import_source(
     return source_import_map[key] / (path + ".archml")
 
 
-def _compile_file(
-    source_file: Path,
+def _parse_one(
+    source_path: Path,
+    key: str,
     build_dir: Path,
     source_import_map: dict[SourceImportKey, Path],
-    compiled: dict[str, ArchFile],
-    in_progress: set[str],
-    *,
-    _key: str | None = None,
-) -> ArchFile:
-    """Compile one .archml file, recursively compiling its dependencies first.
+) -> _ParseResult:
+    """Parse or load one .archml file and compute its direct dependency paths.
 
-    Args:
-        source_file: Absolute path to the .archml file to compile.
-        build_dir: Root directory for compiled artifacts.
-        source_import_map: Mapping from :class:`SourceImportKey` to base paths.
-        compiled: Accumulator mapping already-compiled canonical keys to models.
-        in_progress: Set of canonical keys currently being compiled (cycle guard).
-        _key: Optional pre-computed canonical key.  When provided (always the
-            case for dependency files resolved via ``_resolve_import_source``),
-            the key is used directly without inferring it from the filesystem
-            path.
-
-    Returns:
-        The compiled :class:`~archml.model.entities.ArchFile` for *source_file*.
+    On a cache hit (artifact newer than source and all import sources still
+    present), the artifact is loaded directly.  Otherwise the source is parsed
+    from disk.
 
     Raises:
-        CompilerError: On any compilation failure.
+        CompilerError: On any I/O, parse, or import-resolution failure.
     """
-    key = _key if _key is not None else _rel_key(source_file, source_import_map)
-    source_repo = _get_source_repo(source_file, source_import_map)
-
-    if key in compiled:
-        return compiled[key]
-
-    if key in in_progress:
-        raise CompilerError(f"Circular dependency detected involving '{key}'")
-
+    source_repo = _get_source_repo(source_path, source_import_map)
     artifact = _artifact_path(key, build_dir)
 
-    if _is_up_to_date(source_file, artifact):
+    if _is_up_to_date(source_path, artifact):
         arch_file = read_artifact(artifact)
-        # Validate that all declared imports still resolve to existing files.
-        # If any dependency has moved (its FQN changed), the cache is stale
-        # and we fall through to recompile.
+        dep_items: list[tuple[str, Path]] = []
         deps_valid = True
         for imp in arch_file.imports:
             try:
@@ -301,58 +300,169 @@ def _compile_file(
             if not dep_source.exists():
                 deps_valid = False
                 break
+            dep_items.append((imp.source_path, dep_source))
         if deps_valid:
-            # Recursively ensure all dependencies are also loaded into the
-            # result map so callers see the full transitive closure.
-            for imp in arch_file.imports:
-                dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo)
-                _compile_file(
-                    dep_source,
-                    build_dir,
-                    source_import_map,
-                    compiled,
-                    in_progress,
-                    _key=imp.source_path,
-                )
-            compiled[key] = arch_file
-            return arch_file
+            return _ParseResult(
+                key=key,
+                source_path=source_path,
+                arch_file=arch_file,
+                dep_items=dep_items,
+                is_cached=True,
+            )
 
-    # Parse the source file.
+    # Cache miss or stale — parse from source.
     try:
-        source_text = source_file.read_text(encoding="utf-8")
+        source_text = source_path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise CompilerError(f"Cannot read source file '{source_file}': {exc}") from exc
+        raise CompilerError(f"Cannot read source file '{source_path}': {exc}") from exc
 
     try:
-        arch_file = parse(source_text, filename=source_file.name)
+        arch_file = parse(source_text, filename=source_path.name)
     except (LexerError, ParseError) as exc:
         raise CompilerError(str(exc)) from exc
 
-    in_progress.add(key)
-    try:
-        # Recursively compile all imported dependencies.
-        resolved_imports: dict[str, ArchFile] = {}
-        for imp in arch_file.imports:
-            dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo)
-            if not dep_source.exists():
-                raise CompilerError(
-                    f"Dependency '{imp.source_path}' of '{source_file}' not found (expected '{dep_source}')"
-                )
-            dep = _compile_file(dep_source, build_dir, source_import_map, compiled, in_progress, _key=imp.source_path)
-            resolved_imports[imp.source_path] = dep
+    dep_items = []
+    for imp in arch_file.imports:
+        dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo)
+        if not dep_source.exists():
+            raise CompilerError(
+                f"Dependency '{imp.source_path}' of '{source_path}' not found (expected '{dep_source}')"
+            )
+        dep_items.append((imp.source_path, dep_source))
 
-        # Semantic validation.
-        errors = analyze(arch_file, resolved_imports=resolved_imports, file_key=key, filename=source_file.name)
-        if errors:
-            error_lines = "\n".join(str(e) for e in errors)
-            raise CompilerError(error_lines)
+    return _ParseResult(
+        key=key,
+        source_path=source_path,
+        arch_file=arch_file,
+        dep_items=dep_items,
+        is_cached=False,
+    )
 
-        # Write artifact.
-        artifact.parent.mkdir(parents=True, exist_ok=True)
-        write_artifact(arch_file, artifact)
 
-    finally:
-        in_progress.discard(key)
+def _discover_all(
+    files: list[Path],
+    build_dir: Path,
+    source_import_map: dict[SourceImportKey, Path],
+) -> dict[str, _ParseResult]:
+    """Parse all source files and their transitive dependencies in parallel.
 
-    compiled[key] = arch_file
-    return arch_file
+    Uses a BFS-style loop: each iteration submits the current batch to a
+    thread pool, then collects newly discovered dependency files for the next
+    batch.  Files already enqueued are skipped to avoid duplicate work.
+
+    Returns:
+        A mapping from canonical key to :class:`_ParseResult` covering every
+        file reachable from the initial *files* list.
+
+    Raises:
+        CompilerError: If any file fails to parse or a dependency cannot be
+            resolved.  The first error encountered is re-raised.
+    """
+    results: dict[str, _ParseResult] = {}
+    enqueued: set[str] = set()
+
+    to_process: list[tuple[Path, str]] = []
+    for f in files:
+        k = _rel_key(f, source_import_map)
+        if k not in enqueued:
+            enqueued.add(k)
+            to_process.append((f, k))
+
+    while to_process:
+        batch = to_process
+        to_process = []
+        future_map: dict[Future[_ParseResult], str] = {}
+        with ThreadPoolExecutor() as executor:
+            for src, k in batch:
+                fut = executor.submit(_parse_one, src, k, build_dir, source_import_map)
+                future_map[fut] = k
+        # All futures are complete after the executor context exits.
+        for fut, k in future_map.items():
+            result = fut.result()  # re-raises any CompilerError from the thread
+            results[k] = result
+            for dep_key, dep_path in result.dep_items:
+                if dep_key not in enqueued:
+                    enqueued.add(dep_key)
+                    to_process.append((dep_path, dep_key))
+
+    return results
+
+
+def _compile_one(
+    result: _ParseResult,
+    compiled_deps: dict[str, ArchFile],
+    build_dir: Path,
+) -> ArchFile:
+    """Run semantic analysis and write the artifact for one file.
+
+    For cached files the artifact is already up-to-date; the in-memory model
+    is returned immediately without re-running analysis.
+
+    Args:
+        result: Parse result for the file to compile.
+        compiled_deps: All already-compiled files (must contain every direct
+            dependency of *result*).
+        build_dir: Root directory for compiled artifacts.
+
+    Returns:
+        The compiled :class:`~archml.model.entities.ArchFile`.
+
+    Raises:
+        CompilerError: On semantic errors.
+    """
+    if result.is_cached:
+        return result.arch_file
+
+    resolved_imports = {dep_key: compiled_deps[dep_key] for dep_key, _ in result.dep_items}
+
+    errors = analyze(
+        result.arch_file,
+        resolved_imports=resolved_imports,
+        file_key=result.key,
+        filename=result.source_path.name,
+    )
+    if errors:
+        raise CompilerError("\n".join(str(e) for e in errors))
+
+    artifact = _artifact_path(result.key, build_dir)
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    write_artifact(result.arch_file, artifact)
+
+    return result.arch_file
+
+
+def _compile_in_waves(
+    results: dict[str, _ParseResult],
+    build_dir: Path,
+) -> dict[str, ArchFile]:
+    """Compile parsed files in topological waves, each wave running in parallel.
+
+    A wave consists of all files whose direct dependencies are already in the
+    *compiled* map.  Files in the same wave are independent of each other and
+    are compiled concurrently via a thread pool.
+
+    Raises:
+        CompilerError: On semantic errors or if a circular dependency is
+            detected (no wave can make progress).
+    """
+    compiled: dict[str, ArchFile] = {}
+    remaining = set(results.keys())
+
+    while remaining:
+        wave = {key for key in remaining if all(dep_key in compiled for dep_key, _ in results[key].dep_items)}
+
+        if not wave:
+            cycle = ", ".join(sorted(remaining))
+            raise CompilerError(f"Circular dependency detected among: {cycle}")
+
+        future_map: dict[Future[ArchFile], str] = {}
+        with ThreadPoolExecutor() as executor:
+            for key in wave:
+                fut = executor.submit(_compile_one, results[key], compiled, build_dir)
+                future_map[fut] = key
+        # All futures are complete after the executor context exits.
+        for fut, key in future_map.items():
+            compiled[key] = fut.result()
+            remaining.discard(key)
+
+    return compiled

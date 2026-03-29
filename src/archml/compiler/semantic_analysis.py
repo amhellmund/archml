@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from archml.model.entities import (
     ArchFile,
+    ArtifactDef,
     Component,
     ConnectDef,
     EnumDef,
@@ -22,6 +23,7 @@ from archml.model.entities import (
     InterfaceDef,
     InterfaceRef,
     System,
+    TypeDef,
     UserDef,
 )
 from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
@@ -153,6 +155,9 @@ class _SemanticAnalyzer:
         # Combined sets used for reference resolution.
         all_type_names = local_type_names | imported_names
         all_interface_plain_names = {i.name for i in self._file.interfaces} | imported_names
+
+        # 0. Check that all description fields are valid markdown.
+        errors.extend(_check_all_descriptions(self._file, self._filename))
 
         # 1. Check for duplicate top-level definitions.
         errors.extend(_check_top_level_duplicates(self._file, self._filename))
@@ -945,6 +950,97 @@ def _check_port_names(
         f"Duplicate port name '{{}}' in {ctx}",
         filename,
     )
+
+
+def _validate_markdown(text: str, filename: str | None, line: int | None) -> list[SemanticError]:
+    """Check that *text* is valid prose markdown.
+
+    Descriptions must contain only prose markdown (headings, bold, italic,
+    lists, links, etc.).  Fenced code blocks (lines starting with ````` ``` `````
+    or ``~~~``) are not allowed; use inline code (single backticks) instead.
+    """
+    for source_line in text.splitlines():
+        stripped = source_line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            return [
+                SemanticError(
+                    message="description must be prose markdown; fenced code blocks are not allowed",
+                    filename=filename,
+                    line=line,
+                )
+            ]
+    return []
+
+
+def _check_component_descriptions(comp: Component, filename: str | None) -> list[SemanticError]:
+    """Recursively check description fields on a component and its sub-components."""
+    errors: list[SemanticError] = []
+    if comp.description is not None:
+        errors.extend(_validate_markdown(comp.description, filename, comp.line))
+    for iface in comp.interfaces:
+        if iface.description is not None:
+            errors.extend(_validate_markdown(iface.description, filename, iface.line))
+        for field in iface.fields:
+            if field.description is not None:
+                errors.extend(_validate_markdown(field.description, filename, field.line))
+    for sub in comp.components:
+        errors.extend(_check_component_descriptions(sub, filename))
+    return errors
+
+
+def _check_system_descriptions(system: System, filename: str | None) -> list[SemanticError]:
+    """Recursively check description fields on a system and all its children."""
+    errors: list[SemanticError] = []
+    if system.description is not None:
+        errors.extend(_validate_markdown(system.description, filename, system.line))
+    for iface in system.interfaces:
+        if iface.description is not None:
+            errors.extend(_validate_markdown(iface.description, filename, iface.line))
+        for field in iface.fields:
+            if field.description is not None:
+                errors.extend(_validate_markdown(field.description, filename, field.line))
+    for comp in system.components:
+        errors.extend(_check_component_descriptions(comp, filename))
+    for sub_sys in system.systems:
+        errors.extend(_check_system_descriptions(sub_sys, filename))
+    for user in system.users:
+        if user.description is not None:
+            errors.extend(_validate_markdown(user.description, filename, user.line))
+    return errors
+
+
+def _check_all_descriptions(arch_file: ArchFile, filename: str | None) -> list[SemanticError]:
+    """Check all description fields in *arch_file* for valid markdown."""
+    errors: list[SemanticError] = []
+
+    named_defs: list[EnumDef | TypeDef | ArtifactDef | InterfaceDef] = [
+        *arch_file.enums,
+        *arch_file.types,
+        *arch_file.artifacts,
+        *arch_file.interfaces,
+    ]
+    for entity in named_defs:
+        if entity.description is not None:
+            errors.extend(_validate_markdown(entity.description, filename, entity.line))
+
+    for type_def in arch_file.types:
+        for field in type_def.fields:
+            if field.description is not None:
+                errors.extend(_validate_markdown(field.description, filename, field.line))
+    for iface in arch_file.interfaces:
+        for field in iface.fields:
+            if field.description is not None:
+                errors.extend(_validate_markdown(field.description, filename, field.line))
+
+    for comp in arch_file.components:
+        errors.extend(_check_component_descriptions(comp, filename))
+    for system in arch_file.systems:
+        errors.extend(_check_system_descriptions(system, filename))
+    for user in arch_file.users:
+        if user.description is not None:
+            errors.extend(_validate_markdown(user.description, filename, user.line))
+
+    return errors
 
 
 def _check_user(

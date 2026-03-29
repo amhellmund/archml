@@ -132,7 +132,7 @@ def test_check_with_valid_archml_file(
 ) -> None:
     """check discovers .archml files, compiles them, and reports success."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
+    (tmp_path / "arch.archml").write_text("interface Signal { v: Int }\ncomponent MyComponent { provides Signal }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -220,7 +220,7 @@ def test_check_autodetects_workspace_in_parent_directory(
 ) -> None:
     """check finds the workspace by walking up from a subdirectory."""
     (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
+    (tmp_path / "arch.archml").write_text("interface Signal { v: Int }\ncomponent MyComponent { provides Signal }\n")
     subdir = tmp_path / "src" / "components"
     subdir.mkdir(parents=True)
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(subdir)])
@@ -308,7 +308,7 @@ def test_check_excludes_build_directory_from_scan(
     )
 
     # Place a valid source file and compile it once to create the artifact.
-    (tmp_path / "comp.archml").write_text("component Good {}\n")
+    (tmp_path / "comp.archml").write_text("interface I { v: Int }\ncomponent Good { provides I }\n")
     # Also create a broken .archml inside the build directory (should be ignored).
     build_dir = tmp_path / "build"
     build_dir.mkdir()
@@ -984,7 +984,7 @@ def test_check_command_warns_on_invalid_remote_workspace_yaml(
         "    revision: main\n"
     )
     # Local file with no imports from @payments — compilation succeeds despite bad remote config.
-    (tmp_path / "app.archml").write_text("component C {}\n")
+    (tmp_path / "app.archml").write_text("interface I { v: Int }\ncomponent C { provides I }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
