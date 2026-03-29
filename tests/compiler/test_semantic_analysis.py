@@ -1532,111 +1532,102 @@ system S {
 
 
 # ###############
-# Simplified connect form
+# connect requires explicit Entity.port form
 # ###############
 
 
-class TestSimplifiedConnect:
-    def test_simplified_connect_resolves_unique_ports(self) -> None:
-        """Simplified form A -> $ch -> B resolves to full form when ports are unique."""
-        source = """
+class TestConnectRequiresExplicitPort:
+    def test_bare_entity_src_is_error(self) -> None:
+        """Bare entity name (no port) on the src side of connect is an error."""
+        _assert_error(
+            """
+interface DataFeed { payload: String }
+system Pipeline {
+    component Producer { provides DataFeed }
+    component Consumer { requires DataFeed }
+    connect Producer -> $feed -> Consumer.DataFeed
+}
+""",
+            "connect references entity 'Producer' without a port name",
+        )
+
+    def test_bare_entity_dst_is_error(self) -> None:
+        """Bare entity name (no port) on the dst side of connect is an error."""
+        _assert_error(
+            """
+interface DataFeed { payload: String }
+system Pipeline {
+    component Producer { provides DataFeed }
+    component Consumer { requires DataFeed }
+    connect Producer.DataFeed -> $feed -> Consumer
+}
+""",
+            "connect references entity 'Consumer' without a port name",
+        )
+
+    def test_bare_entity_both_sides_produces_two_errors(self) -> None:
+        """Bare entity names on both sides produce two separate errors."""
+        errors = _analyze("""
 interface DataFeed { payload: String }
 system Pipeline {
     component Producer { provides DataFeed }
     component Consumer { requires DataFeed }
     connect Producer -> $feed -> Consumer
 }
-"""
-        file = parse(source)
-        errors = analyze(file)
-        assert errors == []
-        conn = file.systems[0].connects[0]
-        # Simplified form is resolved in-place during semantic analysis.
-        assert conn.src_entity == "Producer"
-        assert conn.src_port == "DataFeed"
-        assert conn.dst_entity == "Consumer"
-        assert conn.dst_port == "DataFeed"
+""")
+        messages = _messages(errors)
+        assert any("'Producer' without a port name" in m for m in messages)
+        assert any("'Consumer' without a port name" in m for m in messages)
 
-    def test_simplified_connect_one_sided_src(self) -> None:
-        """Simplified form A -> $ch resolves src port when unique."""
-        source = """
+    def test_bare_entity_one_sided_src_is_error(self) -> None:
+        """Bare entity name on one-sided src connect is an error."""
+        _assert_error(
+            """
 interface Signal { v: Bool }
 system S {
     component Sender { provides Signal }
     connect Sender -> $sig
 }
-"""
-        file = parse(source)
-        errors = analyze(file)
-        assert errors == []
-        conn = file.systems[0].connects[0]
-        assert conn.src_entity == "Sender"
-        assert conn.src_port == "Signal"
-        assert conn.dst_entity is None
+""",
+            "connect references entity 'Sender' without a port name",
+        )
 
-    def test_simplified_connect_one_sided_dst(self) -> None:
-        """Simplified form $ch -> B resolves dst port when unique."""
-        source = """
+    def test_bare_entity_one_sided_dst_is_error(self) -> None:
+        """Bare entity name on one-sided dst connect is an error."""
+        _assert_error(
+            """
 interface Signal { v: Bool }
 system S {
     component Receiver { requires Signal }
     connect $sig -> Receiver
 }
-"""
-        file = parse(source)
-        errors = analyze(file)
-        assert errors == []
-        conn = file.systems[0].connects[0]
-        assert conn.src_entity is None
-        assert conn.dst_entity == "Receiver"
-        assert conn.dst_port == "Signal"
-
-    def test_simplified_connect_ambiguous_src_port_error(self) -> None:
-        """Simplified form on an entity with multiple provides ports is an error."""
-        _assert_error(
-            """
-interface A { v: String }
-interface B { v: String }
-system S {
-    component Multi { provides A  provides B }
-    component Sink { requires A }
-    connect Multi -> $ch -> Sink
-}
 """,
-            "simplified connect: 'Multi' has multiple provides ports",
+            "connect references entity 'Receiver' without a port name",
         )
 
-    def test_simplified_connect_no_src_port_error(self) -> None:
-        """Simplified form on an entity with no provides ports is an error."""
-        _assert_error(
-            """
-interface A { v: String }
-system S {
-    component NoOut {}
-    component Sink { requires A }
-    connect NoOut -> $ch -> Sink
-}
-""",
-            "simplified connect: 'NoOut' has no provides ports",
-        )
-
-    def test_simplified_connect_top_level_resolution(self) -> None:
-        """Simplified form resolves correctly at the top-level file scope."""
-        source = """
+    def test_bare_entity_top_level_is_error(self) -> None:
+        """Bare entity names at top-level connect scope are also an error."""
+        errors = _analyze("""
 interface API { endpoint: String }
 system Frontend { provides API }
 system Backend { requires API }
 
 connect Frontend -> $bus -> Backend
-"""
-        file = parse(source)
-        errors = analyze(file)
-        assert errors == []
-        conn = file.connects[0]
-        assert conn.src_entity == "Frontend"
-        assert conn.src_port == "API"
-        assert conn.dst_entity == "Backend"
-        assert conn.dst_port == "API"
+""")
+        messages = _messages(errors)
+        assert any("'Frontend' without a port name" in m for m in messages)
+        assert any("'Backend' without a port name" in m for m in messages)
+
+    def test_explicit_entity_port_is_valid(self) -> None:
+        """Explicit Entity.port form is accepted without errors."""
+        _assert_clean("""
+interface DataFeed { payload: String }
+system Pipeline {
+    component Producer { provides DataFeed }
+    component Consumer { requires DataFeed }
+    connect Producer.DataFeed -> $feed -> Consumer.DataFeed
+}
+""")
 
 
 # ###############################################
@@ -1660,7 +1651,7 @@ component A {
     component SubA2 {
         requires AInternal
     }
-    connect SubA1 -> $internal -> SubA2
+    connect SubA1.AInternal -> $internal -> SubA2.AInternal
 }
 """)
         assert errors == []
@@ -1734,7 +1725,7 @@ system S {
     interface SInternal { val: Int }
     component Producer { provides SInternal }
     component Consumer { requires SInternal }
-    connect Producer -> $internal -> Consumer
+    connect Producer.SInternal -> $internal -> Consumer.SInternal
 }
 """)
         assert errors == []
@@ -1780,7 +1771,7 @@ system Outer {
     system Inner {
         component X { provides Shared }
         component Y { requires Shared }
-        connect X -> $shared -> Y
+        connect X.Shared -> $shared -> Y.Shared
     }
 }
 """)
@@ -1805,7 +1796,7 @@ component A {
         provides Simple
     }
 
-    connect SubA1 -> $internal -> SubA2
+    connect SubA1.AInternal -> $internal -> SubA2.AInternal
 }
 """)
         assert errors == []

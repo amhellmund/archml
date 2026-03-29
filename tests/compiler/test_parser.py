@@ -1926,8 +1926,8 @@ system B {}
         assert len(result.connects) == 1
         assert len(result.systems) == 2
 
-    def test_top_level_connect_simplified_form(self) -> None:
-        """Simplified connect form (bare entity names) is parsed at top level."""
+    def test_top_level_connect_simplified_form_still_parses(self) -> None:
+        """Bare entity names in connect parse without error (rejected by semantic analysis)."""
         source = """\
 system A {}
 system B {}
@@ -1936,7 +1936,7 @@ connect A -> $ch -> B
 """
         result = _parse(source)
         conn = result.connects[0]
-        # src_entity is None, src_port holds the bare name until semantic resolution
+        # src_entity is None — bare name held in src_port until semantic analysis rejects it
         assert conn.src_entity is None
         assert conn.src_port == "A"
         assert conn.channel == "ch"

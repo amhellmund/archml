@@ -802,44 +802,6 @@ def _valid_connect_port_names(entity: Component | System | UserDef) -> set[str] 
     return names
 
 
-def _boundary_port_names(entity: Component | System | UserDef, direction: str) -> list[str]:
-    """Return port names in *direction* at the entity's boundary.
-
-    Includes direct ``requires``/``provides`` declarations and exposed ports
-    whose underlying sub-entity port resolves to the same direction (recursive).
-    For stub entities the expose chain cannot be followed; those ports are skipped.
-    """
-    # Direct ports.
-    direct_refs: list[InterfaceRef] = getattr(entity, direction)
-    names: list[str] = [_effective_port_name(ref) for ref in direct_refs]
-
-    # Exposed ports — follow the expose chain recursively.
-    if isinstance(entity, (Component, System)):
-        child_map: dict[str, Component | System | UserDef] = {}
-        if isinstance(entity, Component):
-            for c in entity.components:
-                child_map[c.name] = c
-        else:
-            for c in entity.components:
-                child_map[c.name] = c
-            for s in entity.systems:
-                child_map[s.name] = s
-            for u in entity.users:
-                child_map[u.name] = u
-
-        for exp in entity.exposes:
-            if exp.entity not in child_map:
-                continue
-            child = child_map[exp.entity]
-            if isinstance(child, (Component, System)) and child.is_stub:
-                continue  # port direction unknown for stubs
-            boundary_name = exp.as_name if exp.as_name else exp.port
-            if exp.port in _boundary_port_names(child, direction):
-                names.append(boundary_name)
-
-    return names
-
-
 def _check_connect(
     ctx: str,
     conn: ConnectDef,
@@ -882,76 +844,46 @@ def _check_connect(
     return errors
 
 
-def _infer_unique_port(
-    entity: Component | System | UserDef,
-    direction: str,
-    entity_name: str,
-    ctx: str,
-    filename: str | None = None,
-    line: int | None = None,
-) -> tuple[str | None, list[SemanticError]]:
-    """Return the unique port name in *direction* ('provides' or 'requires') for *entity*.
-
-    Returns ``(port_name, [])`` when exactly one port exists, or
-    ``(None, [error])`` when zero or more than one port exists.
-    """
-    port_names = _boundary_port_names(entity, direction)
-    if len(port_names) == 1:
-        return port_names[0], []
-    if len(port_names) == 0:
-        return None, [
-            SemanticError(
-                message=f"{ctx}: simplified connect: '{entity_name}' has no {direction} ports",
-                filename=filename,
-                line=line,
-            )
-        ]
-    return None, [
-        SemanticError(
-            message=(
-                f"{ctx}: simplified connect: '{entity_name}' has multiple {direction} ports;"
-                f" use '{entity_name}.port' form to disambiguate"
-            ),
-            filename=filename,
-            line=line,
-        )
-    ]
-
-
 def _resolve_simplified_connect(
     conn: ConnectDef,
     child_entity_map: dict[str, Component | System | UserDef],
     ctx: str,
     filename: str | None = None,
 ) -> list[SemanticError]:
-    """Resolve simplified connect forms in-place.
+    """Reject simplified connect forms where a bare entity name is used without a port.
 
-    When a bare identifier (no dot) is used as a port reference and that
-    identifier names a direct child entity, it is the simplified form.
-    The unique ``provides`` port (for src) or ``requires`` port (for dst) is
-    inferred; ambiguous or missing ports produce a semantic error.
+    A port reference in a ``connect`` statement must always use the
+    ``Entity.port_name`` form. Using a bare entity name (no dot) is an error.
     """
     errors: list[SemanticError] = []
 
     conn_line = conn.line if conn.line > 0 else None
 
-    # Src side: (None, "EntityName") where EntityName is a child.
+    # Src side: (None, "EntityName") where EntityName is a child — not allowed.
     if conn.src_entity is None and conn.src_port is not None and conn.src_port in child_entity_map:
-        entity = child_entity_map[conn.src_port]
-        port, errs = _infer_unique_port(entity, "provides", conn.src_port, ctx, filename, conn_line)
-        errors.extend(errs)
-        if port is not None:
-            conn.src_entity = conn.src_port
-            conn.src_port = port
+        errors.append(
+            SemanticError(
+                message=(
+                    f"{ctx}: connect references entity '{conn.src_port}' without a port name;"
+                    f" use '{conn.src_port}.port' form"
+                ),
+                filename=filename,
+                line=conn_line,
+            )
+        )
 
-    # Dst side: (None, "EntityName") where EntityName is a child.
+    # Dst side: (None, "EntityName") where EntityName is a child — not allowed.
     if conn.dst_entity is None and conn.dst_port is not None and conn.dst_port in child_entity_map:
-        entity = child_entity_map[conn.dst_port]
-        port, errs = _infer_unique_port(entity, "requires", conn.dst_port, ctx, filename, conn_line)
-        errors.extend(errs)
-        if port is not None:
-            conn.dst_entity = conn.dst_port
-            conn.dst_port = port
+        errors.append(
+            SemanticError(
+                message=(
+                    f"{ctx}: connect references entity '{conn.dst_port}' without a port name;"
+                    f" use '{conn.dst_port}.port' form"
+                ),
+                filename=filename,
+                line=conn_line,
+            )
+        )
 
     return errors
 
