@@ -246,7 +246,7 @@ A channel introduced by `connect` is local to the scope where it appears — it 
 expose Entity.port_name [as new_name]
 ```
 
-The optional `as` renames the port at the boundary. `expose` composes across levels — a system can expose a port that was already exposed by an inner component.
+The port name must always be specified (e.g., `Entity.port_name`); implicit port inference is not supported. The optional `as` clause renames the port at the boundary. `expose` composes across levels — a system can expose a port that was already exposed by an inner component.
 
 ---
 

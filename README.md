@@ -137,7 +137,7 @@ Large architectures split across files with `from ... import`. `use component X`
 | `requires` / `provides`        | Declare a port that consumes or exposes an interface                    |
 | `requires X as port`           | Assign an explicit name to a port                                       |
 | `connect A.p -> $ch -> B.p`    | Wire two ports via a named channel                                      |
-| `expose Entity.port [as name]` | Promote a sub-entity's port to the enclosing boundary                  |
+| `expose Entity.port [as name]` | Promote a sub-entity's port to the enclosing boundary (port required)  |
 | `external`                     | Marks a system, component, or user as outside the development boundary  |
 | `<v1, v2>`                     | Variant annotation on an entity or statement                            |
 | `@attr: val1, val2`            | Custom attribute; values are comma-separated identifiers                |

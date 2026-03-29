@@ -991,6 +991,26 @@ system ECommerce {
         assert exp.entity == "OrderService"
         assert exp.port == "OrderConfirmation"
 
+    def test_expose_without_port_raises_error(self) -> None:
+        source = """\
+component OrderService {
+    component Processor { provides OrderConfirmation }
+    expose Processor
+}"""
+        with pytest.raises(ParseError) as exc_info:
+            _parse(source)
+        assert "Expected '.'" in str(exc_info.value)
+
+    def test_expose_with_missing_port_name_raises_error(self) -> None:
+        source = """\
+component OrderService {
+    component Processor { provides OrderConfirmation }
+    expose Processor.
+}"""
+        with pytest.raises(ParseError) as exc_info:
+            _parse(source)
+        assert "IDENTIFIER" in str(exc_info.value)
+
 
 # ###############
 # Multi-Line Descriptions
