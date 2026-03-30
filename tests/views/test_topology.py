@@ -1825,3 +1825,87 @@ class TestBuildVizDiagramAllDepthConnections:
         dst_node_ids = {all_ports[e.target_port_id].node_id for e in diag.edges}
         assert "Outer__Inner__A" in src_node_ids
         assert "Outer__Inner__B" in dst_node_ids
+
+
+# ###############
+# VizDiagram — variant filtering
+# ###############
+
+
+def test_variant_filters_child_entities() -> None:
+    """With variant='v1', only the v1 component is included as a child."""
+    c1 = Component(name="C1", variants=["v1"])
+    c2 = Component(name="C2", variants=["v2"])
+    sys = System(name="S", components=[c1, c2])
+    diag = build_viz_diagram(sys, variant="v1")
+    child_labels = {c.label for c in diag.root.children}
+    assert "C1" in child_labels
+    assert "C2" not in child_labels
+
+
+def test_variant_baseline_entities_always_shown() -> None:
+    """Baseline component (no variants) is shown regardless of variant filter."""
+    baseline = Component(name="Base")
+    variant_only = Component(name="Extra", variants=["v1"])
+    sys = System(name="S", components=[baseline, variant_only])
+    # With variant="v1", both baseline and v1 components are visible.
+    diag_v1 = build_viz_diagram(sys, variant="v1")
+    child_labels_v1 = {c.label for c in diag_v1.root.children}
+    assert "Base" in child_labels_v1
+    assert "Extra" in child_labels_v1
+    # With variant="v2", only baseline is visible.
+    diag_v2 = build_viz_diagram(sys, variant="v2")
+    child_labels_v2 = {c.label for c in diag_v2.root.children}
+    assert "Base" in child_labels_v2
+    assert "Extra" not in child_labels_v2
+
+
+def test_variant_filters_ports() -> None:
+    """With variant='v1', only the v1 port appears on the component node."""
+    p1 = InterfaceRef(name="PortV1", variants=["v1"])
+    p2 = InterfaceRef(name="PortV2", variants=["v2"])
+    comp = Component(name="C", provides=[p1, p2])
+    diag = build_viz_diagram(comp, variant="v1")
+    port_names = {p.interface_name for p in diag.root.ports}
+    assert "PortV1" in port_names
+    assert "PortV2" not in port_names
+
+
+def test_variant_filters_connects() -> None:
+    """With variant='v1', only the v1 connect edge is generated."""
+    a = Component(name="A", provides=[_iref("X")])
+    b = Component(name="B", requires=[_iref("X")])
+    c = Component(name="C", requires=[_iref("X")])
+    conn_v1 = ConnectDef(src_entity="A", src_port="X", dst_entity="B", dst_port="X", variants=["v1"])
+    conn_v2 = ConnectDef(src_entity="A", src_port="X", dst_entity="C", dst_port="X", variants=["v2"])
+    sys = System(name="S", components=[a, b, c], connects=[conn_v1, conn_v2])
+    diag = build_viz_diagram(sys, variant="v1")
+    # Only the v1 connect should produce an edge.
+    assert len(diag.edges) == 1
+    all_ports = collect_all_ports(diag)
+    tgt_port = all_ports[diag.edges[0].target_port_id]
+    assert tgt_port.node_id == "S__B"
+
+
+def test_variant_none_shows_all() -> None:
+    """With variant=None, all entities, ports, and connects are shown."""
+    c1 = Component(name="C1", variants=["v1"])
+    c2 = Component(name="C2", variants=["v2"])
+    sys = System(name="S", components=[c1, c2])
+    diag = build_viz_diagram(sys, variant=None)
+    child_labels = {c.label for c in diag.root.children}
+    assert "C1" in child_labels
+    assert "C2" in child_labels
+
+
+def test_variant_filters_all_diagram() -> None:
+    """In build_viz_diagram_all, entities with variants=['v2'] are hidden when variant='v1'."""
+    comp_v1 = Component(name="SvcV1", variants=["v1"])
+    comp_v2 = Component(name="SvcV2", variants=["v2"])
+    comp_base = Component(name="SvcBase")
+    af = _arch_file(components=[comp_v1, comp_v2, comp_base])
+    diag = build_viz_diagram_all({"f": af}, variant="v1")
+    child_labels = {c.label for c in diag.root.children}
+    assert "SvcV1" in child_labels
+    assert "SvcBase" in child_labels
+    assert "SvcV2" not in child_labels

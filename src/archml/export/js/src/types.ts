@@ -46,6 +46,7 @@ export interface ComponentJson {
   title: string | null;
   description: string | null;
   tags: string[];
+  variants: string[];
   requires: InterfaceRefJson[];
   provides: InterfaceRefJson[];
   interfaces: InterfaceDefJson[];
@@ -63,6 +64,7 @@ export interface SystemJson {
   title: string | null;
   description: string | null;
   tags: string[];
+  variants: string[];
   requires: InterfaceRefJson[];
   provides: InterfaceRefJson[];
   interfaces: InterfaceDefJson[];
@@ -109,6 +111,7 @@ export interface InterfaceDefJson {
   title: string | null;
   description: string | null;
   tags: string[];
+  variants: string[];
   qualified_name: string;
   line: number;
 }

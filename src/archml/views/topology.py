@@ -231,6 +231,7 @@ def build_viz_diagram(
     depth: int | None = None,
     *,
     global_connects: list[ConnectDef] | None = None,
+    variant: str | None = None,
 ) -> VizDiagram:
     """Build a :class:`VizDiagram` topology from a model entity.
 
@@ -262,6 +263,10 @@ def build_viz_diagram(
     Args:
         entity: The focus component or system to visualize.
         depth: Maximum nesting depth to expand.  ``None`` means unlimited.
+        global_connects: Additional connect statements from the parent scope
+            used to annotate terminal nodes with channel names.
+        variant: When given, only architecture elements active in this variant
+            are included in the diagram.
 
     Returns:
         A :class:`VizDiagram` describing the diagram topology.
@@ -269,15 +274,18 @@ def build_viz_diagram(
     entity_path = entity.qualified_name or entity.name
     root_id = _make_id(entity_path)
 
-    # --- Sub-entity map for connect/expose port lookups (always populated) ---
+    # --- Sub-entity map for connect/expose port lookups (only active entities) ---
     all_sub_entity_map: dict[str, Component | System | UserDef] = {}
     for comp in entity.components:
-        all_sub_entity_map[comp.name] = comp
+        if _active(comp.variants, variant):
+            all_sub_entity_map[comp.name] = comp
     if isinstance(entity, System):
         for sys in entity.systems:
-            all_sub_entity_map[sys.name] = sys
+            if _active(sys.variants, variant):
+                all_sub_entity_map[sys.name] = sys
         for user in entity.users:
-            all_sub_entity_map[user.name] = user
+            if _active(user.variants, variant):
+                all_sub_entity_map[user.name] = user
 
     # --- Child nodes ---
     # remaining: how many more levels of expansion are allowed for children.
@@ -299,7 +307,7 @@ def build_viz_diagram(
             child_path = f"{entity_path}::{child.name}"
             should_expand_child = (
                 isinstance(child, (Component, System))
-                and _should_expand(child)
+                and _should_expand(child, variant)
                 and (remaining is None or remaining > 0)
             )
             if should_expand_child and isinstance(child, (Component, System)):
@@ -310,22 +318,24 @@ def build_viz_diagram(
                     child,
                     child_path,
                     child_remaining,
+                    variant,
                 )
                 expanded_boundary_map[child_name] = bnd
                 child_expose_maps[child_name] = expose_map
                 all_inner_edges.extend(inner_edges)
             else:
-                opaque_child_map[child_name] = _make_child_node(child, child_path)
+                opaque_child_map[child_name] = _make_child_node(child, child_path, variant)
 
-    # --- Channel nodes (from connect statements in this scope) ---
+    # --- Channel nodes (from connect statements in this scope, filtered by variant) ---
+    active_connects = [c for c in entity.connects if _active(c.variants, variant)]
     channel_node_map: dict[str, VizNode] = {}
     if depth != 0:
         channel_node_map = _collect_channel_nodes_resolve(
-            entity.connects, root_id, all_sub_entity_map, opaque_child_map, child_expose_maps
+            active_connects, root_id, all_sub_entity_map, opaque_child_map, child_expose_maps
         )
 
     # --- Root boundary ---
-    root_ports = _make_ports(root_id, entity)
+    root_ports = _make_ports(root_id, entity, variant)
 
     all_children: list[VizNode | VizBoundary] = [
         *opaque_child_map.values(),
@@ -347,10 +357,12 @@ def build_viz_diagram(
     # --- Peripheral nodes (terminal interface anchors at the diagram boundary) ---
     peripheral_nodes: list[VizNode] = []
     _ext_connects = global_connects or []
-    for ref in entity.requires:
+    active_requires = [r for r in entity.requires if _active(r.variants, variant)]
+    active_provides = [p for p in entity.provides if _active(p.variants, variant)]
+    for ref in active_requires:
         ch = _find_channel_for_port(entity.name, "requires", ref.name, _ext_connects)
         peripheral_nodes.append(_make_terminal_node(ref, "requires", title=ch))
-    for ref in entity.provides:
+    for ref in active_provides:
         ch = _find_channel_for_port(entity.name, "provides", ref.name, _ext_connects)
         peripheral_nodes.append(_make_terminal_node(ref, "provides", title=ch))
     # Expose-based terminals: create a terminal for each exposed port so that
@@ -358,7 +370,8 @@ def build_viz_diagram(
     # direct requires/provides declarations (e.g. Order uses only expose).
     # Uses _resolve_port_ref so multi-level expose chains are followed.
     _seen_expose_terminal_ids: set[str] = set()
-    for _exp in entity.exposes:
+    active_exposes = [e for e in entity.exposes if _active(e.variants, variant)]
+    for _exp in active_exposes:
         _child_ent = all_sub_entity_map.get(_exp.entity)
         if _child_ent is None:
             continue
@@ -386,7 +399,7 @@ def build_viz_diagram(
 
     # Connect statement edges (skipped when depth=0 since there are no children).
     if depth != 0:
-        for conn in entity.connects:
+        for conn in active_connects:
             for edge in _build_edges_from_connect_resolve(
                 conn, opaque_child_map, expanded_boundary_map, all_sub_entity_map, channel_node_map, child_expose_maps
             ):
@@ -399,7 +412,7 @@ def build_viz_diagram(
     # Connect each terminal node to the root boundary's matching port so that
     # arrows are drawn even when the focus entity has no internal connect statements
     # (e.g. a leaf component whose connections are defined at the parent level).
-    for ref in entity.requires:
+    for ref in active_requires:
         terminal_id = f"terminal.req.{_iref_label(ref)}"
         terminal_port_id = f"{terminal_id}.port"
         root_port_id = _port_id(root_id, "requires", ref)
@@ -415,7 +428,7 @@ def build_viz_diagram(
                     interface_name=ref.name,
                 )
             )
-    for ref in entity.provides:
+    for ref in active_provides:
         terminal_id = f"terminal.prov.{_iref_label(ref)}"
         terminal_port_id = f"{terminal_id}.port"
         root_port_id = _port_id(root_id, "provides", ref)
@@ -445,7 +458,7 @@ def build_viz_diagram(
     # _resolve_port_ref is used instead of _find_ref_by_port_name so that
     # multi-level expose chains (e.g. Order→A.OrderRequest→SubA1.OrderRequest)
     # are followed even when intermediate entities have no direct requires/provides.
-    for _exp in entity.exposes:
+    for _exp in active_exposes:
         _child_ent = all_sub_entity_map.get(_exp.entity)
         if _child_ent is None:
             continue
@@ -552,7 +565,12 @@ def build_viz_diagram(
     )
 
 
-def build_viz_diagram_all(arch_files: dict[str, ArchFile], depth: int | None = None) -> VizDiagram:
+def build_viz_diagram_all(
+    arch_files: dict[str, ArchFile],
+    depth: int | None = None,
+    *,
+    variant: str | None = None,
+) -> VizDiagram:
     """Build a :class:`VizDiagram` showing all top-level entities across *arch_files*.
 
     Creates a synthetic root boundary labelled ``"Architecture"`` whose
@@ -586,6 +604,8 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile], depth: int | None = N
             :class:`~archml.model.entities.ArchFile`, as returned by
             :func:`~archml.compiler.build.compile_files`.
         depth: Maximum nesting depth to expand.  ``None`` means unlimited.
+        variant: When given, only architecture elements active in this variant
+            are included in the diagram.
 
     Returns:
         A :class:`VizDiagram` describing the full architecture topology.
@@ -611,30 +631,36 @@ def build_viz_diagram_all(arch_files: dict[str, ArchFile], depth: int | None = N
 
     for arch_file in arch_files.values():
         for comp in arch_file.components:
+            if not _active(comp.variants, variant):
+                continue
             entity_path = comp.qualified_name or comp.name
             all_sub_entity_map[comp.name] = comp
-            if _should_expand(comp) and (depth is None or depth >= 1):
-                bnd, inner_edges, expose_map = _build_recursive_boundary(comp, entity_path, entity_depth)
+            if _should_expand(comp, variant) and (depth is None or depth >= 1):
+                bnd, inner_edges, expose_map = _build_recursive_boundary(comp, entity_path, entity_depth, variant)
                 expanded_boundary_map[comp.name] = bnd
                 expanded_expose_maps[comp.name] = expose_map
                 all_inner_edges.extend(inner_edges)
             else:
-                opaque_node_map[comp.name] = _make_child_node(comp, entity_path)
+                opaque_node_map[comp.name] = _make_child_node(comp, entity_path, variant)
         for sys in arch_file.systems:
+            if not _active(sys.variants, variant):
+                continue
             entity_path = sys.qualified_name or sys.name
             all_sub_entity_map[sys.name] = sys
-            if _should_expand(sys) and (depth is None or depth >= 1):
-                bnd, inner_edges, expose_map = _build_recursive_boundary(sys, entity_path, entity_depth)
+            if _should_expand(sys, variant) and (depth is None or depth >= 1):
+                bnd, inner_edges, expose_map = _build_recursive_boundary(sys, entity_path, entity_depth, variant)
                 expanded_boundary_map[sys.name] = bnd
                 expanded_expose_maps[sys.name] = expose_map
                 all_inner_edges.extend(inner_edges)
             else:
-                opaque_node_map[sys.name] = _make_child_node(sys, entity_path)
+                opaque_node_map[sys.name] = _make_child_node(sys, entity_path, variant)
         for user in arch_file.users:
+            if not _active(user.variants, variant):
+                continue
             entity_path = user.qualified_name or user.name
             all_sub_entity_map[user.name] = user
-            opaque_node_map[user.name] = _make_child_node(user, entity_path)
-        all_connects.extend(arch_file.connects)
+            opaque_node_map[user.name] = _make_child_node(user, entity_path, variant)
+        all_connects.extend(c for c in arch_file.connects if _active(c.variants, variant))
 
     channel_node_map = _collect_channel_nodes(all_connects, root_id, all_sub_entity_map)
 
@@ -717,6 +743,18 @@ def _make_id(entity_path: str) -> str:
     return entity_path.replace("::", "__")
 
 
+def _active(variants: list[str], v: str | None) -> bool:
+    """Return ``True`` if an item annotated with *variants* is active for variant *v*.
+
+    When *v* is ``None`` every item is active (no filtering).  When *v* is a
+    specific variant name, only baseline items (``variants == []``) and items
+    whose variant list contains *v* are active.
+    """
+    if v is None:
+        return True
+    return not variants or v in variants
+
+
 def _iref_label(ref: InterfaceRef) -> str:
     """Return a display label for an interface reference."""
     return ref.name
@@ -742,18 +780,34 @@ def _make_port(
     )
 
 
-def _make_ports(node_id: str, entity: Component | System | UserDef) -> list[VizPort]:
-    """Create :class:`VizPort` instances for all requires and provides of *entity*."""
+def _make_ports(
+    node_id: str,
+    entity: Component | System | UserDef,
+    variant: str | None = None,
+) -> list[VizPort]:
+    """Create :class:`VizPort` instances for all requires and provides of *entity*.
+
+    When *variant* is given, only ports active in that variant are included.
+    """
     ports: list[VizPort] = []
     for ref in entity.requires:
-        ports.append(_make_port(node_id, "requires", ref))
+        if _active(ref.variants, variant):
+            ports.append(_make_port(node_id, "requires", ref))
     for ref in entity.provides:
-        ports.append(_make_port(node_id, "provides", ref))
+        if _active(ref.variants, variant):
+            ports.append(_make_port(node_id, "provides", ref))
     return ports
 
 
-def _make_child_node(entity: Component | System | UserDef, entity_path: str) -> VizNode:
-    """Create a :class:`VizNode` for a direct child of the focus entity."""
+def _make_child_node(
+    entity: Component | System | UserDef,
+    entity_path: str,
+    variant: str | None = None,
+) -> VizNode:
+    """Create a :class:`VizNode` for a direct child of the focus entity.
+
+    When *variant* is given, only ports active in that variant are included.
+    """
     node_id = _make_id(entity_path)
     if isinstance(entity, Component):
         kind: NodeKind = "external_component" if entity.is_external else "component"
@@ -769,7 +823,7 @@ def _make_child_node(entity: Component | System | UserDef, entity_path: str) -> 
         entity_path=entity_path,
         description=entity.description,
         tags=[],
-        ports=_make_ports(node_id, entity),
+        ports=_make_ports(node_id, entity, variant),
     )
 
 
@@ -1143,7 +1197,7 @@ def _find_channel_for_port(
     return None
 
 
-def _should_expand(entity: Component | System | UserDef) -> bool:
+def _should_expand(entity: Component | System | UserDef, variant: str | None = None) -> bool:
     """Return ``True`` if *entity* should be rendered as an expanded boundary.
 
     Non-external components and systems that contain at least one direct child
@@ -1151,13 +1205,19 @@ def _should_expand(entity: Component | System | UserDef) -> bool:
     is visible.  External entities and leaf entities (no inner children) are
     rendered as opaque nodes.  :class:`~archml.model.entities.UserDef` nodes
     are always leaf.
+
+    When *variant* is given, only children active in that variant are counted.
     """
     if isinstance(entity, UserDef) or entity.is_external:
         return False
     if isinstance(entity, Component):
-        return bool(entity.components)
+        return bool([c for c in entity.components if _active(c.variants, variant)])
     # System
-    return bool(entity.components) or bool(entity.systems) or bool(entity.users)
+    return (
+        bool([c for c in entity.components if _active(c.variants, variant)])
+        or bool([s for s in entity.systems if _active(s.variants, variant)])
+        or bool([u for u in entity.users if _active(u.variants, variant)])
+    )
 
 
 # Type alias used locally: maps an exposed port name to the leaf VizNode,
@@ -1169,6 +1229,7 @@ def _build_recursive_boundary(
     entity: Component | System,
     entity_path: str,
     remaining_depth: int | None = None,
+    variant: str | None = None,
 ) -> tuple[VizBoundary, list[VizEdge], _ExposeMap]:
     """Build a :class:`VizBoundary` for *entity*, recursively expanding children.
 
@@ -1188,6 +1249,9 @@ def _build_recursive_boundary(
     - ``0``: all of *entity*'s children are rendered as opaque nodes.
     - ``N > 0``: expand *N* more levels; children at depth *N* are opaque.
 
+    When *variant* is given, only children, connects, and exposes active in
+    that variant are included.
+
     Returns:
         A three-tuple ``(boundary, edges, expose_map)`` where
 
@@ -1200,9 +1264,12 @@ def _build_recursive_boundary(
     """
     root_id = _make_id(entity_path)
 
-    child_entities: list[Component | System | UserDef] = list(entity.components)
+    all_child_entities: list[Component | System | UserDef] = list(entity.components)
     if isinstance(entity, System):
-        child_entities += list(entity.systems) + list(entity.users)
+        all_child_entities += list(entity.systems) + list(entity.users)
+
+    # Filter children by variant.
+    child_entities = [c for c in all_child_entities if _active(c.variants, variant)]
 
     sub_entity_map: dict[str, Component | System | UserDef] = {}
     opaque_node_map: dict[str, VizNode] = {}
@@ -1213,18 +1280,21 @@ def _build_recursive_boundary(
     for child in child_entities:
         child_path = f"{entity_path}::{child.name}"
         sub_entity_map[child.name] = child
-        if _should_expand(child) and (remaining_depth is None or remaining_depth > 0):
+        if _should_expand(child, variant) and (remaining_depth is None or remaining_depth > 0):
             next_depth = None if remaining_depth is None else remaining_depth - 1
-            child_bnd, child_edges, child_expose_map = _build_recursive_boundary(child, child_path, next_depth)  # type: ignore[arg-type]
+            child_bnd, child_edges, child_expose_map = _build_recursive_boundary(child, child_path, next_depth, variant)  # type: ignore[arg-type]
             child_boundary_map[child.name] = child_bnd
             child_expose_maps[child.name] = child_expose_map
             all_edges.extend(child_edges)
         else:
-            opaque_node_map[child.name] = _make_child_node(child, child_path)
+            opaque_node_map[child.name] = _make_child_node(child, child_path, variant)
+
+    # Filter connects by variant before building channel nodes and edges.
+    active_connects = [c for c in entity.connects if _active(c.variants, variant)]
 
     # Channel nodes — use expose-chain-aware label resolution.
     channel_node_map = _collect_channel_nodes_resolve(
-        entity.connects, root_id, sub_entity_map, opaque_node_map, child_expose_maps
+        active_connects, root_id, sub_entity_map, opaque_node_map, child_expose_maps
     )
 
     all_children: list[VizNode | VizBoundary] = [
@@ -1240,13 +1310,13 @@ def _build_recursive_boundary(
         entity_path=entity_path,
         description=entity.description,
         tags=[],
-        ports=_make_ports(root_id, entity),
+        ports=_make_ports(root_id, entity, variant),
         children=all_children,
     )
 
     # Edges from this entity's connect statements using expose-chain resolution.
     seen: set[tuple[str, str]] = set()
-    for conn in entity.connects:
+    for conn in active_connects:
         for edge in _build_edges_from_connect_resolve(
             conn, opaque_node_map, child_boundary_map, sub_entity_map, channel_node_map, child_expose_maps
         ):
@@ -1255,9 +1325,10 @@ def _build_recursive_boundary(
                 seen.add(key)
                 all_edges.append(edge)
 
-    # Build the expose map for this entity's own exposed ports.
+    # Build the expose map for this entity's own exposed ports (filtered by variant).
+    active_exposes = [e for e in entity.exposes if _active(e.variants, variant)]
     expose_map: _ExposeMap = {}
-    for exp in entity.exposes:
+    for exp in active_exposes:
         effective = exp.as_name if exp.as_name else exp.port
         child_entity = sub_entity_map.get(exp.entity)
         if child_entity is None:

@@ -86,6 +86,12 @@ def main() -> None:
             "Omit for full depth (default)."
         ),
     )
+    visualize_parser.add_argument(
+        "--variant",
+        default=None,
+        metavar="NAME",
+        help="Show only the architecture active in the given variant.",
+    )
 
     # export subcommand
     export_parser = subparsers.add_parser(
@@ -344,9 +350,10 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
     output_path = Path(args.output)
 
     depth: int | None = args.depth
+    variant: str | None = args.variant
 
     if args.entity == "all":
-        viz_diagram = build_viz_diagram_all(compiled, depth=depth)
+        viz_diagram = build_viz_diagram_all(compiled, depth=depth, variant=variant)
     else:
         try:
             entity = resolve_entity(compiled, args.entity)
@@ -354,7 +361,7 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         global_connects = [c for af in compiled.values() for c in af.connects]
-        viz_diagram = build_viz_diagram(entity, depth=depth, global_connects=global_connects)
+        viz_diagram = build_viz_diagram(entity, depth=depth, global_connects=global_connects, variant=variant)
     try:
         layout_plan = compute_layout(viz_diagram)
     except RuntimeError as exc:

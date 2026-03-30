@@ -32,12 +32,14 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
 
   const canvasArea = container.querySelector<HTMLElement>(".archml-canvas-area")!;
   const canvasTransform = container.querySelector<HTMLElement>(".archml-canvas-transform")!;
-  // In width-optimized mode details are shown in .archml-sidebar-details; otherwise .archml-sidebar-right.
+  // In width-optimized mode details are shown in .archml-sidebar-details; otherwise .archml-sidebar-right-body.
   const detailsSidebar = container.querySelector<HTMLElement>(
-    widthOptimized ? ".archml-sidebar-details" : ".archml-sidebar-right",
+    widthOptimized ? ".archml-sidebar-details" : ".archml-sidebar-right-body",
   )!;
   const entitySelectWrap = container.querySelector<HTMLElement>("#archml-entity-select-wrap")!;
   const depthSelect = container.querySelector<HTMLSelectElement>("#archml-depth-select")!;
+  const variantSelect = container.querySelector<HTMLSelectElement>("#archml-variant-select")!;
+  const variantRow = container.querySelector<HTMLElement>("#archml-variant-row")!;
   const errorBanner = container.querySelector<HTMLElement>(".archml-error-banner")!;
   const loadingEl = container.querySelector<HTMLElement>(".archml-loading")!;
 
@@ -49,8 +51,39 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
     });
   }
 
+  // Expand/collapse toggle for right sidebar (standard layout only)
+  if (!widthOptimized) {
+    const expandBtn = container.querySelector<HTMLElement>("#archml-sidebar-expand-btn");
+    const rightSidebar = container.querySelector<HTMLElement>(".archml-sidebar-right");
+    expandBtn?.addEventListener("click", () => {
+      const expanded = rightSidebar!.classList.toggle("archml-sidebar-right--expanded");
+      expandBtn.textContent = expanded ? "⟨⟨" : "⟩⟩";
+      expandBtn.title = expanded ? "Collapse sidebar" : "Expand sidebar";
+    });
+  }
+
+  // Populate variant dropdown; hide row if no variants exist
+  const allVariants = collectAllVariants(payload.files);
+  for (const v of allVariants) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    variantSelect.appendChild(opt);
+  }
+  if (allVariants.length === 0) {
+    variantRow.style.display = "none";
+  }
+
   // Build custom entity dropdown
   const customEntitySelect = buildCustomEntitySelect(entitySelectWrap, payload.entities, () => {
+    void renderDiagram();
+  });
+
+  // Variant change → re-filter entity list and re-render
+  variantSelect.addEventListener("change", () => {
+    const variant = variantSelect.value || null;
+    const filtered = filterEntitiesByVariant(payload.entities, payload.files, variant);
+    customEntitySelect.setEntities(filtered);
     void renderDiagram();
   });
 
@@ -230,6 +263,12 @@ function buildViewerShell(widthOptimized: boolean): string {
       <div class="archml-body">
         <div class="archml-sidebar-combined">
           <div class="archml-sidebar-controls">
+            <div id="archml-variant-row">
+              <label for="archml-variant-select">Variant</label>
+              <select id="archml-variant-select">
+                <option value="">All variants</option>
+              </select>
+            </div>
             <div>
               <label>Entity</label>
               <div id="archml-entity-select-wrap"></div>
@@ -258,6 +297,12 @@ function buildViewerShell(widthOptimized: boolean): string {
   }
   return `
     <div class="archml-sidebar-left">
+      <div id="archml-variant-row">
+        <label for="archml-variant-select">Variant</label>
+        <select id="archml-variant-select">
+          <option value="">All variants</option>
+        </select>
+      </div>
       <div>
         <label>Entity</label>
         <div id="archml-entity-select-wrap"></div>
@@ -278,7 +323,12 @@ function buildViewerShell(widthOptimized: boolean): string {
       <div class="archml-loading">Loading…</div>
     </div>
     <div class="archml-sidebar-right">
-      <p class="archml-detail-empty">Click an entity to see details.</p>
+      <div class="archml-sidebar-right-header">
+        <button class="archml-sidebar-expand-btn" id="archml-sidebar-expand-btn" type="button" title="Expand sidebar">⟩⟩</button>
+      </div>
+      <div class="archml-sidebar-right-body">
+        <p class="archml-detail-empty">Click an entity to see details.</p>
+      </div>
     </div>
   `.trim();
 }
@@ -307,9 +357,9 @@ function makeKindDot(kind: string | null): HTMLSpanElement {
 
 function buildCustomEntitySelect(
   container: HTMLElement,
-  entities: EntityEntry[],
+  initialEntities: EntityEntry[],
   onChange: () => void,
-): { getValue: () => string } {
+): { getValue: () => string; setEntities: (entities: EntityEntry[]) => void } {
   let currentValue = "all";
   let isOpen = false;
 
@@ -368,25 +418,34 @@ function buildCustomEntitySelect(
     panel.appendChild(lbl);
   }
 
-  // Build options
-  addOption("all", "All entities", null);
+  function buildPanel(entities: EntityEntry[]): void {
+    panel.innerHTML = "";
+    addOption("all", "All entities", null);
 
-  const systems = entities.filter((e) => e.kind === "system" || e.kind === "external_system");
-  const components = entities.filter((e) => e.kind === "component" || e.kind === "external_component");
+    const systems = entities.filter((e) => e.kind === "system" || e.kind === "external_system");
+    const components = entities.filter((e) => e.kind === "component" || e.kind === "external_component");
 
-  if (systems.length > 0) {
-    addGroupLabel("Systems");
-    for (const e of systems) {
-      addOption(e.qualified_name, e.title ? `${e.qualified_name} — ${e.title}` : e.qualified_name, e.kind);
+    if (systems.length > 0) {
+      addGroupLabel("Systems");
+      for (const e of systems) {
+        addOption(e.qualified_name, e.title ? `${e.qualified_name} — ${e.title}` : e.qualified_name, e.kind);
+      }
+    }
+    if (components.length > 0) {
+      addGroupLabel("Components");
+      for (const e of components) {
+        addOption(e.qualified_name, e.title ? `${e.qualified_name} — ${e.title}` : e.qualified_name, e.kind);
+      }
+    }
+
+    // If the selected entity is no longer in the filtered list, reset to "all"
+    if (currentValue !== "all" && !entities.some((e) => e.qualified_name === currentValue)) {
+      currentValue = "all";
+      setTriggerContent("All entities", null);
     }
   }
-  if (components.length > 0) {
-    addGroupLabel("Components");
-    for (const e of components) {
-      addOption(e.qualified_name, e.title ? `${e.qualified_name} — ${e.title}` : e.qualified_name, e.kind);
-    }
-  }
 
+  buildPanel(initialEntities);
   setTriggerContent("All entities", null);
 
   trigger.addEventListener("click", (e) => {
@@ -398,7 +457,10 @@ function buildCustomEntitySelect(
 
   document.addEventListener("click", () => { if (isOpen) close(); });
 
-  return { getValue: () => currentValue };
+  return {
+    getValue: () => currentValue,
+    setEntities: (entities: EntityEntry[]) => { buildPanel(entities); },
+  };
 }
 
 function findEntity(
@@ -466,6 +528,8 @@ function showEntityDetails(
   const provides = entity?.provides ?? [];
   const kindLabel = entityKind.replace(/_/g, " ");
 
+  const variants: string[] = entity?.variants ?? [];
+
   let html = `
     <h3 class="archml-detail-title">${escText(title)}</h3>
     <div class="archml-detail-kind">${escText(kindLabel)}</div>
@@ -473,9 +537,16 @@ function showEntityDetails(
 
   {
     let generalBody = "";
-    if (description) generalBody += `<p class="archml-detail-description">${escText(description)}</p>`;
+    if (description) generalBody += `<div class="archml-detail-description">${renderMarkdown(description)}</div>`;
     if (tags.length > 0) generalBody += `<div class="archml-detail-tags">${tags.map((t) => `<span class="archml-detail-pill">${escText(t)}</span>`).join("")}</div>`;
     if (generalBody) html += detailsSection("general", generalBody);
+  }
+
+  {
+    const variantBody = variants.length > 0
+      ? variants.map((v) => `<span class="archml-detail-pill">${escText(v)}</span>`).join("")
+      : `<span class="archml-detail-muted">baseline — present in all variants</span>`;
+    html += detailsSection("Variants", variantBody, false);
   }
 
   html += renderIfaceSection("Requires", requires, payload.files);
@@ -627,9 +698,17 @@ function showInterfaceDetails(
 
   {
     let generalBody = "";
-    if (def.description) generalBody += `<p class="archml-detail-description">${escText(def.description)}</p>`;
+    if (def.description) generalBody += `<div class="archml-detail-description">${renderMarkdown(def.description)}</div>`;
     if (def.tags.length > 0) generalBody += `<div class="archml-detail-tags">${def.tags.map((t) => `<span class="archml-detail-pill">${escText(t)}</span>`).join("")}</div>`;
     if (generalBody) html += detailsSection("general", generalBody);
+  }
+
+  {
+    const ifaceVariants: string[] = def.variants ?? [];
+    const variantBody = ifaceVariants.length > 0
+      ? ifaceVariants.map((v) => `<span class="archml-detail-pill">${escText(v)}</span>`).join("")
+      : `<span class="archml-detail-muted">baseline — present in all variants</span>`;
+    html += detailsSection("Variants", variantBody, false);
   }
 
   if (def.fields.length > 0) {
@@ -757,4 +836,90 @@ function renderTypeRef(type: TypeRefJson, files: Record<string, ArchFileJson>, v
 
 function escText(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ─── Variant helpers ──────────────────────────────────────────────────────────
+
+function collectAllVariants(files: Record<string, ArchFileJson>): string[] {
+  const variants = new Set<string>();
+  for (const af of Object.values(files)) {
+    for (const sys of af.systems) _collectVariantsFromSystem(sys, variants);
+    for (const comp of af.components) _collectVariantsFromComponent(comp, variants);
+  }
+  return [...variants].sort();
+}
+
+function _collectVariantsFromSystem(sys: SystemJson, variants: Set<string>): void {
+  for (const v of sys.variants ?? []) variants.add(v);
+  for (const sub of sys.systems) _collectVariantsFromSystem(sub, variants);
+  for (const comp of sys.components) _collectVariantsFromComponent(comp, variants);
+}
+
+function _collectVariantsFromComponent(comp: ComponentJson, variants: Set<string>): void {
+  for (const v of comp.variants ?? []) variants.add(v);
+  for (const sub of comp.components) _collectVariantsFromComponent(sub, variants);
+}
+
+function filterEntitiesByVariant(
+  entities: EntityEntry[],
+  files: Record<string, ArchFileJson>,
+  variant: string | null,
+): EntityEntry[] {
+  if (!variant) return entities;
+  return entities.filter((e) => {
+    const entity = findEntity(files, e.qualified_name);
+    if (!entity) return true;
+    const evars = entity.variants ?? [];
+    return evars.length === 0 || evars.includes(variant);
+  });
+}
+
+// ─── Markdown renderer ────────────────────────────────────────────────────────
+
+/**
+ * Convert a Markdown string to safe HTML. Handles paragraphs, bold, italic,
+ * inline code, and https/http links. All HTML special characters in user
+ * content are escaped before any markdown expansion, preventing XSS.
+ */
+function renderMarkdown(md: string): string {
+  const paragraphs = md.split(/\n{2,}/);
+  return paragraphs
+    .map((para) => {
+      const trimmed = para.trim();
+      if (!trimmed) return "";
+      return `<p>${_renderInline(trimmed.replace(/\n/g, " "))}</p>`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function _renderInline(text: string): string {
+  // 1. Escape HTML special characters.
+  let s = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // 2. Extract code spans before other transformations to prevent inner parsing.
+  const codeSpans: string[] = [];
+  s = s.replace(/`([^`]+)`/g, (_, code) => {
+    const idx = codeSpans.length;
+    codeSpans.push(`<code>${code}</code>`); // code content already html-escaped above
+    return `\x00CODE${idx}\x00`;
+  });
+
+  // 3. Bold: **text**
+  s = s.replace(/\*\*([^*]+)\*\*/g, (_, t) => `<strong>${t}</strong>`);
+
+  // 4. Italic: *text* (only single asterisks remaining after step 3)
+  s = s.replace(/\*([^*]+)\*/g, (_, t) => `<em>${t}</em>`);
+
+  // 5. Links: [text](url) — only http/https URLs are allowed.
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
+    const rawUrl = url.trim();
+    const safeUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl.replace(/"/g, "&quot;") : "#";
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${linkText}</a>`;
+  });
+
+  // 6. Restore code spans.
+  s = s.replace(/\x00CODE(\d+)\x00/g, (_, idx) => codeSpans[parseInt(idx, 10)]);
+
+  return s;
 }
