@@ -14,13 +14,15 @@ from yachalk import chalk
 # Public Interface
 # ###############
 
-STEPS: list[tuple[str, list[str]]] = [
-    ("Format check", ["uv", "run", "ruff", "format", "--check", "src/", "tests/"]),
-    ("Lint", ["uv", "run", "ruff", "check", "src/", "tests/"]),
-    ("Type check", ["uv", "run", "ty", "check", "src/"]),
-    ("Tests", ["uv", "run", "pytest", "--cov=archml", "--cov-report=term-missing"]),
-    ("JS tests", ["npm", "--prefix", "src/archml/export/js", "test"]),
-    ("Build", ["uv", "build"]),
+STEPS: list[tuple[str, list[str], str | None]] = [
+    ("Format check", ["uv", "run", "ruff", "format", "--check", "src/", "tests/"], None),
+    ("Lint", ["uv", "run", "ruff", "check", "src/", "tests/"], None),
+    ("Type check", ["uv", "run", "ty", "check", "src/"], None),
+    ("Tests", ["uv", "run", "pytest", "--cov=archml", "--cov-report=term-missing"], None),
+    ("JS tests", ["npm", "--prefix", "src/archml/export/js", "test"], None),
+    ("Build", ["uv", "build"], None),
+    ("VSCode extension build", ["npm", "--prefix", "vscode-extension", "run", "compile"], None),
+    ("VSCode extension package", ["npx", "vsce", "package"], "vscode-extension"),
 ]
 
 
@@ -28,13 +30,15 @@ def main() -> int:
     """Run all CI steps and report results."""
     results: list[tuple[str, bool, float]] = []
 
-    for name, cmd in STEPS:
+    root = _repo_root()
+    for name, cmd, subdir in STEPS:
         sep = chalk.blue("=" * 60)
         print(f"\n{sep}")
         print(chalk.blue(name))
         print(sep)
         start = time.monotonic()
-        proc = subprocess.run(cmd, cwd=_repo_root())
+        cwd = f"{root}/{subdir}" if subdir else root
+        proc = subprocess.run(cmd, cwd=cwd)
         elapsed = time.monotonic() - start
         results.append((name, proc.returncode == 0, elapsed))
 

@@ -2120,21 +2120,13 @@ class TestReservedVariantNames:
 
     def test_all_on_connect_is_rejected(self) -> None:
         errors = _analyze(
-            "system S {\n"
-            "  component A { provides P }\n"
-            "  component B { requires P }\n"
-            "  connect<all> A.P -> B.P\n"
-            "}"
+            "system S {\n  component A { provides P }\n  component B { requires P }\n  connect<all> A.P -> B.P\n}"
         )
         assert any("'all'" in e.message and "reserved" in e.message for e in errors)
 
     def test_baseline_on_connect_is_rejected(self) -> None:
         errors = _analyze(
-            "system S {\n"
-            "  component A { provides P }\n"
-            "  component B { requires P }\n"
-            "  connect<baseline> A.P -> B.P\n"
-            "}"
+            "system S {\n  component A { provides P }\n  component B { requires P }\n  connect<baseline> A.P -> B.P\n}"
         )
         assert any("'baseline'" in e.message and "reserved" in e.message for e in errors)
 

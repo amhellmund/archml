@@ -54,7 +54,6 @@ def _make_directive(
     )
 
 
-
 # ###############
 # find_workspace_root
 # ###############
@@ -118,7 +117,6 @@ def test_setup_registers_directive() -> None:
     app = MagicMock()
     setup(app)
     app.add_directive.assert_any_call("archml-visualize", ArchmlVisualizeDirective)
-
 
 
 def test_setup_returns_version() -> None:
@@ -393,18 +391,12 @@ def test_directive_run_uri_relative_to_doc_in_subdir(tmp_path: Path) -> None:
     assert result[0]["uri"].startswith("../_archml_images/")
 
 
-
-
 # ###############
 # ArchmlVisualizeDirective — variant option
 # ###############
 
 
-_VARIANT_ARCHML = (
-    "interface IFoo {}\n"
-    "component<cloud> CloudOnly { provides IFoo }\n"
-    "component Base { provides IFoo }\n"
-)
+_VARIANT_ARCHML = "interface IFoo {}\ncomponent<cloud> CloudOnly { provides IFoo }\ncomponent Base { provides IFoo }\n"
 
 
 def test_directive_variant_all_returns_image_node(tmp_path: Path) -> None:

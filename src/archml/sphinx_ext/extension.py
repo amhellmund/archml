@@ -126,7 +126,6 @@ class ArchmlVisualizeDirective(Directive):
         return [image_node]
 
 
-
 def find_workspace_root(start: Path) -> Path | None:
     """Walk up from *start* to find the nearest ``.archml-workspace.yaml``.
 
