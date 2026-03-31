@@ -192,6 +192,13 @@ def _write_cluster(
             lines.append(
                 f'{indent}  {pid} [style=invis,width="{node_w_in:.4f}",height="{node_h_in:.4f}",fixedsize=true];'
             )
+    elif not boundary.children:
+        # Empty cluster not used as an edge endpoint: still needs a placeholder
+        # node so Graphviz produces a usable bounding box (e.g. `system Foo {}`).
+        pid = _dot_id(f"__empty__{boundary.id}")
+        lines.append(
+            f'{indent}  {pid} [style=invis,width="{node_w_in:.4f}",height="{node_h_in:.4f}",fixedsize=true];'
+        )
     for child in boundary.children:
         if isinstance(child, VizNode):
             nid = _dot_id(child.id)

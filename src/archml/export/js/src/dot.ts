@@ -160,6 +160,14 @@ function writeCluster(
         `${indent}  ${pid} [style=invis,width="${nodeWIn.toFixed(4)}",height="${nodeHIn.toFixed(4)}",fixedsize=true];`,
       );
     }
+  } else if (boundary.children.length === 0) {
+    // Empty cluster with no phantom: Graphviz won't compute a bounding box
+    // without at least one node. Add an invisible placeholder so the cluster
+    // gets a proper size (e.g. an empty system like `system Standalone {}`).
+    const pid = dotId(`__empty__${boundary.id}`);
+    lines.push(
+      `${indent}  ${pid} [style=invis,width="${nodeWIn.toFixed(4)}",height="${nodeHIn.toFixed(4)}",fixedsize=true];`,
+    );
   }
 
   for (const child of boundary.children) {
