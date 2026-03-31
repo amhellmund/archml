@@ -11,13 +11,16 @@ interfaces or graph cycles), which operates on the fully resolved model.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from archml.model.entities import (
+    ArchEntity,
     ArchFile,
     ArtifactDef,
     Component,
     ConnectDef,
+    ContainerEntity,
     EnumDef,
     ExposeDef,
     InterfaceDef,
@@ -27,6 +30,8 @@ from archml.model.entities import (
     UserDef,
 )
 from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
+
+_RESERVED_VARIANTS: frozenset[str] = frozenset({"all", "baseline"})
 
 # ###############
 # Public Interface
@@ -158,6 +163,9 @@ class _SemanticAnalyzer:
 
         # 0. Check that all description fields are valid markdown.
         errors.extend(_check_all_descriptions(self._file, self._filename))
+
+        # 0a. Check for reserved variant names.
+        errors.extend(_check_reserved_variants(self._file, self._filename))
 
         # 1. Check for duplicate top-level definitions.
         errors.extend(_check_top_level_duplicates(self._file, self._filename))
@@ -1056,3 +1064,78 @@ def _check_user(
         )
     errors.extend(_check_port_names(ctx, user.requires, user.provides, filename))
     return errors
+
+
+def _check_reserved_variants(arch_file: ArchFile, filename: str | None) -> list[SemanticError]:
+    """Check that no variant annotation uses a reserved name (``all`` or ``baseline``)."""
+    errors: list[SemanticError] = []
+    for variant_name, line in _iter_all_variant_names(arch_file):
+        if variant_name in _RESERVED_VARIANTS:
+            errors.append(
+                SemanticError(
+                    f"Variant name '{variant_name}' is reserved and cannot be used as a user-defined variant.",
+                    filename=filename,
+                    line=line if line else None,
+                )
+            )
+    return errors
+
+
+def _iter_all_variant_names(arch_file: ArchFile) -> Iterator[tuple[str, int]]:
+    """Yield ``(variant_name, line)`` for every variant annotation in *arch_file*."""
+    for iface in arch_file.interfaces:
+        for v in iface.variants:
+            yield v, iface.line
+    for conn in arch_file.connects:
+        for v in conn.variants:
+            yield v, conn.line
+    for user in arch_file.users:
+        yield from _iter_arch_entity_variants(user)
+    for comp in arch_file.components:
+        yield from _iter_component_variants(comp)
+    for sys in arch_file.systems:
+        yield from _iter_system_variants(sys)
+
+
+def _iter_arch_entity_variants(entity: ArchEntity) -> Iterator[tuple[str, int]]:
+    """Yield variants from an entity's own annotation and its port references."""
+    for v in entity.variants:
+        yield v, entity.line
+    for ref in entity.requires:
+        for v in ref.variants:
+            yield v, ref.line
+    for ref in entity.provides:
+        for v in ref.variants:
+            yield v, ref.line
+
+
+def _iter_container_variants(entity: ContainerEntity) -> Iterator[tuple[str, int]]:
+    """Yield variants from a container's own annotation, ports, interfaces, connects, and exposes."""
+    yield from _iter_arch_entity_variants(entity)
+    for iface in entity.interfaces:
+        for v in iface.variants:
+            yield v, iface.line
+    for conn in entity.connects:
+        for v in conn.variants:
+            yield v, conn.line
+    for exp in entity.exposes:
+        for v in exp.variants:
+            yield v, exp.line
+
+
+def _iter_component_variants(comp: Component) -> Iterator[tuple[str, int]]:
+    """Yield variants from a component and all its nested sub-components."""
+    yield from _iter_container_variants(comp)
+    for sub in comp.components:
+        yield from _iter_component_variants(sub)
+
+
+def _iter_system_variants(sys: System) -> Iterator[tuple[str, int]]:
+    """Yield variants from a system and all its nested components, sub-systems, and users."""
+    yield from _iter_container_variants(sys)
+    for comp in sys.components:
+        yield from _iter_component_variants(comp)
+    for sub_sys in sys.systems:
+        yield from _iter_system_variants(sub_sys)
+    for user in sys.users:
+        yield from _iter_arch_entity_variants(user)

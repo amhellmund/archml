@@ -2084,3 +2084,80 @@ component Worker {
 }
 '''
         )
+
+
+# ###############
+# Reserved Variant Names
+# ###############
+
+
+class TestReservedVariantNames:
+    """Variant annotations using reserved names (all, baseline) are rejected."""
+
+    def test_all_on_component_is_rejected(self) -> None:
+        errors = _analyze("component<all> Foo { provides P }")
+        assert any("'all'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_baseline_on_component_is_rejected(self) -> None:
+        errors = _analyze("component<baseline> Foo { provides P }")
+        assert any("'baseline'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_all_on_system_is_rejected(self) -> None:
+        errors = _analyze("system<all> S { component C { provides P } }")
+        assert any("'all'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_baseline_on_system_is_rejected(self) -> None:
+        errors = _analyze("system<baseline> S { component C { provides P } }")
+        assert any("'baseline'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_all_on_nested_component_is_rejected(self) -> None:
+        errors = _analyze("system S { component<all> C { provides P } }")
+        assert any("'all'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_baseline_on_nested_component_is_rejected(self) -> None:
+        errors = _analyze("system S { component<baseline> C { provides P } }")
+        assert any("'baseline'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_all_on_connect_is_rejected(self) -> None:
+        errors = _analyze(
+            "system S {\n"
+            "  component A { provides P }\n"
+            "  component B { requires P }\n"
+            "  connect<all> A.P -> B.P\n"
+            "}"
+        )
+        assert any("'all'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_baseline_on_connect_is_rejected(self) -> None:
+        errors = _analyze(
+            "system S {\n"
+            "  component A { provides P }\n"
+            "  component B { requires P }\n"
+            "  connect<baseline> A.P -> B.P\n"
+            "}"
+        )
+        assert any("'baseline'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_all_on_provides_port_is_rejected(self) -> None:
+        errors = _analyze("component Foo { provides<all> P }")
+        assert any("'all'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_baseline_on_requires_port_is_rejected(self) -> None:
+        errors = _analyze("component Foo { requires<baseline> P }")
+        assert any("'baseline'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_user_defined_variant_name_is_allowed(self) -> None:
+        _assert_clean("component<cloud> Foo {}")
+
+    def test_multiple_reserved_names_produce_multiple_errors(self) -> None:
+        errors = _analyze("component<all> Foo { provides<baseline> P }")
+        reserved_errors = [e for e in errors if "reserved" in e.message]
+        assert len(reserved_errors) == 2
+
+    def test_all_on_interface_def_is_rejected(self) -> None:
+        errors = _analyze("interface<all> IFoo {}")
+        assert any("'all'" in e.message and "reserved" in e.message for e in errors)
+
+    def test_baseline_on_interface_def_is_rejected(self) -> None:
+        errors = _analyze("interface<baseline> IFoo {}")
+        assert any("'baseline'" in e.message and "reserved" in e.message for e in errors)
