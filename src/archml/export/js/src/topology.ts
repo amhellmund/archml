@@ -24,20 +24,41 @@ import { isBoundary } from "./types";
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/**
+ * Returns true when *entity* should be shown given *variantFilter*.
+ *   ""         → baseline only (entity.variants must be empty)
+ *   "name"     → baseline + entities that include "name" in their variant list
+ */
+function entityMatchesVariant(
+  entity: { variants?: string[] },
+  variantFilter: string,
+): boolean {
+  const evars = entity.variants ?? [];
+  if (variantFilter === "") return evars.length === 0;
+  return evars.length === 0 || evars.includes(variantFilter);
+}
+
 export function buildVizDiagram(
   entity: ComponentJson | SystemJson,
   depth: number | null = null,
   globalConnects: ConnectDefJson[] = [],
+  variantFilter: string = "",
 ): VizDiagram {
   const entityPath = entity.qualified_name || entity.name;
   const rootId = makeId(entityPath);
 
-  // Sub-entity map for connect/expose port lookups
+  // Sub-entity map for connect/expose port lookups (filtered by variant)
   const allSubEntityMap = new Map<string, ComponentJson | SystemJson | UserDefJson>();
-  for (const comp of entity.components) allSubEntityMap.set(comp.name, comp);
+  for (const comp of entity.components) {
+    if (entityMatchesVariant(comp, variantFilter)) allSubEntityMap.set(comp.name, comp);
+  }
   if (isSystem(entity)) {
-    for (const sys of entity.systems) allSubEntityMap.set(sys.name, sys);
-    for (const user of entity.users) allSubEntityMap.set(user.name, user);
+    for (const sys of entity.systems) {
+      if (entityMatchesVariant(sys, variantFilter)) allSubEntityMap.set(sys.name, sys);
+    }
+    for (const user of entity.users) {
+      allSubEntityMap.set(user.name, user);
+    }
   }
 
   // Child nodes
@@ -60,6 +81,7 @@ export function buildVizDiagram(
           child as ComponentJson | SystemJson,
           childPath,
           childRemaining,
+          variantFilter,
         );
         expandedBoundaryMap.set(childName, bnd);
         childExposeMaps.set(childName, exposeMap);
@@ -96,7 +118,7 @@ export function buildVizDiagram(
     kind: isSystem(entity) ? "system" : "component",
     entity_path: entityPath,
     description: entity.description,
-    tags: [...entity.tags],
+    tags: [...(entity.tags ?? [])],
     ports: rootPorts,
     children: allChildren,
   };
@@ -298,6 +320,7 @@ export function buildVizDiagram(
 export function buildVizDiagramAll(
   archFiles: Record<string, ArchFileJson>,
   depth: number | null = null,
+  variantFilter: string = "",
 ): VizDiagram {
   const rootId = "all";
   type ExpMap = ExposeMap;
@@ -313,10 +336,11 @@ export function buildVizDiagramAll(
 
   for (const archFile of Object.values(archFiles)) {
     for (const comp of archFile.components) {
+      if (!entityMatchesVariant(comp, variantFilter)) continue;
       const entityPath = comp.qualified_name || comp.name;
       allSubEntityMap.set(comp.name, comp);
       if (shouldExpandEntity(comp) && (depth === null || depth >= 1)) {
-        const [bnd, innerEdges, exposeMap] = buildRecursiveBoundary(comp, entityPath, entityDepth);
+        const [bnd, innerEdges, exposeMap] = buildRecursiveBoundary(comp, entityPath, entityDepth, variantFilter);
         expandedBoundaryMap.set(comp.name, bnd);
         expandedExposeMaps.set(comp.name, exposeMap);
         allInnerEdges = allInnerEdges.concat(innerEdges);
@@ -325,10 +349,11 @@ export function buildVizDiagramAll(
       }
     }
     for (const sys of archFile.systems) {
+      if (!entityMatchesVariant(sys, variantFilter)) continue;
       const entityPath = sys.qualified_name || sys.name;
       allSubEntityMap.set(sys.name, sys);
       if (shouldExpandEntity(sys) && (depth === null || depth >= 1)) {
-        const [bnd, innerEdges, exposeMap] = buildRecursiveBoundary(sys, entityPath, entityDepth);
+        const [bnd, innerEdges, exposeMap] = buildRecursiveBoundary(sys, entityPath, entityDepth, variantFilter);
         expandedBoundaryMap.set(sys.name, bnd);
         expandedExposeMaps.set(sys.name, exposeMap);
         allInnerEdges = allInnerEdges.concat(innerEdges);
@@ -466,7 +491,7 @@ function makeChildNode(
     kind,
     entity_path: entityPath,
     description: entity.description,
-    tags: [...entity.tags],
+    tags: [...(entity.tags ?? [])],
     ports: makePorts(nodeId, entity),
   };
 }
@@ -844,12 +869,18 @@ function buildRecursiveBoundary(
   entity: ComponentJson | SystemJson,
   entityPath: string,
   remainingDepth: number | null = null,
+  variantFilter: string = "",
 ): [VizBoundary, VizEdge[], ExposeMap] {
   const rootId = makeId(entityPath);
 
-  const childEntities: (ComponentJson | SystemJson | UserDefJson)[] = [...entity.components];
+  const childEntities: (ComponentJson | SystemJson | UserDefJson)[] = entity.components.filter(
+    (c) => entityMatchesVariant(c, variantFilter),
+  );
   if (isSystem(entity)) {
-    childEntities.push(...entity.systems, ...entity.users);
+    childEntities.push(
+      ...entity.systems.filter((s) => entityMatchesVariant(s, variantFilter)),
+      ...entity.users,
+    );
   }
 
   const subEntityMap = new Map<string, ComponentJson | SystemJson | UserDefJson>();
@@ -871,6 +902,7 @@ function buildRecursiveBoundary(
         child as ComponentJson | SystemJson,
         childPath,
         nextDepth,
+        variantFilter,
       );
       childBoundaryMap.set(child.name, childBnd);
       childExposeMaps.set(child.name, childExposeMap);
@@ -900,7 +932,7 @@ function buildRecursiveBoundary(
     kind: isSystem(entity) ? "system" : ("component" as BoundaryKind),
     entity_path: entityPath,
     description: entity.description,
-    tags: [...entity.tags],
+    tags: [...(entity.tags ?? [])],
     ports: makePorts(rootId, entity),
     children: allChildren,
   };

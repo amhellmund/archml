@@ -21,6 +21,51 @@ import type {
 import { buildVizDiagram, buildVizDiagramAll } from "./topology";
 import { computeLayout } from "./layout";
 import { renderToSvgString } from "./renderer";
+import "highlight.js/styles/github.css";
+import hljs from "highlight.js/lib/core";
+import hljsBash from "highlight.js/lib/languages/bash";
+import hljsC from "highlight.js/lib/languages/c";
+import hljsCpp from "highlight.js/lib/languages/cpp";
+import hljsCss from "highlight.js/lib/languages/css";
+import hljsGo from "highlight.js/lib/languages/go";
+import hljsJava from "highlight.js/lib/languages/java";
+import hljsJs from "highlight.js/lib/languages/javascript";
+import hljsJson from "highlight.js/lib/languages/json";
+import hljsKotlin from "highlight.js/lib/languages/kotlin";
+import hljsMarkdown from "highlight.js/lib/languages/markdown";
+import hljsPython from "highlight.js/lib/languages/python";
+import hljsRust from "highlight.js/lib/languages/rust";
+import hljsScala from "highlight.js/lib/languages/scala";
+import hljsShell from "highlight.js/lib/languages/shell";
+import hljsSql from "highlight.js/lib/languages/sql";
+import hljsTs from "highlight.js/lib/languages/typescript";
+import hljsXml from "highlight.js/lib/languages/xml";
+import hljsYaml from "highlight.js/lib/languages/yaml";
+
+hljs.registerLanguage("bash", hljsBash);
+hljs.registerLanguage("c", hljsC);
+hljs.registerLanguage("cpp", hljsCpp);
+hljs.registerLanguage("css", hljsCss);
+hljs.registerLanguage("go", hljsGo);
+hljs.registerLanguage("java", hljsJava);
+hljs.registerLanguage("javascript", hljsJs);
+hljs.registerLanguage("js", hljsJs);
+hljs.registerLanguage("json", hljsJson);
+hljs.registerLanguage("kotlin", hljsKotlin);
+hljs.registerLanguage("markdown", hljsMarkdown);
+hljs.registerLanguage("python", hljsPython);
+hljs.registerLanguage("py", hljsPython);
+hljs.registerLanguage("rust", hljsRust);
+hljs.registerLanguage("scala", hljsScala);
+hljs.registerLanguage("shell", hljsShell);
+hljs.registerLanguage("sh", hljsBash);
+hljs.registerLanguage("sql", hljsSql);
+hljs.registerLanguage("typescript", hljsTs);
+hljs.registerLanguage("ts", hljsTs);
+hljs.registerLanguage("xml", hljsXml);
+hljs.registerLanguage("html", hljsXml);
+hljs.registerLanguage("yaml", hljsYaml);
+hljs.registerLanguage("yml", hljsYaml);
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -39,7 +84,6 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
   const entitySelectWrap = container.querySelector<HTMLElement>("#archml-entity-select-wrap")!;
   const depthSelect = container.querySelector<HTMLSelectElement>("#archml-depth-select")!;
   const variantSelect = container.querySelector<HTMLSelectElement>("#archml-variant-select")!;
-  const variantRow = container.querySelector<HTMLElement>("#archml-variant-row")!;
   const errorBanner = container.querySelector<HTMLElement>(".archml-error-banner")!;
   const loadingEl = container.querySelector<HTMLElement>(".archml-loading")!;
 
@@ -57,32 +101,35 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
     const rightSidebar = container.querySelector<HTMLElement>(".archml-sidebar-right");
     expandBtn?.addEventListener("click", () => {
       const expanded = rightSidebar!.classList.toggle("archml-sidebar-right--expanded");
-      expandBtn.textContent = expanded ? "⟨⟨" : "⟩⟩";
+      const svg = expandBtn.querySelector("svg");
+      if (svg) {
+        svg.innerHTML = expanded
+          ? `<polyline points="5,1 1,1 1,5"/><polyline points="11,1 15,1 15,5"/><polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/><line x1="1" y1="1" x2="6" y2="6"/><line x1="15" y1="1" x2="10" y2="6"/><line x1="15" y1="15" x2="10" y2="10"/><line x1="1" y1="15" x2="6" y2="10"/>`
+          : `<polyline points="1,5 1,1 5,1"/><polyline points="11,1 15,1 15,5"/><polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/>`;
+      }
       expandBtn.title = expanded ? "Collapse sidebar" : "Expand sidebar";
     });
   }
 
-  // Populate variant dropdown; hide row if no variants exist
+  // Populate variant dropdown (named variants shown in italic)
   const allVariants = collectAllVariants(payload.files);
   for (const v of allVariants) {
     const opt = document.createElement("option");
     opt.value = v;
     opt.textContent = v;
+    opt.style.fontStyle = "italic";
     variantSelect.appendChild(opt);
   }
-  if (allVariants.length === 0) {
-    variantRow.style.display = "none";
-  }
 
-  // Build custom entity dropdown
-  const customEntitySelect = buildCustomEntitySelect(entitySelectWrap, payload.entities, () => {
+  // Build custom entity dropdown (pre-filtered to baseline on init)
+  const initialEntities = filterEntitiesByVariant(payload.entities, payload.files, variantSelect.value);
+  const customEntitySelect = buildCustomEntitySelect(entitySelectWrap, initialEntities, () => {
     void renderDiagram();
   });
 
   // Variant change → re-filter entity list and re-render
   variantSelect.addEventListener("change", () => {
-    const variant = variantSelect.value || null;
-    const filtered = filterEntitiesByVariant(payload.entities, payload.files, variant);
+    const filtered = filterEntitiesByVariant(payload.entities, payload.files, variantSelect.value);
     customEntitySelect.setEntities(filtered);
     void renderDiagram();
   });
@@ -95,8 +142,17 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
     canvasTransform.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
   }
 
-  function resetTransform(): void {
-    tx = 0; ty = 0; scale = 1.0;
+  function fitTransform(): void {
+    const svgEl = canvasTransform.querySelector("svg");
+    if (!svgEl) { tx = 0; ty = 0; scale = 1.0; applyTransform(); return; }
+    const svgW = svgEl.getAttribute("width") ? parseFloat(svgEl.getAttribute("width")!) : svgEl.viewBox.baseVal.width;
+    const svgH = svgEl.getAttribute("height") ? parseFloat(svgEl.getAttribute("height")!) : svgEl.viewBox.baseVal.height;
+    if (!svgW || !svgH) { tx = 0; ty = 0; scale = 1.0; applyTransform(); return; }
+    const { width: cw, height: ch } = canvasArea.getBoundingClientRect();
+    const padding = 32;
+    scale = Math.min((cw - padding * 2) / svgW, (ch - padding * 2) / svgH, 1.5);
+    tx = (cw - svgW * scale) / 2;
+    ty = (ch - svgH * scale) / 2;
     applyTransform();
   }
 
@@ -155,11 +211,13 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
     const depthValue = depthSelect.value;
     const depth: number | null = depthValue === "full" ? null : parseInt(depthValue, 10);
 
+    const variantFilter = variantSelect.value;
+
     try {
       let diagram: VizDiagram;
       if (entityValue === "all") {
         currentEntity = null;
-        diagram = buildVizDiagramAll(payload.files, depth);
+        diagram = buildVizDiagramAll(payload.files, depth, variantFilter);
       } else {
         const entity = findEntity(payload.files, entityValue);
         if (!entity) {
@@ -169,13 +227,13 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
           return;
         }
         currentEntity = entity;
-        diagram = buildVizDiagram(entity, depth, collectParentConnects(payload.files, entity));
+        diagram = buildVizDiagram(entity, depth, collectParentConnects(payload.files, entity), variantFilter);
       }
 
       const plan: LayoutPlan = await computeLayout(diagram);
       const svg = renderToSvgString(diagram, plan);
       canvasTransform.innerHTML = svg;
-      resetTransform();
+      fitTransform();
     } catch (err) {
       errorBanner.textContent = `Render error: ${String(err)}`;
       errorBanner.style.display = "block";
@@ -263,10 +321,10 @@ function buildViewerShell(widthOptimized: boolean): string {
       <div class="archml-body">
         <div class="archml-sidebar-combined">
           <div class="archml-sidebar-controls">
-            <div id="archml-variant-row">
+            <div>
               <label for="archml-variant-select">Variant</label>
               <select id="archml-variant-select">
-                <option value="">All variants</option>
+                <option value="">Baseline</option>
               </select>
             </div>
             <div>
@@ -296,38 +354,49 @@ function buildViewerShell(widthOptimized: boolean): string {
     `.trim();
   }
   return `
-    <div class="archml-sidebar-left">
-      <div id="archml-variant-row">
-        <label for="archml-variant-select">Variant</label>
-        <select id="archml-variant-select">
-          <option value="">All variants</option>
-        </select>
-      </div>
-      <div>
-        <label>Entity</label>
-        <div id="archml-entity-select-wrap"></div>
-      </div>
-      <div>
-        <label for="archml-depth-select">Depth</label>
-        <select id="archml-depth-select">
-          <option value="full">Full depth</option>
-          <option value="0">0 – root only</option>
-          <option value="1">1 – children</option>
-          <option value="2">2 – grand children</option>
-        </select>
-      </div>
-      <div class="archml-error-banner" style="display:none"></div>
+    <div class="archml-topbar">
+      <span class="archml-topbar-title">ArchML Explorer</span>
     </div>
-    <div class="archml-canvas-area">
-      <div class="archml-canvas-transform"></div>
-      <div class="archml-loading">Loading…</div>
-    </div>
-    <div class="archml-sidebar-right">
-      <div class="archml-sidebar-right-header">
-        <button class="archml-sidebar-expand-btn" id="archml-sidebar-expand-btn" type="button" title="Expand sidebar">⟩⟩</button>
+    <div class="archml-body">
+      <div class="archml-sidebar-left">
+        <div>
+          <label for="archml-variant-select">Variant</label>
+          <select id="archml-variant-select">
+            <option value="">All variants</option>
+          </select>
+        </div>
+        <div>
+          <label>Entity</label>
+          <div id="archml-entity-select-wrap"></div>
+        </div>
+        <div>
+          <label for="archml-depth-select">Depth</label>
+          <select id="archml-depth-select">
+            <option value="full">Full depth</option>
+            <option value="0">0 – root only</option>
+            <option value="1">1 – children</option>
+            <option value="2">2 – grand children</option>
+          </select>
+        </div>
+        <div class="archml-error-banner" style="display:none"></div>
       </div>
-      <div class="archml-sidebar-right-body">
-        <p class="archml-detail-empty">Click an entity to see details.</p>
+      <div class="archml-canvas-area">
+        <div class="archml-canvas-transform"></div>
+        <div class="archml-loading">Loading…</div>
+      </div>
+      <div class="archml-sidebar-right">
+        <div class="archml-sidebar-right-header">
+          <span class="archml-sidebar-right-title">Details</span>
+          <button class="archml-sidebar-expand-btn" id="archml-sidebar-expand-btn" type="button" title="Expand sidebar">
+            <svg class="archml-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1,5 1,1 5,1"/><polyline points="11,1 15,1 15,5"/>
+              <polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/>
+            </svg>
+          </button>
+        </div>
+        <div class="archml-sidebar-right-body">
+          <p class="archml-detail-empty">Click an entity to see details.</p>
+        </div>
       </div>
     </div>
   `.trim();
@@ -521,9 +590,8 @@ function showEntityDetails(
   }
 
   const entity = findEntity(payload.files, entityPath);
-  const title = entity?.title ?? entityPath.split("::").pop() ?? entityPath;
+  const name = entityPath.split("::").pop() ?? entityPath;
   const description = entity?.description ?? null;
-  const tags: string[] = entity?.tags ?? [];
   const requires = entity?.requires ?? [];
   const provides = entity?.provides ?? [];
   const kindLabel = entityKind.replace(/_/g, " ");
@@ -531,15 +599,12 @@ function showEntityDetails(
   const variants: string[] = entity?.variants ?? [];
 
   let html = `
-    <h3 class="archml-detail-title">${escText(title)}</h3>
+    <h3 class="archml-detail-title">${escText(name)}</h3>
     <div class="archml-detail-kind">${escText(kindLabel)}</div>
   `;
 
-  {
-    let generalBody = "";
-    if (description) generalBody += `<div class="archml-detail-description">${renderMarkdown(description)}</div>`;
-    if (tags.length > 0) generalBody += `<div class="archml-detail-tags">${tags.map((t) => `<span class="archml-detail-pill">${escText(t)}</span>`).join("")}</div>`;
-    if (generalBody) html += detailsSection("general", generalBody);
+  if (description) {
+    html += detailsSection("Description", `<div class="archml-detail-description">${renderMarkdown(description)}</div>`);
   }
 
   {
@@ -692,15 +757,12 @@ function showInterfaceDetails(
 
   const label = def.version ? `${def.name}@${def.version}` : def.name;
   let html = `
-    <h3 class="archml-detail-title">${escText(def.title ?? def.name)}</h3>
+    <h3 class="archml-detail-title">${escText(def.name)}</h3>
     <div class="archml-detail-kind">interface</div>
   `;
 
-  {
-    let generalBody = "";
-    if (def.description) generalBody += `<div class="archml-detail-description">${renderMarkdown(def.description)}</div>`;
-    if (def.tags.length > 0) generalBody += `<div class="archml-detail-tags">${def.tags.map((t) => `<span class="archml-detail-pill">${escText(t)}</span>`).join("")}</div>`;
-    if (generalBody) html += detailsSection("general", generalBody);
+  if (def.description) {
+    html += detailsSection("Description", `<div class="archml-detail-description">${renderMarkdown(def.description)}</div>`);
   }
 
   {
@@ -863,34 +925,103 @@ function _collectVariantsFromComponent(comp: ComponentJson, variants: Set<string
 function filterEntitiesByVariant(
   entities: EntityEntry[],
   files: Record<string, ArchFileJson>,
-  variant: string | null,
+  variantFilter: string,
 ): EntityEntry[] {
-  if (!variant) return entities;
   return entities.filter((e) => {
     const entity = findEntity(files, e.qualified_name);
     if (!entity) return true;
     const evars = entity.variants ?? [];
-    return evars.length === 0 || evars.includes(variant);
+    if (variantFilter === "") return evars.length === 0;
+    return evars.length === 0 || evars.includes(variantFilter);
   });
 }
 
 // ─── Markdown renderer ────────────────────────────────────────────────────────
 
 /**
- * Convert a Markdown string to safe HTML. Handles paragraphs, bold, italic,
- * inline code, and https/http links. All HTML special characters in user
- * content are escaped before any markdown expansion, preventing XSS.
+ * Convert a Markdown string to safe HTML. Handles headings (#–###), fenced
+ * code blocks (``` or ~~~), paragraphs, bold, italic, inline code, and
+ * https/http links. Processes line-by-line so headings don't need blank-line
+ * separation. All user content is HTML-escaped before expansion.
  */
 function renderMarkdown(md: string): string {
-  const paragraphs = md.split(/\n{2,}/);
-  return paragraphs
-    .map((para) => {
-      const trimmed = para.trim();
-      if (!trimmed) return "";
-      return `<p>${_renderInline(trimmed.replace(/\n/g, " "))}</p>`;
-    })
-    .filter(Boolean)
-    .join("\n");
+  // Dedent: find the minimum indentation of non-blank lines and strip it.
+  const rawLines = md.split("\n");
+  const minIndent = rawLines
+    .filter((l) => l.trim().length > 0)
+    .reduce((min, l) => Math.min(min, l.match(/^(\s*)/)?.[1].length ?? 0), Infinity);
+  const indent = isFinite(minIndent) ? minIndent : 0;
+  const lines = rawLines.map((l) => l.slice(indent));
+
+  const out: string[] = [];
+  let paraLines: string[] = [];
+  let inFence = false;
+  let fenceLang = "";
+  let fenceLines: string[] = [];
+
+  function flushPara(): void {
+    if (paraLines.length === 0) return;
+    out.push(`<p>${_renderInline(paraLines.join(" "))}</p>`);
+    paraLines = [];
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Fenced code block toggle (``` or ~~~)
+    if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+      if (!inFence) {
+        flushPara();
+        inFence = true;
+        fenceLang = trimmed.slice(3).trim().toLowerCase();
+        fenceLines = [];
+      } else {
+        // Dedent code lines by their own common indent.
+        const codeIndent = fenceLines
+          .filter((l) => l.trim().length > 0)
+          .reduce((min, l) => Math.min(min, l.match(/^(\s*)/)?.[1].length ?? 0), Infinity);
+        const ci = isFinite(codeIndent) ? codeIndent : 0;
+        const dedented = fenceLines.map((l) => l.slice(ci)).join("\n");
+
+        let highlighted: string;
+        if (fenceLang && hljs.getLanguage(fenceLang)) {
+          highlighted = hljs.highlight(dedented, { language: fenceLang }).value;
+        } else {
+          highlighted = dedented.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+        const langAttr = fenceLang ? ` class="language-${fenceLang}"` : "";
+        out.push(`<pre class="archml-md-pre"><code${langAttr}>${highlighted}</code></pre>`);
+        inFence = false;
+        fenceLang = "";
+        fenceLines = [];
+      }
+      continue;
+    }
+    if (inFence) {
+      fenceLines.push(line);
+      continue;
+    }
+
+    // Headings
+    const hm = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (hm) {
+      flushPara();
+      const level = hm[1].length;
+      out.push(`<h${level} class="archml-md-h${level}">${_renderInline(hm[2])}</h${level}>`);
+      continue;
+    }
+
+    // Blank line → flush paragraph
+    if (trimmed === "") {
+      flushPara();
+      continue;
+    }
+
+    paraLines.push(trimmed);
+  }
+
+  flushPara();
+  return out.join("\n");
 }
 
 function _renderInline(text: string): string {

@@ -1902,8 +1902,8 @@ component Worker {
 '''
         )
 
-    def test_fenced_code_block_in_description_is_rejected(self) -> None:
-        _assert_error(
+    def test_fenced_code_block_in_description_is_allowed(self) -> None:
+        _assert_clean(
             '''
 component Worker {
     """Example:
@@ -1912,12 +1912,11 @@ component Worker {
     ```
     """
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
-    def test_tilde_fenced_block_in_description_is_rejected(self) -> None:
-        _assert_error(
+    def test_tilde_fenced_block_in_description_is_allowed(self) -> None:
+        _assert_clean(
             '''
 component Worker {
     """Example:
@@ -1926,8 +1925,7 @@ component Worker {
     ~~~
     """
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_inline_code_in_description_is_valid(self) -> None:
@@ -1940,126 +1938,133 @@ component Worker {
         )
 
     def test_fence_on_system(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 system MySystem {
     """Start:
     ```
+    some code
+    ```
     """
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_fence_on_enum(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 enum Status {
     """Docs:
     ```
     Active
+    ```
     """
     Active
     Inactive
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_fence_on_type(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 type Payload {
     """Schema:
     ```
+    id: Int
+    ```
     """
     id: Int
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_fence_on_interface(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 interface Signal {
     """Wire format:
     ```
+    bytes
+    ```
     """
     value: Int
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_fence_on_artifact(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 artifact Report {
     """Binary layout:
     ```
     header: 4 bytes
+    ```
     """
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_fence_on_user(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 interface OrderAPI { id: Int }
 user Customer {
     """Usage:
     ```
+    example
+    ```
     """
     requires OrderAPI
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_fence_on_nested_component(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 component Outer {
     component Inner {
         """Docs:
         ```
+        example
+        ```
         """
     }
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_fence_on_nested_system(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 system Outer {
     system Inner {
         """Docs:
         ```
+        example
+        ```
         """
     }
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_fence_on_inline_interface(self) -> None:
-        _assert_error(
+        _assert_clean(
             '''
 component Worker {
     interface Local {
         """Docs:
         ```
+        example
+        ```
         """
         value: Int
     }
 }
-''',
-            "fenced code blocks are not allowed",
+'''
         )
 
     def test_no_description_produces_no_error(self) -> None:

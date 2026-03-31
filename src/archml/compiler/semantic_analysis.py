@@ -953,22 +953,11 @@ def _check_port_names(
 
 
 def _validate_markdown(text: str, filename: str | None, line: int | None) -> list[SemanticError]:
-    """Check that *text* is valid prose markdown.
+    """Check that *text* is valid markdown.
 
-    Descriptions must contain only prose markdown (headings, bold, italic,
-    lists, links, etc.).  Fenced code blocks (lines starting with ````` ``` `````
-    or ``~~~``) are not allowed; use inline code (single backticks) instead.
+    Descriptions support full markdown including headings, bold, italic,
+    inline code, fenced code blocks (``` or ~~~), and links.
     """
-    for source_line in text.splitlines():
-        stripped = source_line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            return [
-                SemanticError(
-                    message="description must be prose markdown; fenced code blocks are not allowed",
-                    filename=filename,
-                    line=line,
-                )
-            ]
     return []
 
 

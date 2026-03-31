@@ -261,6 +261,8 @@ function walkBoundaryInfo(
       } else if (child.kind === "channel" && child.label) {
         // interface name is in title (falls back to channel name), channel name is label
         result.set(child.id, [child.title ?? child.label, child.kind, child.label]);
+      } else if ((child.kind === "terminal" || child.kind === "interface") && child.label) {
+        result.set(child.id, [child.label, child.kind, child.title]);
       }
     }
   }

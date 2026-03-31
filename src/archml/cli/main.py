@@ -154,6 +154,13 @@ def main() -> None:
 _DEFAULT_BUILD_DIR = ".archml-build"
 
 
+def _print_errors(errors: list[str]) -> None:
+    """Print compilation errors in the standard format."""
+    print(f"Errors detected during compilation ({len(errors)}):", file=sys.stderr)
+    for error in errors:
+        print(error, file=sys.stderr)
+
+
 def _template_path() -> Path:
     """Return the path to the bundled viewer HTML template."""
     return Path(__file__).parent.parent / "static" / "archml-viewer-template.html"
@@ -282,19 +289,18 @@ def _cmd_check(args: argparse.Namespace) -> int:
     try:
         compiled = compile_files(archml_files, build_dir, source_import_map)
     except CompilerError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        _print_errors(str(exc).splitlines())
         return 1
 
-    has_errors = False
+    all_errors: list[str] = []
     for arch_file in compiled.values():
         result = validate(arch_file)
         for warning in result.warnings:
             print(f"Warning: {warning.message}")
-        for error in result.errors:
-            print(f"Error: {error.message}", file=sys.stderr)
-            has_errors = True
+        all_errors.extend(error.message for error in result.errors)
 
-    if has_errors:
+    if all_errors:
+        _print_errors(all_errors)
         return 1
 
     print("No issues found.")
@@ -344,7 +350,7 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
     try:
         compiled = compile_files(archml_files, build_dir, source_import_map)
     except CompilerError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        _print_errors(str(exc).splitlines())
         return 1
 
     output_path = Path(args.output)
@@ -425,7 +431,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
     try:
         compiled = compile_files(archml_files, build_dir, source_import_map)
     except CompilerError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        _print_errors(str(exc).splitlines())
         return 1
 
     payload_json = build_viewer_payload(compiled, width_optimized=args.width_optimized)
