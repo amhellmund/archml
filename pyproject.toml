@@ -1,6 +1,6 @@
 [project]
 name = "archml"
-version = "0.2.1"
+version = "0.2.2"
 description = "A text-based DSL for defining software architecture alongside code"
 readme = "README.md"
 license = { file = "LICENSE" }
