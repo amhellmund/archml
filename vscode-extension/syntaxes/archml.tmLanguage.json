@@ -1,0 +1,103 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ArchML",
+  "scopeName": "source.archml",
+  "fileTypes": ["archml"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#description" },
+    { "include": "#attribute" },
+    { "include": "#entity-keyword" },
+    { "include": "#control-keyword" },
+    { "include": "#builtin-type" },
+    { "include": "#variant" },
+    { "include": "#generic-type" },
+    { "include": "#channel" },
+    { "include": "#arrow" },
+    { "include": "#port-ref" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.archml",
+      "match": "#.*$"
+    },
+
+    "description": {
+      "name": "string.quoted.triple.archml",
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.archml" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.archml" }
+      },
+      "patterns": [
+        {
+          "comment": "Markdown code fence inside description",
+          "name": "markup.raw.block.archml",
+          "match": "```[\\s\\S]*?```"
+        }
+      ]
+    },
+
+    "attribute": {
+      "match": "(@[a-zA-Z_][a-zA-Z0-9_-]*)(\\s*:\\s*.+)?$",
+      "captures": {
+        "1": { "name": "entity.other.attribute-name.archml" },
+        "2": { "name": "constant.other.attribute-value.archml" }
+      }
+    },
+
+    "entity-keyword": {
+      "comment": "Entity declaration keywords, optionally preceded by 'external'",
+      "match": "\\b(external\\s+)?(component|system|user|artifact|type|interface|enum)\\b",
+      "captures": {
+        "1": { "name": "storage.modifier.archml" },
+        "2": { "name": "storage.type.archml" }
+      }
+    },
+
+    "control-keyword": {
+      "name": "keyword.control.archml",
+      "match": "\\b(requires|provides|connect|expose|use|as)\\b"
+    },
+
+    "builtin-type": {
+      "name": "support.type.primitive.archml",
+      "match": "\\b(String|Int|Float|Bool|Bytes|Timestamp|Datetime|List|Map|Optional)\\b"
+    },
+
+    "variant": {
+      "comment": "Lowercase variant modifier: system<variant>",
+      "name": "storage.modifier.variant.archml",
+      "match": "<[a-z][a-zA-Z0-9_]*>"
+    },
+
+    "generic-type": {
+      "comment": "Generic type parameters: List<String>, Map<K, V>",
+      "name": "support.type.generic.archml",
+      "match": "<[A-Z][a-zA-Z0-9]*(?:\\s*,\\s*[A-Z][a-zA-Z0-9]*)*>"
+    },
+
+    "channel": {
+      "name": "variable.other.channel.archml",
+      "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*"
+    },
+
+    "arrow": {
+      "name": "keyword.operator.arrow.archml",
+      "match": "->"
+    },
+
+    "port-ref": {
+      "comment": "Dotted port reference: Entity.port_name",
+      "match": "\\b([A-Za-z_][a-zA-Z0-9_-]*)(\\.)([a-zA-Z_][a-zA-Z0-9_-]*)\\b",
+      "captures": {
+        "1": { "name": "entity.name.type.archml" },
+        "2": { "name": "punctuation.accessor.archml" },
+        "3": { "name": "entity.name.function.archml" }
+      }
+    }
+  }
+}

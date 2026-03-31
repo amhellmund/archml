@@ -1,0 +1,52 @@
+{
+  "name": "archml",
+  "displayName": "ArchML",
+  "description": "Language support for ArchML architecture files",
+  "repository": "https://github.com/amhellmund/archml",
+  "license": "Apache-2.0",
+  "version": "0.2.0",
+  "publisher": "archml",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:archml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "archml",
+        "aliases": [
+          "ArchML",
+          "archml"
+        ],
+        "extensions": [
+          ".archml"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "archml",
+        "scopeName": "source.archml",
+        "path": "./syntaxes/archml.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@vscode/vsce": "^3.7.1"
+  }
+}

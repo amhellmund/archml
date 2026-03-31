@@ -2,7 +2,6 @@
 src/archml/static/archml-viewer.js
 src/archml/static/archml-viewer-template.html
 src/archml/static/archml-diagram.css
-src/archml/export/js/node_modules
 src/archml/static/index.html
 
 # Byte-compiled / optimized / DLL files

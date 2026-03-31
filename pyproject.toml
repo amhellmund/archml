@@ -4,12 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "archml"
-version = "0.1.0"
+version = "0.2.0"
 description = "A text-based DSL for defining software architecture alongside code"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = ["pydantic>=2.0", "pyyaml>=6.0"]
+
+[project.urls]
+Repository = "https://github.com/amhellmund/archml"
 
 [project.scripts]
 archml = "archml.cli.main:main"
