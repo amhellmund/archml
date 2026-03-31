@@ -121,7 +121,7 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
     variantSelect.appendChild(opt);
   }
 
-  // Build custom entity dropdown (pre-filtered to baseline on init)
+  // Build custom entity dropdown (initially showing all variants)
   const initialEntities = filterEntitiesByVariant(payload.entities, payload.files, variantSelect.value);
   const customEntitySelect = buildCustomEntitySelect(entitySelectWrap, initialEntities, () => {
     void renderDiagram();
@@ -324,6 +324,7 @@ function buildViewerShell(widthOptimized: boolean): string {
             <div>
               <label for="archml-variant-select">Variant</label>
               <select id="archml-variant-select">
+                <option value="*">All Variants</option>
                 <option value="">Baseline</option>
               </select>
             </div>
@@ -362,7 +363,8 @@ function buildViewerShell(widthOptimized: boolean): string {
         <div>
           <label for="archml-variant-select">Variant</label>
           <select id="archml-variant-select">
-            <option value="">All variants</option>
+            <option value="*">All Variants</option>
+            <option value="">Baseline</option>
           </select>
         </div>
         <div>
@@ -927,6 +929,7 @@ function filterEntitiesByVariant(
   files: Record<string, ArchFileJson>,
   variantFilter: string,
 ): EntityEntry[] {
+  if (variantFilter === "*") return entities;
   return entities.filter((e) => {
     const entity = findEntity(files, e.qualified_name);
     if (!entity) return true;

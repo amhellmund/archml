@@ -26,6 +26,7 @@ import { isBoundary } from "./types";
 
 /**
  * Returns true when *entity* should be shown given *variantFilter*.
+ *   "*"        → all entities (no filtering)
  *   ""         → baseline only (entity.variants must be empty)
  *   "name"     → baseline + entities that include "name" in their variant list
  */
@@ -33,9 +34,49 @@ function entityMatchesVariant(
   entity: { variants?: string[] },
   variantFilter: string,
 ): boolean {
+  if (variantFilter === "*") return true;
   const evars = entity.variants ?? [];
   if (variantFilter === "") return evars.length === 0;
   return evars.length === 0 || evars.includes(variantFilter);
+}
+
+function connectMatchesVariant(conn: ConnectDefJson, variantFilter: string): boolean {
+  if (variantFilter === "*") return true;
+  const cvars = conn.variants;
+  if (variantFilter === "") return cvars.length === 0;
+  return cvars.length === 0 || cvars.includes(variantFilter);
+}
+
+/**
+ * Transitively prune entities that are not on a fully connected path.
+ * An entity is removed when it appears in a variant-active connect but the
+ * other side of that connect is absent from the current entity set.  Removal
+ * is repeated until no further entities need to be dropped.
+ */
+function pruneEntitiesForVariant(
+  entityNames: Set<string>,
+  connects: ConnectDefJson[],
+  variantFilter: string,
+): Set<string> {
+  const activeConnects = connects.filter((c) => connectMatchesVariant(c, variantFilter));
+  const result = new Set(entityNames);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const conn of activeConnects) {
+      if (!conn.src_entity || !conn.dst_entity) continue;
+      const srcIn = result.has(conn.src_entity);
+      const dstIn = result.has(conn.dst_entity);
+      if (srcIn && !dstIn) {
+        result.delete(conn.src_entity);
+        changed = true;
+      } else if (dstIn && !srcIn) {
+        result.delete(conn.dst_entity);
+        changed = true;
+      }
+    }
+  }
+  return result;
 }
 
 export function buildVizDiagram(
@@ -58,6 +99,22 @@ export function buildVizDiagram(
     }
     for (const user of entity.users) {
       allSubEntityMap.set(user.name, user);
+    }
+  }
+
+  // Filter connects to only those active for the selected variant
+  const activeConnects = variantFilter !== "*"
+    ? entity.connects.filter((c) => connectMatchesVariant(c, variantFilter))
+    : entity.connects;
+  const activeGlobalConnects = variantFilter !== "*"
+    ? globalConnects.filter((c) => connectMatchesVariant(c, variantFilter))
+    : globalConnects;
+
+  // Prune entities not on a fully connected path for the selected variant
+  if (variantFilter !== "*") {
+    const prunedNames = pruneEntitiesForVariant(new Set(allSubEntityMap.keys()), activeConnects, variantFilter);
+    for (const name of [...allSubEntityMap.keys()]) {
+      if (!prunedNames.has(name)) allSubEntityMap.delete(name);
     }
   }
 
@@ -96,7 +153,7 @@ export function buildVizDiagram(
   const channelNodeMap =
     depth !== 0
       ? collectChannelNodesResolve(
-          entity.connects,
+          activeConnects,
           rootId,
           allSubEntityMap,
           opaquChildMap,
@@ -125,7 +182,7 @@ export function buildVizDiagram(
 
   // Peripheral nodes (terminal interface anchors)
   const peripheralNodes: VizNode[] = [];
-  const extConnects = globalConnects;
+  const extConnects = activeGlobalConnects;
   for (const ref of entity.requires) {
     const ch = findChannelForPort(entity.name, "requires", ref.name, extConnects);
     peripheralNodes.push(makeTerminalNode(ref, "requires", "terminal", ch));
@@ -167,7 +224,7 @@ export function buildVizDiagram(
   for (const edge of allInnerEdges) addEdge(edge);
 
   if (depth !== 0) {
-    for (const conn of entity.connects) {
+    for (const conn of activeConnects) {
       for (const edge of buildEdgesFromConnectResolve(
         conn,
         opaquChildMap,
@@ -334,42 +391,53 @@ export function buildVizDiagramAll(
 
   const entityDepth = depth === null ? null : Math.max(depth - 1, 0);
 
+  // Pass 1: collect all variant-matching entities and connects
   for (const archFile of Object.values(archFiles)) {
     for (const comp of archFile.components) {
-      if (!entityMatchesVariant(comp, variantFilter)) continue;
-      const entityPath = comp.qualified_name || comp.name;
-      allSubEntityMap.set(comp.name, comp);
-      if (shouldExpandEntity(comp) && (depth === null || depth >= 1)) {
-        const [bnd, innerEdges, exposeMap] = buildRecursiveBoundary(comp, entityPath, entityDepth, variantFilter);
-        expandedBoundaryMap.set(comp.name, bnd);
-        expandedExposeMaps.set(comp.name, exposeMap);
-        allInnerEdges = allInnerEdges.concat(innerEdges);
-      } else {
-        opaquNodeMap.set(comp.name, makeChildNode(comp, entityPath));
-      }
+      if (entityMatchesVariant(comp, variantFilter)) allSubEntityMap.set(comp.name, comp);
     }
     for (const sys of archFile.systems) {
-      if (!entityMatchesVariant(sys, variantFilter)) continue;
-      const entityPath = sys.qualified_name || sys.name;
-      allSubEntityMap.set(sys.name, sys);
-      if (shouldExpandEntity(sys) && (depth === null || depth >= 1)) {
-        const [bnd, innerEdges, exposeMap] = buildRecursiveBoundary(sys, entityPath, entityDepth, variantFilter);
-        expandedBoundaryMap.set(sys.name, bnd);
-        expandedExposeMaps.set(sys.name, exposeMap);
-        allInnerEdges = allInnerEdges.concat(innerEdges);
-      } else {
-        opaquNodeMap.set(sys.name, makeChildNode(sys, entityPath));
-      }
+      if (entityMatchesVariant(sys, variantFilter)) allSubEntityMap.set(sys.name, sys);
     }
     for (const user of archFile.users) {
-      const entityPath = user.qualified_name || user.name;
       allSubEntityMap.set(user.name, user);
-      opaquNodeMap.set(user.name, makeChildNode(user, entityPath));
     }
     allConnects.push(...archFile.connects);
   }
 
-  const channelNodeMap = collectChannelNodes(allConnects, rootId, allSubEntityMap);
+  // Filter connects to only those active for the selected variant
+  const activeConnects = variantFilter !== "*"
+    ? allConnects.filter((c) => connectMatchesVariant(c, variantFilter))
+    : allConnects;
+
+  // Prune entities not on a fully connected path for the selected variant
+  if (variantFilter !== "*") {
+    const prunedNames = pruneEntitiesForVariant(new Set(allSubEntityMap.keys()), activeConnects, variantFilter);
+    for (const name of [...allSubEntityMap.keys()]) {
+      if (!prunedNames.has(name)) allSubEntityMap.delete(name);
+    }
+  }
+
+  // Pass 2: build opaque/expanded nodes from the pruned entity set
+  for (const [name, ent] of allSubEntityMap) {
+    if (isUser(ent)) {
+      const entityPath = ent.qualified_name || ent.name;
+      opaquNodeMap.set(name, makeChildNode(ent, entityPath));
+      continue;
+    }
+    const entCS = ent as ComponentJson | SystemJson;
+    const entityPath = entCS.qualified_name || entCS.name;
+    if (shouldExpandEntity(entCS) && (depth === null || depth >= 1)) {
+      const [bnd, innerEdges, exposeMap] = buildRecursiveBoundary(entCS, entityPath, entityDepth, variantFilter);
+      expandedBoundaryMap.set(name, bnd);
+      expandedExposeMaps.set(name, exposeMap);
+      allInnerEdges = allInnerEdges.concat(innerEdges);
+    } else {
+      opaquNodeMap.set(name, makeChildNode(entCS, entityPath));
+    }
+  }
+
+  const channelNodeMap = collectChannelNodes(activeConnects, rootId, allSubEntityMap);
 
   const allChildren: (VizNode | VizBoundary)[] = [
     ...opaquNodeMap.values(),
@@ -400,7 +468,7 @@ export function buildVizDiagramAll(
 
   for (const edge of allInnerEdges) addEdge(edge);
 
-  for (const conn of allConnects) {
+  for (const conn of activeConnects) {
     for (const edge of buildEdgesFromConnectExpanded(
       conn,
       opaquNodeMap,
@@ -873,7 +941,7 @@ function buildRecursiveBoundary(
 ): [VizBoundary, VizEdge[], ExposeMap] {
   const rootId = makeId(entityPath);
 
-  const childEntities: (ComponentJson | SystemJson | UserDefJson)[] = entity.components.filter(
+  let childEntities: (ComponentJson | SystemJson | UserDefJson)[] = entity.components.filter(
     (c) => entityMatchesVariant(c, variantFilter),
   );
   if (isSystem(entity)) {
@@ -881,6 +949,18 @@ function buildRecursiveBoundary(
       ...entity.systems.filter((s) => entityMatchesVariant(s, variantFilter)),
       ...entity.users,
     );
+  }
+
+  // Filter connects to only those active for the selected variant
+  const activeConnects = variantFilter !== "*"
+    ? entity.connects.filter((c) => connectMatchesVariant(c, variantFilter))
+    : entity.connects;
+
+  // Prune children not on a fully connected path for the selected variant
+  if (variantFilter !== "*") {
+    const childNames = new Set(childEntities.map((c) => c.name));
+    const prunedNames = pruneEntitiesForVariant(childNames, activeConnects, variantFilter);
+    childEntities = childEntities.filter((c) => prunedNames.has(c.name));
   }
 
   const subEntityMap = new Map<string, ComponentJson | SystemJson | UserDefJson>();
@@ -913,7 +993,7 @@ function buildRecursiveBoundary(
   }
 
   const channelNodeMap = collectChannelNodesResolve(
-    entity.connects,
+    activeConnects,
     rootId,
     subEntityMap,
     opaquNodeMap,
@@ -938,7 +1018,7 @@ function buildRecursiveBoundary(
   };
 
   const seen = new Set<string>();
-  for (const conn of entity.connects) {
+  for (const conn of activeConnects) {
     for (const edge of buildEdgesFromConnectResolve(
       conn, opaquNodeMap, childBoundaryMap, subEntityMap, channelNodeMap, childExposeMaps,
     )) {

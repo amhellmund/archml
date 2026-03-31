@@ -19,6 +19,7 @@ export interface ConnectDefJson {
   channel: string | null;
   dst_entity: string | null;
   dst_port: string | null;
+  variants: string[];
   line: number;
 }
 
