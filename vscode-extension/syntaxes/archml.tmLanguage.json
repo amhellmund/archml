@@ -60,7 +60,7 @@
 
     "control-keyword": {
       "name": "keyword.control.archml",
-      "match": "\\b(requires|provides|connect|expose|use|as)\\b"
+      "match": "\\b(requires|provides|connect|expose|use|as|from|import|external)\\b"
     },
 
     "builtin-type": {
