@@ -35,7 +35,7 @@ class InterfaceRef(BaseModel):
 class NamedDef(BaseModel):
     """Base class for named definition entities.
 
-    Shared by ``EnumDef``, ``TypeDef``, ``ArtifactDef``, and ``InterfaceDef``.
+    Shared by ``EnumDef``, ``TypeDef``, and ``InterfaceDef``.
     """
 
     name: str
@@ -54,15 +54,6 @@ class TypeDef(NamedDef):
     """A reusable composite data type definition."""
 
     fields: list[FieldDef] = _Field(default_factory=list)
-
-
-class ArtifactDef(NamedDef):
-    """An abstract data artifact definition.
-
-    Describes a named, abstract data artifact (file, directory, blob, stream,
-    etc.) whose concrete implementation is given in the deployment architecture.
-    Artifacts can be used as field types within types and interfaces.
-    """
 
 
 class InterfaceDef(NamedDef):
@@ -185,7 +176,6 @@ class ArchFile(BaseModel):
     imports: list[ImportDeclaration] = _Field(default_factory=list)
     enums: list[EnumDef] = _Field(default_factory=list)
     types: list[TypeDef] = _Field(default_factory=list)
-    artifacts: list[ArtifactDef] = _Field(default_factory=list)
     interfaces: list[InterfaceDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)

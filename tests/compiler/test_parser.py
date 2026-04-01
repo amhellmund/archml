@@ -8,7 +8,6 @@ import pytest
 from archml.compiler.parser import ParseError, parse
 from archml.model.entities import (
     ArchFile,
-    ArtifactDef,
     ConnectDef,
     ExposeDef,
 )
@@ -1947,77 +1946,6 @@ connect A -> $ch -> B
 # ###############
 # Artifact Declarations
 # ###############
-
-
-class TestArtifactDeclarations:
-    def test_minimal_artifact(self) -> None:
-        result = _parse("artifact ReportPDF {}")
-        assert len(result.artifacts) == 1
-        a = result.artifacts[0]
-        assert isinstance(a, ArtifactDef)
-        assert a.name == "ReportPDF"
-        assert a.description is None
-
-    def test_artifact_with_description(self) -> None:
-        source = '''\
-artifact DeployBundle {
-    """Kubernetes manifests for production rollout."""
-}'''
-        result = _parse(source)
-        a = result.artifacts[0]
-        assert a.name == "DeployBundle"
-        assert a.description == "Kubernetes manifests for production rollout."
-
-    def test_artifact_line_number(self) -> None:
-        source = "\n\nartifact Report {}"
-        result = _parse(source)
-        assert result.artifacts[0].line == 3
-
-    def test_multiple_artifacts(self) -> None:
-        source = "artifact A {}\nartifact B {}"
-        result = _parse(source)
-        assert len(result.artifacts) == 2
-        assert result.artifacts[0].name == "A"
-        assert result.artifacts[1].name == "B"
-
-    def test_artifact_used_as_named_field_type(self) -> None:
-        source = """\
-artifact Report {}
-type Order {
-    report: Report
-}"""
-        result = _parse(source)
-        assert len(result.artifacts) == 1
-        assert isinstance(result.types[0].fields[0].type, NamedTypeRef)
-        assert result.types[0].fields[0].type.name == "Report"
-
-    def test_artifact_used_as_field_type_in_interface(self) -> None:
-        source = """\
-artifact Bundle {}
-interface DeployRequest {
-    bundle: Bundle
-}"""
-        result = _parse(source)
-        assert isinstance(result.interfaces[0].fields[0].type, NamedTypeRef)
-        assert result.interfaces[0].fields[0].type.name == "Bundle"
-
-    def test_artifact_mixed_with_other_declarations(self) -> None:
-        source = """\
-type Order {}
-artifact Report {}
-interface Foo {}"""
-        result = _parse(source)
-        assert len(result.types) == 1
-        assert len(result.artifacts) == 1
-        assert len(result.interfaces) == 1
-
-    def test_artifact_body_rejects_field_def(self) -> None:
-        with pytest.raises((ParseError, Exception)):
-            _parse("artifact Bad { x: String }")
-
-    def test_artifact_body_rejects_unknown_token(self) -> None:
-        with pytest.raises((ParseError, Exception)):
-            _parse("artifact Bad { unknown_attr }")
 
 
 # ###############

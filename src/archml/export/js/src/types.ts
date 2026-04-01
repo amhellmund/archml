@@ -135,20 +135,10 @@ export interface EnumDefJson {
   line: number;
 }
 
-export interface ArtifactDefJson {
-  name: string;
-  title: string | null;
-  description: string | null;
-  spec: string | null;
-  ref_url: string | null;
-  line: number;
-}
-
 export interface ArchFileJson {
   imports: unknown[];
   enums: EnumDefJson[];
   types: TypeDefJson[];
-  artifacts: ArtifactDefJson[];
   interfaces: InterfaceDefJson[];
   components: ComponentJson[];
   systems: SystemJson[];

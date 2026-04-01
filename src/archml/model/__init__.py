@@ -6,7 +6,6 @@
 from archml.model.entities import (
     ArchEntity,
     ArchFile,
-    ArtifactDef,
     Component,
     ConnectDef,
     ContainerEntity,
@@ -49,7 +48,6 @@ __all__ = [
     "InterfaceRef",
     "EnumDef",
     "TypeDef",
-    "ArtifactDef",
     "InterfaceDef",
     "ConnectDef",
     "ExposeDef",

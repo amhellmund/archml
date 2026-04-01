@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from archml.model.entities import (
     ArchEntity,
     ArchFile,
-    ArtifactDef,
     Component,
     ConnectDef,
     ContainerEntity,
@@ -151,7 +150,6 @@ class _SemanticAnalyzer:
         local_type_names: set[str] = (
             {e.name for e in self._file.enums}
             | {t.name for t in self._file.types}
-            | {a.name for a in self._file.artifacts}
             | {i.name for i in self._file.interfaces}
         )
         local_interface_defs: dict[str, InterfaceDef] = {i.name: i for i in self._file.interfaces}
@@ -593,7 +591,6 @@ def _collect_all_top_level_names(arch_file: ArchFile) -> set[str]:
     names: set[str] = set()
     names.update(e.name for e in arch_file.enums)
     names.update(t.name for t in arch_file.types)
-    names.update(a.name for a in arch_file.artifacts)
     names.update(i.name for i in arch_file.interfaces)
     names.update(c.name for c in arch_file.components)
     names.update(s.name for s in arch_file.systems)
@@ -665,14 +662,6 @@ def _check_top_level_duplicates(arch_file: ArchFile, filename: str | None = None
     )
     errors.extend(
         _check_duplicate_name_lines(
-            [(a.name, a.line) for a in arch_file.artifacts],
-            "Duplicate artifact name '{}'",
-            filename,
-        )
-    )
-
-    errors.extend(
-        _check_duplicate_name_lines(
             [(i.name, i.line) for i in arch_file.interfaces],
             "Duplicate interface name '{}'",
             filename,
@@ -701,20 +690,11 @@ def _check_top_level_duplicates(arch_file: ArchFile, filename: str | None = None
         )
     )
 
-    # Enums, types, and artifacts sharing a name create ambiguity for field
-    # type references.
+    # Enums and types sharing a name create ambiguity for field type references.
     enum_names = {e.name for e in arch_file.enums}
     type_names = {t.name for t in arch_file.types}
-    artifact_names = {a.name for a in arch_file.artifacts}
     for name in sorted(enum_names & type_names):
         errors.append(SemanticError(message=f"Name '{name}' is defined as both an enum and a type", filename=filename))
-    for name in sorted((enum_names | type_names) & artifact_names):
-        errors.append(
-            SemanticError(
-                message=f"Name '{name}' is defined as both an artifact and an enum or type",
-                filename=filename,
-            )
-        )
 
     return errors
 
@@ -1010,10 +990,9 @@ def _check_all_descriptions(arch_file: ArchFile, filename: str | None) -> list[S
     """Check all description fields in *arch_file* for valid markdown."""
     errors: list[SemanticError] = []
 
-    named_defs: list[EnumDef | TypeDef | ArtifactDef | InterfaceDef] = [
+    named_defs: list[EnumDef | TypeDef | InterfaceDef] = [
         *arch_file.enums,
         *arch_file.types,
-        *arch_file.artifacts,
         *arch_file.interfaces,
     ]
     for entity in named_defs:

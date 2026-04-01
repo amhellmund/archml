@@ -9,7 +9,6 @@ Converts a token stream produced by the scanner into an ArchFile semantic model.
 from archml.compiler.scanner import Token, TokenType, tokenize
 from archml.model.entities import (
     ArchFile,
-    ArtifactDef,
     Component,
     ConnectDef,
     EnumDef,
@@ -93,7 +92,6 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.IMPORT,
         TokenType.USE,
         TokenType.EXTERNAL,
-        TokenType.ARTIFACT,
     }
 )
 
@@ -204,8 +202,6 @@ class _Parser:
             result.enums.append(self._parse_enum())
         elif tok.type == TokenType.TYPE:
             result.types.append(self._parse_type_def())
-        elif tok.type == TokenType.ARTIFACT:
-            result.artifacts.append(self._parse_artifact_def())
         elif tok.type == TokenType.INTERFACE:
             result.interfaces.append(self._parse_interface(parent_variants=[]))
         elif tok.type == TokenType.COMPONENT:
@@ -370,39 +366,6 @@ class _Parser:
                 )
         self._expect(TokenType.RBRACE)
         return type_def
-
-    # ------------------------------------------------------------------
-    # Artifact declarations
-    # ------------------------------------------------------------------
-
-    def _parse_artifact_def(self) -> ArtifactDef:
-        """Parse: artifact <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* }"""
-        self._expect(TokenType.ARTIFACT)
-        name_tok = self._expect(TokenType.IDENTIFIER)
-        self._expect(TokenType.LBRACE)
-        artifact = ArtifactDef(name=name_tok.value, line=name_tok.line)
-        if self._check(TokenType.TRIPLE_STRING):
-            artifact.description = self._advance().value
-        while self._check(TokenType.AT):
-            attr_name, attr_values = self._parse_attribute()
-            artifact.attributes[attr_name] = attr_values
-        while not self._check(TokenType.RBRACE, TokenType.EOF):
-            tok = self._current()
-            if self._check(TokenType.TRIPLE_STRING):
-                raise ParseError(
-                    "Description docstring must appear first in body",
-                    tok.line,
-                    tok.column,
-                    self._filename,
-                )
-            raise ParseError(
-                f"Unexpected token {tok.value!r} in artifact body",
-                tok.line,
-                tok.column,
-                self._filename,
-            )
-        self._expect(TokenType.RBRACE)
-        return artifact
 
     # ------------------------------------------------------------------
     # Interface declarations

@@ -132,7 +132,6 @@ Large architectures split across files with `from ... import`. `use component X`
 | `user`                         | Human actor (role or persona); leaf node                                |
 | `interface`                    | Named contract of typed fields used on ports                            |
 | `type`                         | Reusable data structure composed into interface fields                  |
-| `artifact`                     | Abstract data artifact (file, blob, stream) used as a field type        |
 | `enum`                         | Constrained set of named values                                         |
 | `requires` / `provides`        | Declare a port that consumes or exposes an interface                    |
 | `requires X as port`           | Assign an explicit name to a port                                       |

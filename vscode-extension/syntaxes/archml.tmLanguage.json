@@ -51,7 +51,7 @@
 
     "entity-keyword": {
       "comment": "Entity declaration keywords, optionally preceded by 'external'",
-      "match": "\\b(external\\s+)?(component|system|user|artifact|type|interface|enum)\\b",
+      "match": "\\b(external\\s+)?(component|system|user|type|interface|enum)\\b",
       "captures": {
         "1": { "name": "storage.modifier.archml" },
         "2": { "name": "storage.type.archml" }

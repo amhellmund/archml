@@ -95,18 +95,6 @@ type OrderItem {
 
 Custom types, enums, and interfaces can all be used as field types.
 
-### Artifacts
-
-The `artifact` keyword defines an abstract, named data artifact — a file, directory, stream, or any other data shape exchanged between components. The concrete implementation is specified in the deployment architecture. An artifact's body contains only an optional description:
-
-```
-artifact MonthlyReport {
-    """PDF summary of monthly sales figures per region."""
-}
-```
-
-Artifacts are referenced by name as field types in `type` and `interface` definitions.
-
 ---
 
 ## Core Entities
@@ -318,7 +306,7 @@ external user Admin {
 
 ## Multi-File Composition
 
-Large architectures are split across files. Top-level declarations (`component`, `system`, `user`, `interface`, `type`, `enum`, `artifact`) can appear in any `.archml` file — they do not need to be nested inside a system.
+Large architectures are split across files. Top-level declarations (`component`, `system`, `user`, `interface`, `type`, `enum`) can appear in any `.archml` file — they do not need to be nested inside a system.
 
 ### Imports
 
@@ -404,7 +392,6 @@ The `name` under `source-imports` matches the `@repo-name` prefix in import path
 | `interface`   | Named contract of typed fields used on ports.                                            |
 | `type`        | Reusable data structure composed into interface fields.                                  |
 | `enum`        | Constrained set of named values.                                                         |
-| `artifact`    | Abstract data artifact whose concrete form is given in the deployment architecture.      |
 | `requires`    | Declares a port that consumes an interface.                                              |
 | `provides`    | Declares a port that produces an interface.                                              |
 | `as`          | Assigns an explicit name to a port (`requires PaymentRequest as pay_in`).                |

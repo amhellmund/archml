@@ -26,7 +26,6 @@ class TokenType(enum.Enum):
     EXPOSE = "expose"
     TYPE = "type"
     ENUM = "enum"
-    ARTIFACT = "artifact"
     REQUIRES = "requires"
     PROVIDES = "provides"
     AS = "as"
@@ -125,7 +124,6 @@ _KEYWORDS: dict[str, TokenType] = {
     "expose": TokenType.EXPOSE,
     "type": TokenType.TYPE,
     "enum": TokenType.ENUM,
-    "artifact": TokenType.ARTIFACT,
     "requires": TokenType.REQUIRES,
     "provides": TokenType.PROVIDES,
     "as": TokenType.AS,
