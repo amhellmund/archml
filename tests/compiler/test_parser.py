@@ -233,6 +233,15 @@ type OrderItem {
         assert t.fields[1].name == "quantity"
         assert t.fields[2].name == "unit_price"
 
+    def test_type_with_description_only(self) -> None:
+        source = '''\
+type Order {
+    """Represents an order."""
+}'''
+        result = _parse(source)
+        assert result.types[0].description == "Represents an order."
+        assert result.types[0].fields == []
+
     def test_type_with_description(self) -> None:
         source = '''\
 type Order {
