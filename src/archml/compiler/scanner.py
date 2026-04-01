@@ -91,6 +91,32 @@ class LexerError(Exception):
         self.column = column
 
 
+RESERVED_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "system",
+        "component",
+        "user",
+        "interface",
+        "connect",
+        "expose",
+        "type",
+        "enum",
+        "requires",
+        "provides",
+        "as",
+        "from",
+        "import",
+        "use",
+        "external",
+    }
+)
+"""The set of all reserved keywords in the ArchML language.
+
+Identifiers matching any of these strings are forbidden as user-defined names
+and as path segments in ``.archml`` filenames.
+"""
+
+
 def tokenize(source: str, filename: str = "") -> list[Token]:
     """Tokenize ArchML source text into a sequence of tokens.
 

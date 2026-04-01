@@ -1017,7 +1017,7 @@ component OrderService {
 }"""
         with pytest.raises(ParseError) as exc_info:
             _parse(source)
-        assert "IDENTIFIER" in str(exc_info.value)
+        assert "Expected a name" in str(exc_info.value)
 
 
 # ###############
@@ -2121,3 +2121,97 @@ class TestVariantParseErrors:
     def test_empty_variant_annotation(self) -> None:
         with pytest.raises(ParseError):
             _parse("component<> Foo {}")
+
+
+# ###############
+# Reserved Keyword Names
+# ###############
+
+
+class TestReservedKeywordNames:
+    """Keywords must not be usable as user-defined names anywhere in ArchML."""
+
+    def _assert_reserved(self, source: str) -> None:
+        with pytest.raises(ParseError) as exc_info:
+            _parse(source)
+        assert "reserved" in str(exc_info.value)
+
+    # Entity names
+    def test_system_as_system_name(self) -> None:
+        self._assert_reserved("system system {}")
+
+    def test_component_as_component_name(self) -> None:
+        self._assert_reserved("component component {}")
+
+    def test_user_as_user_name(self) -> None:
+        self._assert_reserved("system S { user user {} }")
+
+    def test_enum_as_enum_name(self) -> None:
+        self._assert_reserved("enum enum { A }")
+
+    def test_type_as_type_name(self) -> None:
+        self._assert_reserved("type type { x: String }")
+
+    def test_interface_as_interface_name(self) -> None:
+        self._assert_reserved("interface interface {}")
+
+    def test_import_keyword_as_system_name(self) -> None:
+        self._assert_reserved("system import {}")
+
+    def test_external_as_component_name(self) -> None:
+        self._assert_reserved("component external {}")
+
+    def test_connect_as_system_name(self) -> None:
+        self._assert_reserved("system connect {}")
+
+    def test_expose_as_component_name(self) -> None:
+        self._assert_reserved("component expose {}")
+
+    def test_requires_as_type_name(self) -> None:
+        self._assert_reserved("type requires {}")
+
+    def test_provides_as_type_name(self) -> None:
+        self._assert_reserved("type provides {}")
+
+    def test_from_as_interface_name(self) -> None:
+        self._assert_reserved("interface from {}")
+
+    def test_as_as_enum_name(self) -> None:
+        self._assert_reserved("enum as { A }")
+
+    def test_use_as_component_name(self) -> None:
+        self._assert_reserved("component use {}")
+
+    # Field names inside types and interfaces
+    def test_keyword_as_field_name_in_type(self) -> None:
+        self._assert_reserved("type T { system: String }")
+
+    def test_keyword_as_field_name_in_interface(self) -> None:
+        self._assert_reserved("interface I { component: String }")
+
+    def test_from_as_field_name(self) -> None:
+        self._assert_reserved("type T { from: String }")
+
+    def test_as_as_field_name(self) -> None:
+        self._assert_reserved("type T { as: String }")
+
+    # Enum values
+    def test_keyword_as_enum_value(self) -> None:
+        self._assert_reserved("enum Status { system }")
+
+    def test_type_as_enum_value(self) -> None:
+        self._assert_reserved("enum Status { type }")
+
+    # Import names
+    def test_keyword_as_imported_entity_name(self) -> None:
+        self._assert_reserved("from interfaces/foo import system")
+
+    def test_keyword_in_import_path_segment(self) -> None:
+        self._assert_reserved("from system/foo import Foo")
+
+    # use-statement names
+    def test_keyword_as_use_component_name(self) -> None:
+        self._assert_reserved("system S { use component system }")
+
+    def test_keyword_as_use_system_name(self) -> None:
+        self._assert_reserved("system S { use system component }")

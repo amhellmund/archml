@@ -173,21 +173,36 @@ class _Parser:
         """
         return self._peek_type() in types
 
-    def _expect_name_token(self) -> Token:
-        """Consume the current token as a name.
+    def _expect_name(self) -> Token:
+        """Consume the current token as a name (identifier only).
 
-        Accepts identifiers and keywords used in name positions (e.g. a field
-        named 'as').  Raises ParseError for structural tokens and EOF.
+        Raises a descriptive ParseError if the token is a reserved keyword or
+        is not an identifier.
         """
         tok = self._current()
-        if tok.type != TokenType.IDENTIFIER and tok.type not in _KEYWORD_TYPES:
+        if tok.type in _KEYWORD_TYPES:
             raise ParseError(
-                f"Expected identifier, got {tok.value!r}",
+                f"keyword {tok.value!r} is reserved and cannot be used as a name",
+                tok.line,
+                tok.column,
+                self._filename,
+            )
+        if tok.type != TokenType.IDENTIFIER:
+            raise ParseError(
+                f"Expected a name, got {tok.value!r}",
                 tok.line,
                 tok.column,
                 self._filename,
             )
         return self._advance()
+
+    def _expect_name_token(self) -> Token:
+        """Consume the current token as a name (identifier only).
+
+        Raises a descriptive ParseError if the token is a reserved keyword or
+        is not an identifier.
+        """
+        return self._expect_name()
 
     # ------------------------------------------------------------------
     # Top-level declarations
@@ -254,26 +269,26 @@ class _Parser:
         # Optional cross-repo prefix: @repo
         if self._check(TokenType.AT):
             self._advance()  # consume @
-            repo_tok = self._expect(TokenType.IDENTIFIER)
+            repo_tok = self._expect_name()
             self._expect(TokenType.SLASH)
             parts.append(f"@{repo_tok.value}")
         # Main path: identifier (/ identifier)*
-        first = self._expect(TokenType.IDENTIFIER)
+        first = self._expect_name()
         parts.append(first.value)
         while self._check(TokenType.SLASH):
             self._advance()  # consume /
-            seg = self._expect(TokenType.IDENTIFIER)
+            seg = self._expect_name()
             parts.append(seg.value)
         return "/".join(parts)
 
     def _parse_identifier_list(self) -> list[str]:
         """Parse a comma-separated list of identifiers."""
         names: list[str] = []
-        first = self._expect(TokenType.IDENTIFIER)
+        first = self._expect_name()
         names.append(first.value)
         while self._check(TokenType.COMMA):
             self._advance()  # consume ,
-            name = self._expect(TokenType.IDENTIFIER)
+            name = self._expect_name()
             names.append(name.value)
         return names
 
@@ -289,7 +304,7 @@ class _Parser:
         greater than the opening brace or the previous value).
         """
         self._expect(TokenType.ENUM)
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         lbrace = self._expect(TokenType.LBRACE)
         enum_def = EnumDef(name=name_tok.value, line=name_tok.line)
         if self._check(TokenType.TRIPLE_STRING):
@@ -303,6 +318,14 @@ class _Parser:
                 tok = self._current()
                 raise ParseError(
                     "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
+            elif self._check(*_KEYWORD_TYPES):
+                tok = self._current()
+                raise ParseError(
+                    f"keyword {tok.value!r} is reserved and cannot be used as a name",
                     tok.line,
                     tok.column,
                     self._filename,
@@ -337,7 +360,7 @@ class _Parser:
     def _parse_type_def(self) -> TypeDef:
         """Parse: type <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* field* }"""
         self._expect(TokenType.TYPE)
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         self._expect(TokenType.LBRACE)
         type_def = TypeDef(name=name_tok.value, line=name_tok.line)
         if self._check(TokenType.TRIPLE_STRING):
@@ -350,6 +373,14 @@ class _Parser:
                 tok = self._current()
                 raise ParseError(
                     "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
+            elif self._check(*_KEYWORD_TYPES) and self._peek_type_at(1) == TokenType.COLON:
+                tok = self._current()
+                raise ParseError(
+                    f"keyword {tok.value!r} is reserved and cannot be used as a name",
                     tok.line,
                     tok.column,
                     self._filename,
@@ -375,7 +406,7 @@ class _Parser:
         """Parse: interface[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* field* }"""
         self._expect(TokenType.INTERFACE)
         own_variants = self._parse_variant_annotation()
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         self._expect(TokenType.LBRACE)
         iface = InterfaceDef(
             name=name_tok.value,
@@ -392,6 +423,14 @@ class _Parser:
                 tok = self._current()
                 raise ParseError(
                     "Description docstring must appear first in body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
+            elif self._check(*_KEYWORD_TYPES) and self._peek_type_at(1) == TokenType.COLON:
+                tok = self._current()
+                raise ParseError(
+                    f"keyword {tok.value!r} is reserved and cannot be used as a name",
                     tok.line,
                     tok.column,
                     self._filename,
@@ -417,7 +456,7 @@ class _Parser:
         """Parse: [external] component[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] ... }"""
         self._expect(TokenType.COMPONENT)
         own_variants = self._parse_variant_annotation()
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         self._expect(TokenType.LBRACE)
         effective_variants = _union_variants(parent_variants, own_variants)
         comp = Component(
@@ -483,7 +522,7 @@ class _Parser:
         """Parse: [external] system[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] ... }"""
         self._expect(TokenType.SYSTEM)
         own_variants = self._parse_variant_annotation()
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         self._expect(TokenType.LBRACE)
         effective_variants = _union_variants(parent_variants, own_variants)
         system = System(
@@ -564,15 +603,15 @@ class _Parser:
         kind = self._current()
         if kind.type == TokenType.COMPONENT:
             self._advance()
-            name_tok = self._expect(TokenType.IDENTIFIER)
+            name_tok = self._expect_name()
             return Component(name=name_tok.value, is_stub=True, variants=list(parent_variants), line=name_tok.line)
         elif kind.type == TokenType.SYSTEM:
             self._advance()
-            name_tok = self._expect(TokenType.IDENTIFIER)
+            name_tok = self._expect_name()
             return System(name=name_tok.value, is_stub=True, variants=list(parent_variants), line=name_tok.line)
         elif kind.type == TokenType.USER:
             self._advance()
-            name_tok = self._expect(TokenType.IDENTIFIER)
+            name_tok = self._expect_name()
             return UserDef(name=name_tok.value, variants=list(parent_variants), line=name_tok.line)
         else:
             raise ParseError(
@@ -594,7 +633,7 @@ class _Parser:
         """
         self._expect(TokenType.USER)
         own_variants = self._parse_variant_annotation()
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         self._expect(TokenType.LBRACE)
         user = UserDef(
             name=name_tok.value,
@@ -655,7 +694,7 @@ class _Parser:
         if self._check(TokenType.DOLLAR):
             # Form: connect $channel -> <dst_port>
             self._advance()  # consume $
-            ch_tok = self._expect(TokenType.IDENTIFIER)
+            ch_tok = self._expect_name()
             connect_def = ConnectDef(channel=ch_tok.value, variants=variants, line=connect_tok.line)
             self._expect(TokenType.ARROW)
             entity, port = self._parse_port_ref(connect_tok)
@@ -674,7 +713,7 @@ class _Parser:
             if self._check(TokenType.DOLLAR):
                 # Form: connect <src_port> -> $channel [-> <dst_port>]
                 self._advance()  # consume $
-                ch_tok = self._expect(TokenType.IDENTIFIER)
+                ch_tok = self._expect_name()
                 if self._check(TokenType.ARROW):
                     self._advance()  # consume ->
                     dst_entity, dst_port = self._parse_port_ref(connect_tok)
@@ -715,10 +754,10 @@ class _Parser:
 
         Returns a tuple ``(entity_name_or_None, port_name)``.
         """
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         if self._check(TokenType.DOT):
             self._advance()  # consume .
-            port_tok = self._expect(TokenType.IDENTIFIER)
+            port_tok = self._expect_name()
             return (name_tok.value, port_tok.value)
         return (None, name_tok.value)
 
@@ -730,13 +769,13 @@ class _Parser:
         """Parse: expose[<v1, v2>] <Entity>.<port> [as <new_name>]"""
         expose_tok = self._expect(TokenType.EXPOSE)
         variants = self._parse_variant_annotation()
-        entity_tok = self._expect(TokenType.IDENTIFIER)
+        entity_tok = self._expect_name()
         self._expect(TokenType.DOT)
-        port_tok = self._expect(TokenType.IDENTIFIER)
+        port_tok = self._expect_name()
         as_name: str | None = None
         if self._check(TokenType.AS):
             self._advance()  # consume 'as'
-            as_tok = self._expect(TokenType.IDENTIFIER)
+            as_tok = self._expect_name()
             as_name = as_tok.value
         return ExposeDef(
             entity=entity_tok.value,
@@ -753,12 +792,9 @@ class _Parser:
     def _at_field_start(self) -> bool:
         """Return True if the current position looks like the start of a field def.
 
-        A field starts with any name token (identifier or keyword) followed by a colon.
+        A field starts with an identifier (not a keyword) followed by a colon.
         """
-        cur = self._peek_type()
-        if cur != TokenType.IDENTIFIER and cur not in _KEYWORD_TYPES:
-            return False
-        return self._peek_type_at(1) == TokenType.COLON
+        return self._peek_type() == TokenType.IDENTIFIER and self._peek_type_at(1) == TokenType.COLON
 
     def _parse_field(self) -> FieldDef:
         """Parse: <name>: <type>"""
@@ -776,7 +812,7 @@ class _Parser:
 
         Handles primitive types, List<T>, Map<K,V>, Optional<T>, or a named type.
         """
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         name = name_tok.value
         if name in _PRIMITIVE_TYPES:
             return PrimitiveTypeRef(primitive=_PRIMITIVE_TYPES[name])
@@ -807,11 +843,11 @@ class _Parser:
         """Parse: requires/provides[<v1, v2>] <Name> [as <port_name>]"""
         self._expect(keyword)
         variants = self._parse_variant_annotation()
-        name_tok = self._expect(TokenType.IDENTIFIER)
+        name_tok = self._expect_name()
         port_name: str | None = None
         if self._check(TokenType.AS):
             self._advance()  # consume 'as'
-            alias_tok = self._expect(TokenType.IDENTIFIER)
+            alias_tok = self._expect_name()
             port_name = alias_tok.value
         return InterfaceRef(name=name_tok.value, port_name=port_name, variants=variants, line=name_tok.line)
 
@@ -829,11 +865,11 @@ class _Parser:
             return []
         self._advance()  # consume <
         variants: list[str] = []
-        first = self._expect(TokenType.IDENTIFIER)
+        first = self._expect_name()
         variants.append(first.value)
         while self._check(TokenType.COMMA):
             self._advance()  # consume ,
-            v = self._expect(TokenType.IDENTIFIER)
+            v = self._expect_name()
             variants.append(v.value)
         self._expect(TokenType.RANGLE)
         return variants

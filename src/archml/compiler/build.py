@@ -41,7 +41,7 @@ from typing import NamedTuple
 
 from archml.compiler.artifact import ARTIFACT_SUFFIX, read_artifact, write_artifact
 from archml.compiler.parser import ParseError, parse
-from archml.compiler.scanner import LexerError
+from archml.compiler.scanner import RESERVED_KEYWORDS, LexerError
 from archml.compiler.semantic_analysis import analyze
 from archml.model.entities import ArchFile
 
@@ -141,6 +141,32 @@ class _ParseResult:
 
     is_cached: bool = False
     """True when *arch_file* was loaded from an existing up-to-date artifact."""
+
+
+def _check_reserved_path_segments(source_file: Path, source_import_map: dict[SourceImportKey, Path]) -> None:
+    """Raise CompilerError if any path segment of *source_file* is a reserved keyword.
+
+    Checks the file stem and all intermediate directory names that form the
+    import path of the file (i.e. the relative portion under its mnemonic base
+    path, without the ``.archml`` suffix).
+
+    Raises:
+        CompilerError: If a path segment matches a reserved keyword.
+    """
+    for _key, base_path in source_import_map.items():
+        try:
+            rel = source_file.relative_to(base_path)
+        except ValueError:
+            continue
+        # rel is like "foo/bar/types.archml"; check each part (stem for last)
+        parts = list(rel.parts[:-1]) + [rel.stem]
+        for segment in parts:
+            if segment in RESERVED_KEYWORDS:
+                raise CompilerError(
+                    f"'{source_file.name}': keyword '{segment}' is reserved and cannot be used "
+                    "as a file or directory name in an ArchML source tree"
+                )
+        return
 
 
 def _get_source_repo(source_file: Path, source_import_map: dict[SourceImportKey, Path]) -> str:
@@ -284,6 +310,7 @@ def _parse_one(
     Raises:
         CompilerError: On any I/O, parse, or import-resolution failure.
     """
+    _check_reserved_path_segments(source_path, source_import_map)
     source_repo = _get_source_repo(source_path, source_import_map)
     artifact = _artifact_path(key, build_dir)
 

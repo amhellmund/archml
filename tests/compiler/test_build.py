@@ -232,11 +232,11 @@ component Worker { requires Signal }
     def test_compiled_from_test_data(self, tmp_path: Path) -> None:
         """Compile the realistic multi-file test data under tests/data/positive/compiler/."""
         result = compile_files(
-            [DATA_DIR / "system.archml"],
+            [DATA_DIR / "main.archml"],
             tmp_path / "build",
             {("", "compiler"): DATA_DIR},
         )
-        assert "compiler/system" in result
+        assert "compiler/main" in result
         assert "compiler/worker" in result
         assert "compiler/shared/types" in result
 
@@ -646,6 +646,57 @@ enum Dup {
         with pytest.raises(CompilerError) as exc_info:
             compile_files([src / "bad.archml"], build, {("", "app"): src})
         assert "bad.archml" in str(exc_info.value)
+
+
+# ###############
+# Reserved file names
+# ###############
+
+
+class TestReservedFileNames:
+    def test_file_named_after_keyword_raises_compiler_error(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "system.archml", "component C {}")
+        with pytest.raises(CompilerError, match="reserved"):
+            compile_files([src / "system.archml"], build, {("", "app"): src})
+
+    def test_file_named_component_raises_compiler_error(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "component.archml", "system S {}")
+        with pytest.raises(CompilerError, match="reserved"):
+            compile_files([src / "component.archml"], build, {("", "app"): src})
+
+    def test_file_named_type_raises_compiler_error(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "type.archml", "enum E { A }")
+        with pytest.raises(CompilerError, match="reserved"):
+            compile_files([src / "type.archml"], build, {("", "app"): src})
+
+    def test_directory_segment_named_after_keyword_raises_compiler_error(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "interface" / "order.archml", "component C {}")
+        with pytest.raises(CompilerError, match="reserved"):
+            compile_files([src / "interface" / "order.archml"], build, {("", "app"): src})
+
+    def test_non_reserved_file_name_is_accepted(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "order.archml", "component C {}")
+        result = compile_files([src / "order.archml"], build, {("", "app"): src})
+        assert "app/order" in result
+
+    def test_error_message_includes_keyword(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        _write(src / "import.archml", "component C {}")
+        with pytest.raises(CompilerError) as exc_info:
+            compile_files([src / "import.archml"], build, {("", "app"): src})
+        assert "'import'" in str(exc_info.value)
+        assert "reserved" in str(exc_info.value)
 
 
 # ###############
