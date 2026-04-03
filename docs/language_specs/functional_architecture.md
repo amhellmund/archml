@@ -405,3 +405,101 @@ The `name` under `source-imports` matches the `@repo-name` prefix in import path
 | `<v1, v2>`   | Variant annotation on an entity or statement.                                            |
 | `@attr: ...`  | Custom attribute on an entity; values are comma-separated identifiers.                   |
 | `"""..."""`   | Markdown description at the top of any entity body.                                      |
+
+---
+
+## Formal Grammar
+
+The grammar is written in EBNF. Terminal strings appear in `'single quotes'`. Brackets `[ ]` denote optional elements, braces `{ }` denote zero-or-more repetition, and parentheses `( )` denote grouping. The `|` operator denotes alternation.
+
+Comments (lines starting with `#`) and whitespace are stripped by the lexer and do not appear in the grammar.
+
+```ebnf
+(* ── Top level ─────────────────────────────────────── *)
+
+file        ::= { statement }
+
+statement   ::= import_stmt
+              | use_stmt
+              | connect_stmt
+              | expose_stmt
+              | entity_decl
+
+(* ── Imports and use ───────────────────────────────── *)
+
+import_stmt ::= 'from' import_path 'import' name_list
+import_path ::= [ '@' IDENT '/' ] IDENT { '/' IDENT }
+name_list   ::= IDENT { ',' IDENT }
+
+use_stmt    ::= 'use' entity_kind IDENT
+entity_kind ::= 'component' | 'system' | 'user'
+
+(* ── Entity declarations ────────────────────────────── *)
+
+entity_decl ::= block_decl
+              | interface_decl
+              | type_decl
+              | enum_decl
+
+block_decl  ::= [ 'external' ] entity_kind [ variant_ann ] IDENT '{' block_body '}'
+
+block_body  ::= [ description ]
+                { attribute }
+                { block_member }
+
+block_member ::= port_decl
+               | connect_stmt
+               | expose_stmt
+               | block_decl
+               | use_stmt
+
+(* ── Ports ──────────────────────────────────────────── *)
+
+port_decl   ::= ( 'requires' | 'provides' ) [ variant_ann ] IDENT [ 'as' IDENT ]
+
+(* ── Connect and expose ─────────────────────────────── *)
+
+connect_stmt ::= 'connect' [ variant_ann ] connect_expr
+
+connect_expr ::= port_ref '->' '$' IDENT '->' port_ref   (* full chain *)
+               | port_ref '->' '$' IDENT                  (* source only *)
+               | '$' IDENT '->' port_ref                  (* sink only *)
+
+port_ref    ::= IDENT '.' IDENT
+
+expose_stmt ::= 'expose' [ variant_ann ] port_ref [ 'as' IDENT ]
+
+(* ── Interfaces, types and enums ────────────────────── *)
+
+interface_decl ::= 'interface' [ variant_ann ] IDENT '{' [ description ] { field_decl } '}'
+type_decl      ::= 'type'      [ variant_ann ] IDENT '{' [ description ] { field_decl } '}'
+enum_decl      ::= 'enum'      [ variant_ann ] IDENT '{' [ description ] { IDENT }      '}'
+
+field_decl  ::= IDENT ':' type_expr
+
+type_expr   ::= primitive_type
+              | 'List'     '<' type_expr '>'
+              | 'Map'      '<' type_expr ',' type_expr '>'
+              | 'Optional' '<' type_expr '>'
+              | IDENT
+
+primitive_type ::= 'String' | 'Int' | 'Float' | 'Bool'
+                 | 'Bytes'  | 'Timestamp' | 'Datetime'
+
+(* ── Variants ───────────────────────────────────────── *)
+
+variant_ann ::= '<' IDENT { ',' IDENT } '>'
+
+(* ── Annotations and descriptions ──────────────────── *)
+
+attribute   ::= '@' IDENT ':' IDENT { ',' IDENT }
+
+description ::= '"""' MARKDOWN_TEXT '"""'
+
+(* ── Lexical rules ──────────────────────────────────── *)
+
+IDENT         ::= ( LETTER | '_' ) { LETTER | DIGIT | '_' | '-' }
+LETTER        ::= 'a'-'z' | 'A'-'Z'
+DIGIT         ::= '0'-'9'
+MARKDOWN_TEXT ::= (* any sequence of characters not containing '"""' *)
+```
