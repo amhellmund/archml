@@ -236,6 +236,41 @@ expose Entity.port_name [as new_name]
 
 The port name must always be specified (e.g., `Entity.port_name`); implicit port inference is not supported. The optional `as` clause renames the port at the boundary. `expose` composes across levels — a system can expose a port that was already exposed by an inner component.
 
+### Configuration Dependencies: `config`
+
+A `config` declaration names an external configuration dependency on a component or system. It expresses that the entity requires externally-provided configuration of a known type, without committing to how or where that configuration is supplied. The deployment layer resolves it to a concrete store via `bind config` (see [Deployment Architecture](deployment_architecture.md)).
+
+```
+config <TypeName> [as <config_name>]
+```
+
+`<TypeName>` refers to a `type` declaration and defines the expected shape of the configuration. The configuration dependency name defaults to `<TypeName>`; use `as` to assign an explicit name. Configuration dependency names must be unique within their entity.
+
+```
+type DbConfig {
+    url:         String
+    max_retries: Int
+}
+
+type FeatureFlags {
+    enable_cache: Bool
+    cache_ttl:    Int
+}
+
+component Consumer {
+    requires DataMessage
+    config DbConfig
+    config FeatureFlags
+}
+
+component Worker {
+    config DbConfig as worker_db    # explicit name
+    config FeatureFlags
+}
+```
+
+`config` declarations are distinct from ports: they cannot appear in `connect` or `expose` statements and do not participate in the functional data flow graph. They are purely binding targets for the deployment layer.
+
 ---
 
 ## Variant Handling
@@ -394,7 +429,8 @@ The `name` under `source-imports` matches the `@repo-name` prefix in import path
 | `enum`        | Constrained set of named values.                                                         |
 | `requires`    | Declares a port that consumes an interface.                                              |
 | `provides`    | Declares a port that produces an interface.                                              |
-| `as`          | Assigns an explicit name to a port (`requires PaymentRequest as pay_in`).                |
+| `config`      | Declares an external configuration dependency on a component or system (`config DbConfig`). |
+| `as`          | Assigns an explicit name to a port or config dependency (`requires PaymentRequest as pay_in`). |
 | `connect`     | Wires ports, optionally via a named channel (`connect A.p -> $ch -> B.p`).               |
 | `expose`      | Promotes a sub-entity's port to the enclosing boundary (`expose Entity.port [as name]`). |
 | `$channel`    | Channel name in `connect`; `$` prefix distinguishes channels from ports.                 |
@@ -448,6 +484,7 @@ block_body  ::= [ description ]
                 { block_member }
 
 block_member ::= port_decl
+               | config_decl
                | connect_stmt
                | expose_stmt
                | block_decl
@@ -456,6 +493,10 @@ block_member ::= port_decl
 (* ── Ports ──────────────────────────────────────────── *)
 
 port_decl   ::= ( 'requires' | 'provides' ) [ variant_ann ] IDENT [ 'as' IDENT ]
+
+(* ── Configuration dependencies ─────────────────────── *)
+
+config_decl ::= 'config' [ variant_ann ] IDENT [ 'as' IDENT ]
 
 (* ── Connect and expose ─────────────────────────────── *)
 

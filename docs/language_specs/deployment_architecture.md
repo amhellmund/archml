@@ -100,19 +100,23 @@ The grammar is unambiguous: one name before `{` (or `extends`) is a schema defin
 
 Schema fields use the same primitive and container types as the functional layer, plus a reference constraint type:
 
-| Type                   | Description                                                          |
-| ---------------------- | -------------------------------------------------------------------- |
-| `String`               | Unicode string value                                                 |
-| `Int`                  | Integer number                                                       |
-| `Bool`                 | Boolean value                                                        |
-| `Optional<T>`          | Value that may be absent                                             |
-| `List<T>`              | Ordered sequence of `T`                                              |
-| `requires identity`    | Field must be satisfied by the name of a declared `identity` instance |
-| `requires store`       | Field must be satisfied by the name of a declared `store` instance   |
-| `requires compute`     | Field must be satisfied by the name of a declared `compute` instance |
-| `requires bundle`      | Field must be satisfied by the name of a declared `bundle` instance  |
+| Type                          | Description                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| `String`                      | Unicode string value                                                              |
+| `Int`                         | Integer number                                                                    |
+| `Bool`                        | Boolean value                                                                     |
+| `Optional<T>`                 | Value that may be absent                                                          |
+| `List<T>`                     | Ordered sequence of `T`                                                           |
+| `requires identity`           | Field must be satisfied by any declared `identity` instance                       |
+| `requires identity <Schema>`  | Field must be satisfied by an instance of the named `identity` schema             |
+| `requires store`              | Field must be satisfied by any declared `store` instance                          |
+| `requires store <Schema>`     | Field must be satisfied by an instance of the named `store` schema                |
+| `requires compute`            | Field must be satisfied by any declared `compute` instance                        |
+| `requires compute <Schema>`   | Field must be satisfied by an instance of the named `compute` schema              |
+| `requires bundle`             | Field must be satisfied by any declared `bundle` instance                         |
+| `requires bundle <Schema>`    | Field must be satisfied by an instance of the named `bundle` schema               |
 
-A `requires <category>` field in a schema definition declares a dependency: the instance must provide the name of a declared instance of that category. The tooling validates that the referenced instance exists and is of the correct category.
+A `requires <category>` field in a schema definition declares a dependency: the instance must provide the name of a declared instance of that category. The optional `<Schema>` name narrows the constraint to instances of a specific schema — the tooling validates both that the instance exists and that it was declared with the named schema. Schema inheritance is respected: an instance of a child schema satisfies a `requires` constraint for any of its ancestor schemas.
 
 ### Schema Inheritance
 
@@ -387,6 +391,49 @@ system ECommerce {
     }
 }
 ```
+
+### `bind config`
+
+`bind config` resolves a named configuration dependency — declared with `config` in the functional layer — to a concrete store instance. The store provides the configuration values at runtime.
+
+```
+bind config <config_name> to store [<SchemaType>] <InstanceName>
+```
+
+`<config_name>` must match a `config` declaration on the functional entity being annotated. The optional `<SchemaType>` constrains the store to a specific schema (using the schema-typed reference described in [Field Types in Schema Definitions](#field-types-in-schema-definitions)). Omitting it accepts any store instance.
+
+```
+deployment component Consumer {
+    bind config DbConfig to store AzureKeyVault ProdVault
+    bind config FeatureFlags to store AzureStorage AppConfigStore
+    deploy bundle ConsumerBundle on compute AKSCluster
+}
+```
+
+Per-environment bindings let you swap the backing store without touching the functional or bundle declarations:
+
+```
+deployment[prod] component Consumer {
+    bind config DbConfig to store AzureKeyVault ProdVault
+}
+
+deployment[dev] component Consumer {
+    bind config DbConfig to store EnvSecretStore Env
+}
+```
+
+`bind config` may also appear inline inside a functional entity body, after all functional statements:
+
+```
+component Consumer {
+    requires DataMessage
+    config DbConfig
+
+    bind config DbConfig to store AzureKeyVault ProdVault
+}
+```
+
+A `bind config` statement may only reference a `config` name declared on the same entity. Binding the same config name more than once within the same variant and environment combination is a validation error.
 
 ### `deploy`
 
@@ -708,6 +755,7 @@ deployment[prod] system ECommerce {
 | `artifact`       | Declares a named artifact provided by a store instance; `artifact *` makes the store open.     |
 | `packs`          | Declares which functional component or system a bundle instance contains.                      |
 | `bind`           | Binds a channel to a protocol instantiation (`bind $ch via Protocol { ... }`).                 |
+| `bind config`    | Resolves a functional `config` dependency to a store instance (`bind config X to store S`).    |
 | `deploy`         | Assigns a bundle to a compute instance for a functional entity (`deploy bundle X on compute Y`). |
 | `deployment`     | External deployment block mirroring functional nesting (`deployment system Name { ... }`).     |
 | `via`            | Names the protocol in a `bind` statement.                                                      |
@@ -743,7 +791,7 @@ schema_body ::= [ description ]
 schema_field ::= IDENT ':' schema_type
 
 schema_type  ::= field_type                       (* reuses functional type system *)
-               | 'requires' deploy_category
+               | 'requires' deploy_category [ IDENT ]   (* optional schema name for typed constraint *)
 
 (* ── Instance declarations ──────────────────────────────────── *)
 
@@ -771,9 +819,11 @@ packs_stmt ::= 'packs' ( 'component' | 'system' ) IDENT
 
 (* ── Deployment statements ──────────────────────────────────── *)
 
-bind_stmt   ::= 'bind' [ variant_ann ] [ env_ann ] '$' IDENT 'via' IDENT '{' { instance_field } '}'
+bind_stmt        ::= 'bind' [ variant_ann ] [ env_ann ] '$' IDENT 'via' IDENT '{' { instance_field } '}'
 
-deploy_stmt ::= 'deploy' [ variant_ann ] [ env_ann ] 'bundle' IDENT 'on' 'compute' IDENT
+bind_config_stmt ::= 'bind' [ variant_ann ] [ env_ann ] 'config' IDENT 'to' 'store' [ IDENT ] IDENT
+
+deploy_stmt      ::= 'deploy' [ variant_ann ] [ env_ann ] 'bundle' IDENT 'on' 'compute' IDENT
 
 (* ── External deployment blocks ─────────────────────────────── *)
 
@@ -783,6 +833,7 @@ deployment_block ::= 'deployment' [ variant_ann ] [ env_ann ] ( 'system' | 'comp
 deployment_body  ::= { deployment_member }
 
 deployment_member ::= bind_stmt
+                    | bind_config_stmt
                     | deploy_stmt
                     | deployment_block
 
@@ -793,10 +844,10 @@ env_ann ::= '[' IDENT { ',' IDENT } ']'
 (* ── Extension to functional block_member ───────────────────── *)
 
 (* The following productions extend block_member from the functional grammar:  *)
-(*   block_member ::= ... | bind_stmt | deploy_stmt                            *)
+(*   block_member ::= ... | bind_stmt | bind_config_stmt | deploy_stmt         *)
 
 (* ── Extension to functional file statement ─────────────────── *)
 
 (* The following productions extend statement from the functional grammar:     *)
-(*   statement ::= ... | deploy_decl | deployment_block | bind_stmt | deploy_stmt *)
+(*   statement ::= ... | deploy_decl | deployment_block | bind_stmt | bind_config_stmt | deploy_stmt *)
 ```
