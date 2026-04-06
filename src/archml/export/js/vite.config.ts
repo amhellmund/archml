@@ -19,5 +19,7 @@ export default defineConfig({
     },
     outDir: resolve(__dirname, "../../static"),
     emptyOutDir: false,
+    // The IIFE bundle intentionally includes all dependencies in a single file.
+    chunkSizeWarningLimit: 2000,
   },
 });

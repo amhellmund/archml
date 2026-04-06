@@ -36,6 +36,11 @@ export function effectiveInnerSize(nodes: VizNode[], cfg: LayoutConfig): [number
       h = Math.max(h, minChannelNodeHeight(cfg));
     } else if (node.kind === "component" || node.kind === "system") {
       needed = requiredTextWidth(node.label, cfg, true);
+    } else if (node.kind === "user" || node.kind === "external_user") {
+      needed = requiredTextWidth(node.label, cfg);
+      const iconMinH =
+        cfg.user_icon_pad + cfg.user_icon_size + cfg.user_icon_pad + cfg.font_size + cfg.node_v_padding / 2;
+      h = Math.max(h, iconMinH);
     } else {
       needed = requiredTextWidth(node.label, cfg);
     }
@@ -46,10 +51,16 @@ export function effectiveInnerSize(nodes: VizNode[], cfg: LayoutConfig): [number
 
 export function effectivePeripheralSize(nodes: VizNode[], cfg: LayoutConfig): [number, number] {
   let w = cfg.peripheral_node_width;
+  let h = cfg.peripheral_node_height;
   for (const node of nodes) {
     w = Math.max(w, requiredTextWidth(node.label, cfg));
+    if (node.kind === "user" || node.kind === "external_user") {
+      const iconMinH =
+        cfg.user_icon_pad + cfg.user_icon_size + cfg.user_icon_pad + cfg.font_size + cfg.node_v_padding / 2;
+      h = Math.max(h, iconMinH);
+    }
   }
-  return [w, cfg.peripheral_node_height];
+  return [w, h];
 }
 
 // ─── Port anchoring ───────────────────────────────────────────────────────────

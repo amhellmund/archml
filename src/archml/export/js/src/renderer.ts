@@ -28,17 +28,18 @@ const LABEL_PADDING = 6.0;
 const ARROW_LEN = 9.0;
 const ARROW_HALF_W = 4.0;
 
-// Person pictogram geometry (layout units, before scaling) — mirror diagram.py
-const PICTOGRAM_TOP_PAD = 5.0;
-const PICTOGRAM_HEAD_R = 5.0;
-const PICTOGRAM_BODY_H = 8.0;
-const PICTOGRAM_ARM_Y_OFF = 3.0;
-const PICTOGRAM_ARM_W = 7.0;
-const PICTOGRAM_LEG_H = 7.0;
-const PICTOGRAM_LEG_W = 5.0;
+// User icon — Heroicons 2.x "user" outline (MIT licence, viewBox 0 0 24 24).
+// USER_ICON_SIZE and USER_ICON_PAD must match LayoutConfig.user_icon_size / user_icon_pad defaults.
+const USER_ICON_SIZE = 20.0;
+const USER_ICON_PAD = 8.0;
+const USER_ICON_PATH =
+  "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" +
+  "M4.501 20.118a7.5 7.5 0 0 1 14.998 0" +
+  "A17.933 17.933 0 0 1 12 21.75" +
+  "c-2.676 0-5.216-.584-7.499-1.632Z";
 
-// Pictogram stroke colours for user nodes (presentation attributes, mirror archml-diagram.css).
-const PICTOGRAM_STROKE: Partial<Record<NodeKind, string>> = {
+// Icon stroke colours for user nodes (mirror archml-diagram.css).
+const USER_ICON_STROKE: Partial<Record<NodeKind, string>> = {
   user: "#d97706",
   external_user: "#475569",
 };
@@ -201,22 +202,18 @@ function renderNode(
     const ifaceName = kind === "channel" ? (title ?? "") : label;
     textParts = `<text x="${cx}" y="${f(cyMid, scale)}" text-anchor="middle" dominant-baseline="middle" font-family="${FONT_FAMILY}" font-size="${Math.round(FONT_SIZE * scale)}" font-weight="bold" class="archml-text" clip-path="url(#${clipId})">${escText(ifaceName)}</text>`;
   } else if (kind === "user" || kind === "external_user") {
-    // Person pictogram (head + body + arms + legs) above the label.
-    const strokeColor = (kind && PICTOGRAM_STROKE[kind]) ?? "#475569";
-    const headCy = nl.y + PICTOGRAM_TOP_PAD + PICTOGRAM_HEAD_R;
-    const neckY = headCy + PICTOGRAM_HEAD_R;
-    const armY = neckY + PICTOGRAM_ARM_Y_OFF;
-    const bodyBottomY = neckY + PICTOGRAM_BODY_H;
-    const legBottomY = bodyBottomY + PICTOGRAM_LEG_H;
-    const la = `stroke="${strokeColor}" stroke-width="1.5" stroke-linecap="round"`;
-    const circle = `<circle cx="${cx}" cy="${f(headCy, scale)}" r="${f(PICTOGRAM_HEAD_R, scale)}" fill="none" stroke="${strokeColor}" stroke-width="1.5"/>`;
-    const body = `<line x1="${cx}" y1="${f(neckY, scale)}" x2="${cx}" y2="${f(bodyBottomY, scale)}" ${la}/>`;
-    const arms = `<line x1="${f(cxF - PICTOGRAM_ARM_W, scale)}" y1="${f(armY, scale)}" x2="${f(cxF + PICTOGRAM_ARM_W, scale)}" y2="${f(armY, scale)}" ${la}/>`;
-    const leftLeg = `<line x1="${cx}" y1="${f(bodyBottomY, scale)}" x2="${f(cxF - PICTOGRAM_LEG_W, scale)}" y2="${f(legBottomY, scale)}" ${la}/>`;
-    const rightLeg = `<line x1="${cx}" y1="${f(bodyBottomY, scale)}" x2="${f(cxF + PICTOGRAM_LEG_W, scale)}" y2="${f(legBottomY, scale)}" ${la}/>`;
-    const textCy = legBottomY + (nl.y + nl.height - legBottomY) / 2;
-    const labelText = `<text x="${cx}" y="${f(textCy, scale)}" text-anchor="middle" dominant-baseline="middle" font-family="${FONT_FAMILY}" font-size="${Math.round(FONT_SIZE * scale)}" class="archml-text" clip-path="url(#${clipId})">${escText(label)}</text>`;
-    textParts = circle + body + arms + leftLeg + rightLeg + labelText;
+    // User icon: inline path scaled from 24×24 viewBox to USER_ICON_SIZE layout units.
+    const strokeColor = (kind && USER_ICON_STROKE[kind]) ?? "#475569";
+    const iconX = nl.x + USER_ICON_PAD;
+    const iconY = nl.y + USER_ICON_PAD;
+    const iconScale = (USER_ICON_SIZE / 24.0) * scale;
+    const transform = `translate(${(iconX * scale).toFixed(2)},${(iconY * scale).toFixed(2)}) scale(${iconScale.toFixed(4)})`;
+    const icon =
+      `<g transform="${transform}" fill="none" stroke="${strokeColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">` +
+      `<path d="${USER_ICON_PATH}"/>` +
+      `</g>`;
+    const labelText = `<text x="${cx}" y="${f(cyMid, scale)}" text-anchor="middle" dominant-baseline="middle" font-family="${FONT_FAMILY}" font-size="${Math.round(FONT_SIZE * scale)}" class="archml-text" clip-path="url(#${clipId})">${escText(label)}</text>`;
+    textParts = icon + labelText;
   } else {
     const isBold =
       kind === "component" || kind === "system" || kind === "interface" || kind === "terminal";

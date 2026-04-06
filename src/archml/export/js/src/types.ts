@@ -247,6 +247,8 @@ export interface LayoutConfig {
   channel_line_gap: number;
   channel_label_font_ratio: number;
   boundary_title_font_ratio: number;
+  user_icon_size: number;
+  user_icon_pad: number;
   diagram_margin: number;
   edge_margin: number;
 }
@@ -271,6 +273,8 @@ export function defaultLayoutConfig(): LayoutConfig {
     channel_line_gap: 8.0,
     channel_label_font_ratio: 0.9,
     boundary_title_font_ratio: 1.1,
+    user_icon_size: 20.0,
+    user_icon_pad: 8.0,
     diagram_margin: 4.0,
     edge_margin: 8.0,
   };

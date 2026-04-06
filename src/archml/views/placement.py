@@ -77,6 +77,12 @@ class LayoutConfig:
             ``_FONT_SIZE * scale * 1.1`` used by ``_render_boundary`` in the SVG
             backend.  Used to compute the minimum content width needed so that
             boundary titles always fit within their bounding box.
+        user_icon_size: Side length of the SVG symbol icon rendered in the top-left
+            corner of user and external_user nodes (layout units).  Must match the
+            ``_USER_ICON_SIZE`` constant in the diagram renderer.
+        user_icon_pad: Padding from the node top and left edges to the icon
+            (layout units).  Controls the minimum height required by user nodes.
+            Must match ``_USER_ICON_PAD`` in the diagram renderer.
         diagram_margin: Uniform whitespace added around the entire diagram on
             all four sides (layout units).  Prevents box strokes from being
             clipped at the SVG/PNG canvas edge when there are no peripheral
@@ -115,6 +121,8 @@ class LayoutConfig:
     channel_line_gap: float = 8.0
     channel_label_font_ratio: float = 0.9
     boundary_title_font_ratio: float = 1.1
+    user_icon_size: float = 20.0
+    user_icon_pad: float = 8.0
     diagram_margin: float = 4.0
     edge_margin: float = 8.0
     y_optimisation_passes: int = 6
@@ -270,6 +278,13 @@ def _effective_inner_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple[floa
             h = max(h, _min_channel_node_height(cfg))
         elif node.kind in ("component", "system"):
             needed = _required_text_width(node.label, cfg, bold=True)
+        elif node.kind in ("user", "external_user"):
+            needed = _required_text_width(node.label, cfg)
+            # Icon badge in top-left corner: must fit vertically alongside the centred label.
+            icon_min_h = (
+                cfg.user_icon_pad + cfg.user_icon_size + cfg.user_icon_pad + cfg.font_size + cfg.node_v_padding / 2
+            )
+            h = max(h, icon_min_h)
         else:
             needed = _required_text_width(node.label, cfg)
         w = max(w, needed)
@@ -279,10 +294,16 @@ def _effective_inner_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple[floa
 def _effective_peripheral_size(nodes: list[VizNode], cfg: LayoutConfig) -> tuple[float, float]:
     """Return ``(width, height)`` for peripheral nodes."""
     w = cfg.peripheral_node_width
+    h = cfg.peripheral_node_height
     for node in nodes:
         needed = _required_text_width(node.label, cfg)
         w = max(w, needed)
-    return w, cfg.peripheral_node_height
+        if node.kind in ("user", "external_user"):
+            icon_min_h = (
+                cfg.user_icon_pad + cfg.user_icon_size + cfg.user_icon_pad + cfg.font_size + cfg.node_v_padding / 2
+            )
+            h = max(h, icon_min_h)
+    return w, h
 
 
 # -------- coordinate helpers --------

@@ -453,16 +453,16 @@ def test_render_expose_terminals_produce_peripheral_nodes(tmp_path: Path) -> Non
 
 
 # ###############
-# User pictogram
+# User icon symbol
 # ###############
 
 
-def test_render_user_node_shows_person_pictogram(tmp_path: Path) -> None:
-    """A user node renders a person pictogram (circle head) inside its box."""
+def test_render_user_node_emits_icon_group(tmp_path: Path) -> None:
+    """A user node emits a ``<g>`` element with a ``transform`` attribute for the icon."""
     sys = System(name="Portal", users=[UserDef(name="Alice")])
     root = _render_and_parse(sys, tmp_path)
-    circles = list(root.iter(f"{{{_SVG_NS}}}circle"))
-    assert len(circles) >= 1, "Expected a <circle> element for the user head pictogram"
+    groups = list(root.iter(f"{{{_SVG_NS}}}g"))
+    assert any("transform" in g.attrib for g in groups), "Expected a <g transform=...> element for the user icon"
 
 
 def test_render_user_node_label_present(tmp_path: Path) -> None:
@@ -472,33 +472,27 @@ def test_render_user_node_label_present(tmp_path: Path) -> None:
     assert "Customer" in _text_content(root)
 
 
-def test_render_external_user_shows_person_pictogram(tmp_path: Path) -> None:
-    """An external user node also renders a person pictogram."""
+def test_render_external_user_emits_icon_group(tmp_path: Path) -> None:
+    """An external user node also emits a ``<g>`` element for the icon."""
     sys = System(name="Portal", users=[UserDef(name="Partner", is_external=True)])
     root = _render_and_parse(sys, tmp_path)
-    circles = list(root.iter(f"{{{_SVG_NS}}}circle"))
-    assert len(circles) >= 1, "Expected a <circle> element for the external user head pictogram"
+    groups = list(root.iter(f"{{{_SVG_NS}}}g"))
+    assert any("transform" in g.attrib for g in groups), (
+        "Expected a <g transform=...> element for the external user icon"
+    )
 
 
-def test_render_user_node_has_pictogram_lines(tmp_path: Path) -> None:
-    """A user node renders four <line> elements for the body, arms, and legs."""
+def test_render_user_node_icon_uses_amber_stroke(tmp_path: Path) -> None:
+    """Internal user icon ``<g>`` carries the amber stroke colour (#d97706)."""
     sys = System(name="Portal", users=[UserDef(name="Alice")])
     root = _render_and_parse(sys, tmp_path)
-    lines = list(root.iter(f"{{{_SVG_NS}}}line"))
-    assert len(lines) >= 4, "Expected at least 4 <line> elements (body + arms + 2 legs)"
+    icon_groups = [g for g in root.iter(f"{{{_SVG_NS}}}g") if "transform" in g.attrib]
+    assert any(g.attrib.get("stroke") == "#d97706" for g in icon_groups)
 
 
-def test_render_user_node_pictogram_uses_amber_stroke(tmp_path: Path) -> None:
-    """Internal user pictogram elements use the amber stroke colour (#d97706)."""
-    sys = System(name="Portal", users=[UserDef(name="Alice")])
-    root = _render_and_parse(sys, tmp_path)
-    circles = list(root.iter(f"{{{_SVG_NS}}}circle"))
-    assert any(c.attrib.get("stroke") == "#d97706" for c in circles)
-
-
-def test_render_external_user_pictogram_uses_slate_stroke(tmp_path: Path) -> None:
-    """External user pictogram elements use the slate stroke colour (#475569)."""
+def test_render_external_user_icon_uses_slate_stroke(tmp_path: Path) -> None:
+    """External user icon ``<g>`` carries the slate stroke colour (#475569)."""
     sys = System(name="Portal", users=[UserDef(name="Ext", is_external=True)])
     root = _render_and_parse(sys, tmp_path)
-    circles = list(root.iter(f"{{{_SVG_NS}}}circle"))
-    assert any(c.attrib.get("stroke") == "#475569" for c in circles)
+    icon_groups = [g for g in root.iter(f"{{{_SVG_NS}}}g") if "transform" in g.attrib]
+    assert any(g.attrib.get("stroke") == "#475569" for g in icon_groups)

@@ -78,14 +78,17 @@ _LABEL_PADDING = 6.0  # horizontal padding inside node for text clip region
 # Channel / interface node layout — must match LayoutConfig defaults.
 _CHANNEL_STROKE_DASH = "5,3"
 
-# Person pictogram geometry (layout units, before scaling).
-_PICTOGRAM_TOP_PAD = 5.0  # gap from node top edge to top of head circle
-_PICTOGRAM_HEAD_R = 5.0  # head circle radius
-_PICTOGRAM_BODY_H = 8.0  # body line length (neck to hip)
-_PICTOGRAM_ARM_Y_OFF = 3.0  # offset from neck down to arm attachment point
-_PICTOGRAM_ARM_W = 7.0  # half-span of the arm line
-_PICTOGRAM_LEG_H = 7.0  # leg line height
-_PICTOGRAM_LEG_W = 5.0  # leg horizontal spread
+# User node icon — Heroicons 2.x "user" outline (MIT licence, viewBox 0 0 24 24).
+# _USER_ICON_SIZE and _USER_ICON_PAD must match LayoutConfig.user_icon_size / user_icon_pad defaults.
+_USER_ICON_SIZE = 20.0  # side length of the rendered icon (layout units)
+_USER_ICON_PAD = 8.0  # gap from node top and left edges to the icon (layout units)
+# Heroicons 2.x "user" outline path — viewBox 0 0 24 24 (MIT licence).
+_USER_ICON_PATH = (
+    "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
+    "M4.501 20.118a7.5 7.5 0 0 1 14.998 0"
+    "A17.933 17.933 0 0 1 12 21.75"
+    "c-2.676 0-5.216-.584-7.499-1.632Z"
+)
 
 # Arrowhead geometry (layout units, before scaling).
 _ARROW_LEN = 9.0
@@ -387,82 +390,32 @@ def _render_node(
         )
         text.text = iface_name
     elif kind in ("user", "external_user"):
-        # Person pictogram (head + body + arms + legs) above the label.
+        # User icon: inline path scaled from 24×24 viewBox to _USER_ICON_SIZE layout units.
         stroke_color = _NODE_STROKE.get(variant, "#475569")
-        head_cy = nl.y + _PICTOGRAM_TOP_PAD + _PICTOGRAM_HEAD_R
-        neck_y = head_cy + _PICTOGRAM_HEAD_R
-        arm_y = neck_y + _PICTOGRAM_ARM_Y_OFF
-        body_bottom_y = neck_y + _PICTOGRAM_BODY_H
-        leg_bottom_y = body_bottom_y + _PICTOGRAM_LEG_H
-        line_kw: dict[str, str] = {
-            "stroke": stroke_color,
-            "stroke-width": "1.5",
-            "stroke-linecap": "round",
-        }
-        ET.SubElement(
+        icon_x = nl.x + _USER_ICON_PAD
+        icon_y = nl.y + _USER_ICON_PAD
+        icon_scale = _USER_ICON_SIZE / 24.0
+        transform = f"translate({icon_x * scale:.2f},{icon_y * scale:.2f}) scale({icon_scale * scale:.4f})"
+        g = ET.SubElement(
             svg,
-            "circle",
+            "g",
             {
-                "cx": cx,
-                "cy": _f(head_cy, scale),
-                "r": _f(_PICTOGRAM_HEAD_R, scale),
+                "transform": transform,
                 "fill": "none",
                 "stroke": stroke_color,
                 "stroke-width": "1.5",
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
             },
         )
-        ET.SubElement(
-            svg,
-            "line",
-            {
-                **line_kw,
-                "x1": cx,
-                "y1": _f(neck_y, scale),
-                "x2": cx,
-                "y2": _f(body_bottom_y, scale),
-            },
-        )
-        ET.SubElement(
-            svg,
-            "line",
-            {
-                **line_kw,
-                "x1": _f(cx_f - _PICTOGRAM_ARM_W, scale),
-                "y1": _f(arm_y, scale),
-                "x2": _f(cx_f + _PICTOGRAM_ARM_W, scale),
-                "y2": _f(arm_y, scale),
-            },
-        )
-        ET.SubElement(
-            svg,
-            "line",
-            {
-                **line_kw,
-                "x1": cx,
-                "y1": _f(body_bottom_y, scale),
-                "x2": _f(cx_f - _PICTOGRAM_LEG_W, scale),
-                "y2": _f(leg_bottom_y, scale),
-            },
-        )
-        ET.SubElement(
-            svg,
-            "line",
-            {
-                **line_kw,
-                "x1": cx,
-                "y1": _f(body_bottom_y, scale),
-                "x2": _f(cx_f + _PICTOGRAM_LEG_W, scale),
-                "y2": _f(leg_bottom_y, scale),
-            },
-        )
-        # Label centred in the space below the pictogram.
-        text_cy = leg_bottom_y + (nl.y + nl.height - leg_bottom_y) / 2
+        ET.SubElement(g, "path", {"d": _USER_ICON_PATH})
+        # Label centred in the full node box.
         text = ET.SubElement(
             svg,
             "text",
             {
                 "x": cx,
-                "y": _f(text_cy, scale),
+                "y": _f(cy_mid, scale),
                 "text-anchor": "middle",
                 "dominant-baseline": "middle",
                 "font-family": _FONT_FAMILY,
