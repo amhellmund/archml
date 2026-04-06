@@ -211,5 +211,3 @@ def test_uses_name_when_qualified_name_empty() -> None:
     data = _parse(build_viewer_payload(_files(Fallback=sys)))
     qnames = [e["qualified_name"] for e in data["entities"]]
     assert "Fallback" in qnames
-
-

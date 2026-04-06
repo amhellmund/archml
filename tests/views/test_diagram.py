@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from archml.model.entities import Component, ConnectDef, ExposeDef, InterfaceRef, System
+from archml.model.entities import Component, ConnectDef, ExposeDef, InterfaceRef, System, UserDef
 from archml.views.diagram import render_diagram
 from archml.views.layout import compute_layout
 from archml.views.topology import build_viz_diagram
@@ -450,3 +450,55 @@ def test_render_expose_terminals_produce_peripheral_nodes(tmp_path: Path) -> Non
     # At least one edge (polyline) drawn.
     polylines = list(root.iter(f"{{{_SVG_NS}}}polyline"))
     assert len(polylines) >= 1
+
+
+# ###############
+# User pictogram
+# ###############
+
+
+def test_render_user_node_shows_person_pictogram(tmp_path: Path) -> None:
+    """A user node renders a person pictogram (circle head) inside its box."""
+    sys = System(name="Portal", users=[UserDef(name="Alice")])
+    root = _render_and_parse(sys, tmp_path)
+    circles = list(root.iter(f"{{{_SVG_NS}}}circle"))
+    assert len(circles) >= 1, "Expected a <circle> element for the user head pictogram"
+
+
+def test_render_user_node_label_present(tmp_path: Path) -> None:
+    """The user's name appears as a text label in the SVG."""
+    sys = System(name="Portal", users=[UserDef(name="Customer")])
+    root = _render_and_parse(sys, tmp_path)
+    assert "Customer" in _text_content(root)
+
+
+def test_render_external_user_shows_person_pictogram(tmp_path: Path) -> None:
+    """An external user node also renders a person pictogram."""
+    sys = System(name="Portal", users=[UserDef(name="Partner", is_external=True)])
+    root = _render_and_parse(sys, tmp_path)
+    circles = list(root.iter(f"{{{_SVG_NS}}}circle"))
+    assert len(circles) >= 1, "Expected a <circle> element for the external user head pictogram"
+
+
+def test_render_user_node_has_pictogram_lines(tmp_path: Path) -> None:
+    """A user node renders four <line> elements for the body, arms, and legs."""
+    sys = System(name="Portal", users=[UserDef(name="Alice")])
+    root = _render_and_parse(sys, tmp_path)
+    lines = list(root.iter(f"{{{_SVG_NS}}}line"))
+    assert len(lines) >= 4, "Expected at least 4 <line> elements (body + arms + 2 legs)"
+
+
+def test_render_user_node_pictogram_uses_amber_stroke(tmp_path: Path) -> None:
+    """Internal user pictogram elements use the amber stroke colour (#d97706)."""
+    sys = System(name="Portal", users=[UserDef(name="Alice")])
+    root = _render_and_parse(sys, tmp_path)
+    circles = list(root.iter(f"{{{_SVG_NS}}}circle"))
+    assert any(c.attrib.get("stroke") == "#d97706" for c in circles)
+
+
+def test_render_external_user_pictogram_uses_slate_stroke(tmp_path: Path) -> None:
+    """External user pictogram elements use the slate stroke colour (#475569)."""
+    sys = System(name="Portal", users=[UserDef(name="Ext", is_external=True)])
+    root = _render_and_parse(sys, tmp_path)
+    circles = list(root.iter(f"{{{_SVG_NS}}}circle"))
+    assert any(c.attrib.get("stroke") == "#475569" for c in circles)

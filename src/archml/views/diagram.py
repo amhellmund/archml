@@ -78,6 +78,15 @@ _LABEL_PADDING = 6.0  # horizontal padding inside node for text clip region
 # Channel / interface node layout — must match LayoutConfig defaults.
 _CHANNEL_STROKE_DASH = "5,3"
 
+# Person pictogram geometry (layout units, before scaling).
+_PICTOGRAM_TOP_PAD = 5.0  # gap from node top edge to top of head circle
+_PICTOGRAM_HEAD_R = 5.0  # head circle radius
+_PICTOGRAM_BODY_H = 8.0  # body line length (neck to hip)
+_PICTOGRAM_ARM_Y_OFF = 3.0  # offset from neck down to arm attachment point
+_PICTOGRAM_ARM_W = 7.0  # half-span of the arm line
+_PICTOGRAM_LEG_H = 7.0  # leg line height
+_PICTOGRAM_LEG_W = 5.0  # leg horizontal spread
+
 # Arrowhead geometry (layout units, before scaling).
 _ARROW_LEN = 9.0
 _ARROW_HALF_W = 4.0
@@ -328,8 +337,8 @@ def _render_node(
 ) -> None:
     """Draw a node rectangle with a centred, clipped label.
 
-    For channel nodes, renders two lines: the interface name (larger) above
-    centre and the channel name (smaller) below centre.
+    For channel nodes, renders the interface name bold and centred.
+    For user / external_user nodes, renders a person pictogram above the label.
     """
     cls = _node_class(kind)
     variant = cls.split()[-1]  # e.g. "archml-node--channel"
@@ -352,7 +361,8 @@ def _render_node(
 
     ET.SubElement(svg, "rect", rect_attrs)
 
-    cx = _f(nl.x + nl.width / 2, scale)
+    cx_f = nl.x + nl.width / 2  # horizontal centre in layout units
+    cx = _f(cx_f, scale)
     cy_mid = nl.y + nl.height / 2
 
     if kind in ("channel", "terminal", "interface"):
@@ -376,6 +386,93 @@ def _render_node(
             },
         )
         text.text = iface_name
+    elif kind in ("user", "external_user"):
+        # Person pictogram (head + body + arms + legs) above the label.
+        stroke_color = _NODE_STROKE.get(variant, "#475569")
+        head_cy = nl.y + _PICTOGRAM_TOP_PAD + _PICTOGRAM_HEAD_R
+        neck_y = head_cy + _PICTOGRAM_HEAD_R
+        arm_y = neck_y + _PICTOGRAM_ARM_Y_OFF
+        body_bottom_y = neck_y + _PICTOGRAM_BODY_H
+        leg_bottom_y = body_bottom_y + _PICTOGRAM_LEG_H
+        line_kw: dict[str, str] = {
+            "stroke": stroke_color,
+            "stroke-width": "1.5",
+            "stroke-linecap": "round",
+        }
+        ET.SubElement(
+            svg,
+            "circle",
+            {
+                "cx": cx,
+                "cy": _f(head_cy, scale),
+                "r": _f(_PICTOGRAM_HEAD_R, scale),
+                "fill": "none",
+                "stroke": stroke_color,
+                "stroke-width": "1.5",
+            },
+        )
+        ET.SubElement(
+            svg,
+            "line",
+            {
+                **line_kw,
+                "x1": cx,
+                "y1": _f(neck_y, scale),
+                "x2": cx,
+                "y2": _f(body_bottom_y, scale),
+            },
+        )
+        ET.SubElement(
+            svg,
+            "line",
+            {
+                **line_kw,
+                "x1": _f(cx_f - _PICTOGRAM_ARM_W, scale),
+                "y1": _f(arm_y, scale),
+                "x2": _f(cx_f + _PICTOGRAM_ARM_W, scale),
+                "y2": _f(arm_y, scale),
+            },
+        )
+        ET.SubElement(
+            svg,
+            "line",
+            {
+                **line_kw,
+                "x1": cx,
+                "y1": _f(body_bottom_y, scale),
+                "x2": _f(cx_f - _PICTOGRAM_LEG_W, scale),
+                "y2": _f(leg_bottom_y, scale),
+            },
+        )
+        ET.SubElement(
+            svg,
+            "line",
+            {
+                **line_kw,
+                "x1": cx,
+                "y1": _f(body_bottom_y, scale),
+                "x2": _f(cx_f + _PICTOGRAM_LEG_W, scale),
+                "y2": _f(leg_bottom_y, scale),
+            },
+        )
+        # Label centred in the space below the pictogram.
+        text_cy = leg_bottom_y + (nl.y + nl.height - leg_bottom_y) / 2
+        text = ET.SubElement(
+            svg,
+            "text",
+            {
+                "x": cx,
+                "y": _f(text_cy, scale),
+                "text-anchor": "middle",
+                "dominant-baseline": "middle",
+                "font-family": _FONT_FAMILY,
+                "font-size": str(int(_FONT_SIZE * scale)),
+                "fill": _TEXT_COLOUR,
+                "class": "archml-text",
+                "clip-path": f"url(#{clip_id})",
+            },
+        )
+        text.text = label
     else:
         text_attrs: dict[str, str] = {
             "x": cx,

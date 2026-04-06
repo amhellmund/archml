@@ -25,7 +25,7 @@
           "archml"
         ],
         "extensions": [
-          ".archml"
+          ".farchml"
         ],
         "configuration": "./language-configuration.json"
       }

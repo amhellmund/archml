@@ -28,6 +28,21 @@ const LABEL_PADDING = 6.0;
 const ARROW_LEN = 9.0;
 const ARROW_HALF_W = 4.0;
 
+// Person pictogram geometry (layout units, before scaling) — mirror diagram.py
+const PICTOGRAM_TOP_PAD = 5.0;
+const PICTOGRAM_HEAD_R = 5.0;
+const PICTOGRAM_BODY_H = 8.0;
+const PICTOGRAM_ARM_Y_OFF = 3.0;
+const PICTOGRAM_ARM_W = 7.0;
+const PICTOGRAM_LEG_H = 7.0;
+const PICTOGRAM_LEG_W = 5.0;
+
+// Pictogram stroke colours for user nodes (presentation attributes, mirror archml-diagram.css).
+const PICTOGRAM_STROKE: Partial<Record<NodeKind, string>> = {
+  user: "#d97706",
+  external_user: "#475569",
+};
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /** Render a VizDiagram to an interactive SVG string. */
@@ -175,7 +190,8 @@ function renderNode(
 
   const rect = `<rect x="${f(nl.x, scale)}" y="${f(nl.y, scale)}" width="${f(nl.width, scale)}" height="${f(nl.height, scale)}" rx="${r}" ry="${r}" class="${cls}"/>`;
 
-  const cx = f(nl.x + nl.width / 2, scale);
+  const cxF = nl.x + nl.width / 2;
+  const cx = f(cxF, scale);
   const cyMid = nl.y + nl.height / 2;
 
   let textParts: string;
@@ -184,6 +200,23 @@ function renderNode(
     // For channel nodes the interface name is in title (falls back to label).
     const ifaceName = kind === "channel" ? (title ?? "") : label;
     textParts = `<text x="${cx}" y="${f(cyMid, scale)}" text-anchor="middle" dominant-baseline="middle" font-family="${FONT_FAMILY}" font-size="${Math.round(FONT_SIZE * scale)}" font-weight="bold" class="archml-text" clip-path="url(#${clipId})">${escText(ifaceName)}</text>`;
+  } else if (kind === "user" || kind === "external_user") {
+    // Person pictogram (head + body + arms + legs) above the label.
+    const strokeColor = (kind && PICTOGRAM_STROKE[kind]) ?? "#475569";
+    const headCy = nl.y + PICTOGRAM_TOP_PAD + PICTOGRAM_HEAD_R;
+    const neckY = headCy + PICTOGRAM_HEAD_R;
+    const armY = neckY + PICTOGRAM_ARM_Y_OFF;
+    const bodyBottomY = neckY + PICTOGRAM_BODY_H;
+    const legBottomY = bodyBottomY + PICTOGRAM_LEG_H;
+    const la = `stroke="${strokeColor}" stroke-width="1.5" stroke-linecap="round"`;
+    const circle = `<circle cx="${cx}" cy="${f(headCy, scale)}" r="${f(PICTOGRAM_HEAD_R, scale)}" fill="none" stroke="${strokeColor}" stroke-width="1.5"/>`;
+    const body = `<line x1="${cx}" y1="${f(neckY, scale)}" x2="${cx}" y2="${f(bodyBottomY, scale)}" ${la}/>`;
+    const arms = `<line x1="${f(cxF - PICTOGRAM_ARM_W, scale)}" y1="${f(armY, scale)}" x2="${f(cxF + PICTOGRAM_ARM_W, scale)}" y2="${f(armY, scale)}" ${la}/>`;
+    const leftLeg = `<line x1="${cx}" y1="${f(bodyBottomY, scale)}" x2="${f(cxF - PICTOGRAM_LEG_W, scale)}" y2="${f(legBottomY, scale)}" ${la}/>`;
+    const rightLeg = `<line x1="${cx}" y1="${f(bodyBottomY, scale)}" x2="${f(cxF + PICTOGRAM_LEG_W, scale)}" y2="${f(legBottomY, scale)}" ${la}/>`;
+    const textCy = legBottomY + (nl.y + nl.height - legBottomY) / 2;
+    const labelText = `<text x="${cx}" y="${f(textCy, scale)}" text-anchor="middle" dominant-baseline="middle" font-family="${FONT_FAMILY}" font-size="${Math.round(FONT_SIZE * scale)}" class="archml-text" clip-path="url(#${clipId})">${escText(label)}</text>`;
+    textParts = circle + body + arms + leftLeg + rightLeg + labelText;
   } else {
     const isBold =
       kind === "component" || kind === "system" || kind === "interface" || kind === "terminal";
