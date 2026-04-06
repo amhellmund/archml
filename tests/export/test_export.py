@@ -213,38 +213,3 @@ def test_uses_name_when_qualified_name_empty() -> None:
     assert "Fallback" in qnames
 
 
-# -------- width_optimized --------
-
-
-def test_width_optimized_false_by_default() -> None:
-    """widthOptimized is absent from the payload when width_optimized is not set."""
-    data = _parse(build_viewer_payload({}))
-    assert "widthOptimized" not in data
-
-
-def test_width_optimized_false_explicit() -> None:
-    """widthOptimized is absent from the payload when width_optimized=False."""
-    data = _parse(build_viewer_payload({}, width_optimized=False))
-    assert "widthOptimized" not in data
-
-
-def test_width_optimized_true_adds_flag() -> None:
-    """widthOptimized is present and True in the payload when width_optimized=True."""
-    data = _parse(build_viewer_payload({}, width_optimized=True))
-    assert data["widthOptimized"] is True
-
-
-def test_width_optimized_preserves_other_keys() -> None:
-    """width_optimized=True does not remove the standard version/files/entities keys."""
-    data = _parse(build_viewer_payload({}, width_optimized=True))
-    assert "version" in data
-    assert "files" in data
-    assert "entities" in data
-
-
-def test_width_optimized_entity_data_unaffected() -> None:
-    """Entity index is identical whether or not width_optimized is set."""
-    sys = System(name="S", qualified_name="S")
-    base = _parse(build_viewer_payload(_files(S=sys)))
-    wo = _parse(build_viewer_payload(_files(S=sys), width_optimized=True))
-    assert base["entities"] == wo["entities"]

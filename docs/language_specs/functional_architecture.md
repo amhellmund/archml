@@ -425,13 +425,13 @@ When the `@` prefix is omitted, the current repository is assumed.
 
 ## Workspace Configuration
 
-Every repository is also a workspace. A single `.farchml-workspace.yaml` file at the repository root serves as both the per-repository configuration and the multi-repository workspace configuration.
+Every repository is also a workspace. A single `.archml-workspace.yaml` file at the repository root serves as both the per-repository configuration and the multi-repository workspace configuration.
 
 Each entry in `source-imports` declares a **mnemonic** — a short name that maps to a directory path within the repository.
 Import paths are resolved by matching their first segment against the declared mnemonic names.
 
 ```yaml
-# .farchml-workspace.yaml
+# .archml-workspace.yaml
 name: myapp
 build-directory: .farchml-build
 source-imports:

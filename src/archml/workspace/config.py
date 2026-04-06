@@ -65,7 +65,7 @@ SourceImport = LocalPathImport | GitPathImport
 
 
 class WorkspaceConfig(BaseModel):
-    """Top-level workspace configuration parsed from .farchml-workspace.yaml."""
+    """Top-level workspace configuration parsed from .archml-workspace.yaml."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -99,20 +99,20 @@ class WorkspaceConfig(BaseModel):
         return self
 
 
-WORKSPACE_CONFIG_FILENAME = ".farchml-workspace.yaml"
+WORKSPACE_CONFIG_FILENAME = ".archml-workspace.yaml"
 
 
 def find_workspace_root(start_dir: Path) -> Path | None:
     """Walk up the directory tree to find the ArchML workspace root.
 
-    Searches for a .farchml-workspace.yaml file starting from start_dir and
+    Searches for a .archml-workspace.yaml file starting from start_dir and
     ascending through parent directories until the filesystem root is reached.
 
     Args:
         start_dir: Directory to start the search from.
 
     Returns:
-        The directory containing .farchml-workspace.yaml, or None if not found.
+        The directory containing .archml-workspace.yaml, or None if not found.
     """
     current = start_dir.resolve()
     while True:
@@ -128,7 +128,7 @@ def load_workspace_config(path: Path) -> WorkspaceConfig:
     """Load and validate a workspace configuration file.
 
     Args:
-        path: Path to the .farchml-workspace.yaml file.
+        path: Path to the .archml-workspace.yaml file.
 
     Returns:
         A validated WorkspaceConfig instance.

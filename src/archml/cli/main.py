@@ -107,16 +107,6 @@ def main() -> None:
         metavar="FILE",
         help="Output file path (default: architecture.html)",
     )
-    export_parser.add_argument(
-        "--width-optimized",
-        action="store_true",
-        default=False,
-        help=(
-            "Combine left and right sidebars into a single left sidebar and add a top bar "
-            "with a hamburger toggle. Saves horizontal space for narrow viewports."
-        ),
-    )
-
     # sync-remote subcommand
     subparsers.add_parser(
         "sync-remote",
@@ -200,7 +190,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
     workspace_dir = Path(args.workspace_dir).resolve()
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    workspace_yaml = workspace_dir / ".farchml-workspace.yaml"
+    workspace_yaml = workspace_dir / ".archml-workspace.yaml"
     if workspace_yaml.exists():
         print(
             f"Error: workspace already exists at '{workspace_yaml}'.",
@@ -227,7 +217,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".farchml-workspace.yaml"
+    workspace_yaml = directory / ".archml-workspace.yaml"
 
     if not workspace_yaml.exists():
         root = find_workspace_root(directory)
@@ -239,7 +229,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
             )
             return 1
         directory = root
-        workspace_yaml = directory / ".farchml-workspace.yaml"
+        workspace_yaml = directory / ".archml-workspace.yaml"
 
     try:
         config = load_workspace_config(workspace_yaml)
@@ -260,7 +250,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         elif isinstance(imp, GitPathImport):
             repo_dir = (sync_dir / imp.name).resolve()
             if repo_dir.exists():
-                remote_workspace_yaml = repo_dir / ".farchml-workspace.yaml"
+                remote_workspace_yaml = repo_dir / ".archml-workspace.yaml"
                 if remote_workspace_yaml.exists():
                     try:
                         remote_config = load_workspace_config(remote_workspace_yaml)
@@ -320,7 +310,7 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".farchml-workspace.yaml"
+    workspace_yaml = directory / ".archml-workspace.yaml"
 
     if not workspace_yaml.exists():
         print(
@@ -401,7 +391,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".farchml-workspace.yaml"
+    workspace_yaml = directory / ".archml-workspace.yaml"
 
     if not workspace_yaml.exists():
         print(
@@ -434,7 +424,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
         _print_errors(str(exc).splitlines())
         return 1
 
-    payload_json = build_viewer_payload(compiled, width_optimized=args.width_optimized)
+    payload_json = build_viewer_payload(compiled)
 
     template = template_path.read_text(encoding="utf-8")
     data_tag = f'<script id="archml-data" type="application/json">{payload_json}</script>'
@@ -458,7 +448,7 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".farchml-workspace.yaml"
+    workspace_yaml = directory / ".archml-workspace.yaml"
     if not workspace_yaml.exists():
         root = find_workspace_root(directory)
         if root is None:
@@ -469,7 +459,7 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
             )
             return 1
         directory = root
-        workspace_yaml = directory / ".farchml-workspace.yaml"
+        workspace_yaml = directory / ".archml-workspace.yaml"
 
     try:
         config = load_workspace_config(workspace_yaml)
@@ -553,7 +543,7 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".farchml-workspace.yaml"
+    workspace_yaml = directory / ".archml-workspace.yaml"
     if not workspace_yaml.exists():
         root = find_workspace_root(directory)
         if root is None:
@@ -564,7 +554,7 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
             )
             return 1
         directory = root
-        workspace_yaml = directory / ".farchml-workspace.yaml"
+        workspace_yaml = directory / ".archml-workspace.yaml"
 
     try:
         config = load_workspace_config(workspace_yaml)

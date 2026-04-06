@@ -71,45 +71,31 @@ hljs.registerLanguage("yml", hljsYaml);
 
 /** Mount the full interactive viewer into *container*. */
 export function mountViewer(container: HTMLElement, payload: ViewerPayload): void {
-  const widthOptimized = payload.widthOptimized === true;
-  container.innerHTML = buildViewerShell(widthOptimized);
-  container.className = widthOptimized ? "archml-viewer archml-viewer--wo" : "archml-viewer";
+  container.innerHTML = buildViewerShell();
+  container.className = "archml-viewer";
 
   const canvasArea = container.querySelector<HTMLElement>(".archml-canvas-area")!;
   const canvasTransform = container.querySelector<HTMLElement>(".archml-canvas-transform")!;
-  // In width-optimized mode details are shown in .archml-sidebar-details; otherwise .archml-sidebar-right-body.
-  const detailsSidebar = container.querySelector<HTMLElement>(
-    widthOptimized ? ".archml-sidebar-details" : ".archml-sidebar-right-body",
-  )!;
+  const detailsSidebar = container.querySelector<HTMLElement>(".archml-sidebar-right-body")!;
   const entitySelectWrap = container.querySelector<HTMLElement>("#archml-entity-select-wrap")!;
   const depthSelect = container.querySelector<HTMLSelectElement>("#archml-depth-select")!;
   const variantSelect = container.querySelector<HTMLSelectElement>("#archml-variant-select")!;
   const errorBanner = container.querySelector<HTMLElement>(".archml-error-banner")!;
   const loadingEl = container.querySelector<HTMLElement>(".archml-loading")!;
 
-  // Hamburger toggle (width-optimized mode only)
-  if (widthOptimized) {
-    const hamburger = container.querySelector<HTMLElement>(".archml-hamburger");
-    hamburger?.addEventListener("click", () => {
-      container.classList.toggle("archml-viewer--sidebar-collapsed");
-    });
-  }
-
-  // Expand/collapse toggle for right sidebar (standard layout only)
-  if (!widthOptimized) {
-    const expandBtn = container.querySelector<HTMLElement>("#archml-sidebar-expand-btn");
-    const rightSidebar = container.querySelector<HTMLElement>(".archml-sidebar-right");
-    expandBtn?.addEventListener("click", () => {
-      const expanded = rightSidebar!.classList.toggle("archml-sidebar-right--expanded");
-      const svg = expandBtn.querySelector("svg");
-      if (svg) {
-        svg.innerHTML = expanded
-          ? `<polyline points="5,1 1,1 1,5"/><polyline points="11,1 15,1 15,5"/><polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/><line x1="1" y1="1" x2="6" y2="6"/><line x1="15" y1="1" x2="10" y2="6"/><line x1="15" y1="15" x2="10" y2="10"/><line x1="1" y1="15" x2="6" y2="10"/>`
-          : `<polyline points="1,5 1,1 5,1"/><polyline points="11,1 15,1 15,5"/><polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/>`;
-      }
-      expandBtn.title = expanded ? "Collapse sidebar" : "Expand sidebar";
-    });
-  }
+  // Expand/collapse toggle for right sidebar
+  const expandBtn = container.querySelector<HTMLElement>("#archml-sidebar-expand-btn");
+  const rightSidebar = container.querySelector<HTMLElement>(".archml-sidebar-right");
+  expandBtn?.addEventListener("click", () => {
+    const expanded = rightSidebar!.classList.toggle("archml-sidebar-right--expanded");
+    const svg = expandBtn.querySelector("svg");
+    if (svg) {
+      svg.innerHTML = expanded
+        ? `<polyline points="5,1 1,1 1,5"/><polyline points="11,1 15,1 15,5"/><polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/><line x1="1" y1="1" x2="6" y2="6"/><line x1="15" y1="1" x2="10" y2="6"/><line x1="15" y1="15" x2="10" y2="10"/><line x1="1" y1="15" x2="6" y2="10"/>`
+        : `<polyline points="1,5 1,1 5,1"/><polyline points="11,1 15,1 15,5"/><polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/>`;
+    }
+    expandBtn.title = expanded ? "Collapse sidebar" : "Expand sidebar";
+  });
 
   // Populate variant dropdown (named variants shown in italic)
   const allVariants = collectAllVariants(payload.files);
@@ -311,49 +297,7 @@ export function mountEmbed(
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function buildViewerShell(widthOptimized: boolean): string {
-  if (widthOptimized) {
-    return `
-      <div class="archml-topbar">
-        <button class="archml-hamburger" type="button" title="Toggle sidebar">&#9776;</button>
-        <span class="archml-topbar-title">ArchML Explorer</span>
-      </div>
-      <div class="archml-body">
-        <div class="archml-sidebar-combined">
-          <div class="archml-sidebar-controls">
-            <div>
-              <label for="archml-variant-select">Variant</label>
-              <select id="archml-variant-select">
-                <option value="*">All Variants</option>
-                <option value="">Baseline</option>
-              </select>
-            </div>
-            <div>
-              <label>Entity</label>
-              <div id="archml-entity-select-wrap"></div>
-            </div>
-            <div>
-              <label for="archml-depth-select">Depth</label>
-              <select id="archml-depth-select">
-                <option value="full">Full depth</option>
-                <option value="0">0 – root only</option>
-                <option value="1">1 – children</option>
-                <option value="2">2 – grand children</option>
-              </select>
-            </div>
-            <div class="archml-error-banner" style="display:none"></div>
-          </div>
-          <div class="archml-sidebar-details">
-            <p class="archml-detail-empty">Click an entity to see details.</p>
-          </div>
-        </div>
-        <div class="archml-canvas-area">
-          <div class="archml-canvas-transform"></div>
-          <div class="archml-loading">Loading…</div>
-        </div>
-      </div>
-    `.trim();
-  }
+function buildViewerShell(): string {
   return `
     <div class="archml-topbar">
       <span class="archml-topbar-title">ArchML Explorer</span>
