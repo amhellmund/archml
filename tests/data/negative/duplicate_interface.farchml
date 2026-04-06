@@ -1,0 +1,11 @@
+# Negative: duplicate interface name
+# Expected errors:
+#   Duplicate interface name 'OrderRequest'
+
+interface OrderRequest {
+    order_id: String
+}
+
+interface OrderRequest {
+    id: String
+}

@@ -1,0 +1,24 @@
+# Shared types and interfaces used by worker and system files.
+
+enum Priority {
+    Low
+    Medium
+    High
+}
+
+type TaskConfig {
+    retries: Int
+    timeout: Int
+}
+
+interface TaskRequest {
+    task_id: String
+    priority: Priority
+    settings: TaskConfig
+}
+
+interface TaskResult {
+    task_id: String
+    success: Bool
+    message: Optional<String>
+}

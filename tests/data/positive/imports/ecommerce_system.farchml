@@ -1,0 +1,32 @@
+# System file that imports from multiple sources
+# Expected result: no semantic errors when resolved with types.archml and order_service.archml
+
+from imports/types import PaymentRequest, OrderStatus
+from imports/order_service import OrderService
+
+# PaymentResult defined locally (not in the types file)
+interface PaymentResult {
+    order_id: String
+    success: Bool
+    transaction_id: Optional<String>
+}
+
+external system StripeAPI {
+    requires PaymentRequest
+    provides PaymentResult
+}
+
+system ECommerce {
+
+    use component OrderService
+
+    component PaymentGateway {
+
+        requires PaymentRequest as pay_in
+        requires PaymentRequest as stripe_in
+        provides PaymentResult
+    }
+
+    connect PaymentGateway.pay_in -> $payment -> OrderService.PaymentRequest
+    connect PaymentGateway.stripe_in -> $stripe
+}
