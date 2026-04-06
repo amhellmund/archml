@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 # Public Interface
 # ###############
 
-LOCKFILE_NAME = ".archml-lockfile.yaml"
+LOCKFILE_NAME = ".farchml-lockfile.yaml"
 
 
 class LockfileError(Exception):
@@ -44,7 +44,7 @@ def load_lockfile(path: Path) -> Lockfile:
     An empty or missing-content file is treated as an empty lockfile.
 
     Args:
-        path: Path to the .archml-lockfile.yaml file.
+        path: Path to the .farchml-lockfile.yaml file.
 
     Returns:
         A validated Lockfile instance.

@@ -18,6 +18,7 @@ from archml.model.entities import (
     ArchEntity,
     ArchFile,
     Component,
+    ConfigRef,
     ConnectDef,
     ContainerEntity,
     EnumDef,
@@ -175,6 +176,10 @@ class _SemanticAnalyzer:
         all_field_type_names = local_field_type_names | imported_field_type_names
         all_type_names = local_field_type_names | {i.name for i in self._file.interfaces} | imported_names
         all_interface_plain_names = {i.name for i in self._file.interfaces} | imported_names
+        # Config declarations must reference a TypeDef (not enum, not interface).
+        # For imports, be permissive (any imported name qualifies) since the kind
+        # is not always known without resolution.
+        all_type_def_names: set[str] = {t.name for t in self._file.types} | imported_names
 
         # 0. Check that all description fields are valid markdown.
         errors.extend(_check_all_descriptions(self._file, self._filename))
@@ -222,6 +227,7 @@ class _SemanticAnalyzer:
                     all_interface_plain_names,
                     local_interface_defs,
                     imported_names,
+                    all_type_def_names,
                 )
             )
 
@@ -234,6 +240,7 @@ class _SemanticAnalyzer:
                     all_interface_plain_names,
                     local_interface_defs,
                     imported_names,
+                    all_type_def_names,
                 )
             )
 
@@ -245,6 +252,7 @@ class _SemanticAnalyzer:
                     all_interface_plain_names,
                     local_interface_defs,
                     imported_names,
+                    all_type_def_names,
                     self._filename,
                 )
             )
@@ -271,6 +279,7 @@ class _SemanticAnalyzer:
         all_interface_names: set[str],
         local_interface_defs: dict[str, InterfaceDef],
         imported_names: set[str],
+        all_type_def_names: set[str],
     ) -> list[SemanticError]:
         errors: list[SemanticError] = []
         ctx = f"component '{comp.name}'"
@@ -326,6 +335,12 @@ class _SemanticAnalyzer:
         # Check for duplicate port names across requires and provides.
         errors.extend(_check_port_names(ctx, comp.requires, comp.provides, self._filename))
 
+        # Check that requires ports are declared before provides ports.
+        errors.extend(_check_port_ordering(ctx, comp.requires, comp.provides, self._filename))
+
+        # Check config declarations.
+        errors.extend(_check_config_refs(ctx, comp.configs, all_type_def_names, self._filename))
+
         # Check connect / expose statements.
         child_entity_map: dict[str, Component | System | UserDef] = {c.name: c for c in comp.components}
         for conn in comp.connects:
@@ -343,6 +358,7 @@ class _SemanticAnalyzer:
                     merged_interface_names,
                     merged_interface_defs,
                     imported_names,
+                    all_type_def_names,
                 )
             )
 
@@ -355,6 +371,7 @@ class _SemanticAnalyzer:
         all_interface_names: set[str],
         local_interface_defs: dict[str, InterfaceDef],
         imported_names: set[str],
+        all_type_def_names: set[str],
     ) -> list[SemanticError]:
         errors: list[SemanticError] = []
         ctx = f"system '{system.name}'"
@@ -445,6 +462,12 @@ class _SemanticAnalyzer:
         # Check for duplicate port names across requires and provides.
         errors.extend(_check_port_names(ctx, system.requires, system.provides, self._filename))
 
+        # Check that requires ports are declared before provides ports.
+        errors.extend(_check_port_ordering(ctx, system.requires, system.provides, self._filename))
+
+        # Check config declarations.
+        errors.extend(_check_config_refs(ctx, system.configs, all_type_def_names, self._filename))
+
         # Check connect / expose statements.
         child_entity_map: dict[str, Component | System | UserDef] = {
             **{c.name: c for c in system.components},
@@ -466,6 +489,7 @@ class _SemanticAnalyzer:
                     merged_interface_names,
                     merged_interface_defs,
                     imported_names,
+                    all_type_def_names,
                 )
             )
         for sub_sys in system.systems:
@@ -476,6 +500,7 @@ class _SemanticAnalyzer:
                     merged_interface_names,
                     merged_interface_defs,
                     imported_names,
+                    all_type_def_names,
                 )
             )
         for user in system.users:
@@ -485,6 +510,7 @@ class _SemanticAnalyzer:
                     merged_interface_names,
                     merged_interface_defs,
                     imported_names,
+                    all_type_def_names,
                     self._filename,
                 )
             )
@@ -960,6 +986,74 @@ def _check_port_names(
     )
 
 
+def _check_port_ordering(
+    ctx: str,
+    requires: list[InterfaceRef],
+    provides: list[InterfaceRef],
+    filename: str | None = None,
+) -> list[SemanticError]:
+    """Check that all ``requires`` declarations appear before any ``provides`` declaration.
+
+    Compares source line numbers: if any ``requires`` port has a line number
+    greater than the smallest ``provides`` line number, an error is reported.
+    Ports with line 0 (synthesised programmatically) are excluded from the check.
+    """
+    provides_lines = [p.line for p in provides if p.line > 0]
+    if not provides_lines:
+        return []
+    first_provides_line = min(provides_lines)
+    errors: list[SemanticError] = []
+    for req in requires:
+        if req.line > 0 and req.line > first_provides_line:
+            errors.append(
+                SemanticError(
+                    message=f"{ctx}: 'requires' declaration on line {req.line} appears after a 'provides' declaration; "
+                    "'requires' ports must be declared before 'provides' ports",
+                    filename=filename,
+                    line=req.line,
+                )
+            )
+    return errors
+
+
+def _check_config_refs(
+    ctx: str,
+    configs: list[ConfigRef],
+    all_type_def_names: set[str],
+    filename: str | None = None,
+) -> list[SemanticError]:
+    """Check config declarations within an entity.
+
+    Verifies:
+    - No duplicate effective config names within the entity.
+    - Each referenced type name resolves to a known ``type`` definition.
+    """
+    errors: list[SemanticError] = []
+
+    def _effective_config_name(c: ConfigRef) -> str:
+        return c.config_name if c.config_name is not None else c.name
+
+    errors.extend(
+        _check_duplicate_name_lines(
+            [(_effective_config_name(c), c.line) for c in configs],
+            f"Duplicate config name '{{}}' in {ctx}",
+            filename,
+        )
+    )
+
+    for cfg in configs:
+        if cfg.name not in all_type_def_names:
+            errors.append(
+                SemanticError(
+                    message=f"{ctx}: config '{cfg.name}' does not reference a known type",
+                    filename=filename,
+                    line=cfg.line,
+                )
+            )
+
+    return errors
+
+
 def _validate_markdown(text: str, filename: str | None, line: int | None) -> list[SemanticError]:
     """Check that *text* is valid markdown.
 
@@ -1044,9 +1138,10 @@ def _check_user(
     all_interface_names: set[str],
     local_interface_defs: dict[str, InterfaceDef],
     imported_names: set[str],
+    all_type_def_names: set[str],
     filename: str | None = None,
 ) -> list[SemanticError]:
-    """Check requires/provides interface references on a user entity."""
+    """Check requires/provides interface references and config declarations on a user entity."""
     errors: list[SemanticError] = []
     ctx = f"user '{user.name}'"
     for ref in user.requires:
@@ -1062,6 +1157,10 @@ def _check_user(
             )
         )
     errors.extend(_check_port_names(ctx, user.requires, user.provides, filename))
+    # Note: port ordering (requires before provides) is not enforced for users —
+    # users represent human actors whose natural ordering (provides requests, requires
+    # responses) is the opposite of the component convention.
+    errors.extend(_check_config_refs(ctx, user.configs, all_type_def_names, filename))
     return errors
 
 
@@ -1082,6 +1181,12 @@ def _check_reserved_variants(arch_file: ArchFile, filename: str | None) -> list[
 
 def _iter_all_variant_names(arch_file: ArchFile) -> Iterator[tuple[str, int]]:
     """Yield ``(variant_name, line)`` for every variant annotation in *arch_file*."""
+    for enum_def in arch_file.enums:
+        for v in enum_def.variants:
+            yield v, enum_def.line
+    for type_def in arch_file.types:
+        for v in type_def.variants:
+            yield v, type_def.line
     for iface in arch_file.interfaces:
         for v in iface.variants:
             yield v, iface.line
@@ -1097,7 +1202,7 @@ def _iter_all_variant_names(arch_file: ArchFile) -> Iterator[tuple[str, int]]:
 
 
 def _iter_arch_entity_variants(entity: ArchEntity) -> Iterator[tuple[str, int]]:
-    """Yield variants from an entity's own annotation and its port references."""
+    """Yield variants from an entity's own annotation, port references, and config declarations."""
     for v in entity.variants:
         yield v, entity.line
     for ref in entity.requires:
@@ -1106,6 +1211,9 @@ def _iter_arch_entity_variants(entity: ArchEntity) -> Iterator[tuple[str, int]]:
     for ref in entity.provides:
         for v in ref.variants:
             yield v, ref.line
+    for cfg in entity.configs:
+        for v in cfg.variants:
+            yield v, cfg.line
 
 
 def _iter_container_variants(entity: ContainerEntity) -> Iterator[tuple[str, int]]:

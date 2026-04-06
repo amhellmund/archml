@@ -46,7 +46,7 @@ def setup(app: Sphinx) -> dict[str, Any]:
     Configuration values (set in ``conf.py``):
 
     ``archml_workspace_dir``
-        Path to the directory containing ``.archml-workspace.yaml``.  May be
+        Path to the directory containing ``.farchml-workspace.yaml``.  May be
         absolute or relative to the Sphinx source directory.  When omitted,
         the extension walks up from the source directory until it finds the
         workspace file.
@@ -127,7 +127,7 @@ class ArchmlVisualizeDirective(Directive):
 
 
 def find_workspace_root(start: Path) -> Path | None:
-    """Walk up from *start* to find the nearest ``.archml-workspace.yaml``.
+    """Walk up from *start* to find the nearest ``.farchml-workspace.yaml``.
 
     Args:
         start: Directory from which to begin the upward search.
@@ -137,7 +137,7 @@ def find_workspace_root(start: Path) -> Path | None:
     """
     current = start.resolve()
     while True:
-        if (current / ".archml-workspace.yaml").exists():
+        if (current / ".farchml-workspace.yaml").exists():
             return current
         parent = current.parent
         if parent == current:
@@ -198,9 +198,9 @@ def _generate_diagram(env: Any, root_entity: str, depth: int | None, *, variant:
         workspace_root = Path(configured_dir)
         if not workspace_root.is_absolute():
             workspace_root = (src_dir / workspace_root).resolve()
-        if not (workspace_root / ".archml-workspace.yaml").exists():
+        if not (workspace_root / ".farchml-workspace.yaml").exists():
             raise _DiagramError(
-                f"archml_workspace_dir '{workspace_root}' does not contain a .archml-workspace.yaml file."
+                f"archml_workspace_dir '{workspace_root}' does not contain a .farchml-workspace.yaml file."
             )
     else:
         workspace_root = find_workspace_root(src_dir)
@@ -210,7 +210,7 @@ def _generate_diagram(env: Any, root_entity: str, depth: int | None, *, variant:
                 "Run 'archml init' to create one, or set 'archml_workspace_dir' in conf.py."
             )
 
-    workspace_yaml = workspace_root / ".archml-workspace.yaml"
+    workspace_yaml = workspace_root / ".farchml-workspace.yaml"
     try:
         config = load_workspace_config(workspace_yaml)
     except WorkspaceConfigError as exc:
@@ -223,9 +223,9 @@ def _generate_diagram(env: Any, root_entity: str, depth: int | None, *, variant:
         if isinstance(imp, LocalPathImport):
             source_import_map[SourceImportKey(config.name, imp.name)] = (workspace_root / imp.local_path).resolve()
 
-    archml_files = [f for f in workspace_root.rglob("*.archml") if build_dir not in f.parents]
+    archml_files = [f for f in workspace_root.rglob("*.farchml") if build_dir not in f.parents]
     if not archml_files:
-        raise _DiagramError("No .archml files found in the workspace.")
+        raise _DiagramError("No .farchml files found in the workspace.")
 
     try:
         compiled = compile_files(archml_files, build_dir, source_import_map)

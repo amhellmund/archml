@@ -1,7 +1,7 @@
 # Copyright 2026 ArchML Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Recursive-descent parser for .archml files.
+"""Recursive-descent parser for .farchml files.
 
 Converts a token stream produced by the scanner into an ArchFile semantic model.
 """
@@ -10,6 +10,7 @@ from archml.compiler.scanner import Token, TokenType, tokenize
 from archml.model.entities import (
     ArchFile,
     Component,
+    ConfigRef,
     ConnectDef,
     EnumDef,
     ExposeDef,
@@ -57,7 +58,7 @@ def parse(source: str, filename: str = "") -> ArchFile:
     """Parse ArchML source text into a semantic ArchFile model.
 
     Args:
-        source: The full text of an .archml file.
+        source: The full text of an .farchml file.
         filename: Optional source file path included in error messages.
 
     Returns:
@@ -92,6 +93,7 @@ _KEYWORD_TYPES: frozenset[TokenType] = frozenset(
         TokenType.IMPORT,
         TokenType.USE,
         TokenType.EXTERNAL,
+        TokenType.CONFIG,
     }
 )
 
@@ -310,16 +312,17 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_enum(self) -> EnumDef:
-        """Parse: enum <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* <Value>* }
+        """Parse: enum[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* <Value>* }
 
         An optional triple-quoted docstring may appear as the first item in the
         body.  Each enum value must appear on its own line (line number strictly
         greater than the opening brace or the previous value).
         """
         self._expect(TokenType.ENUM)
+        variants = self._parse_variant_annotation()
         name_tok = self._expect_name()
         lbrace = self._expect(TokenType.LBRACE)
-        enum_def = EnumDef(name=name_tok.value, line=name_tok.line)
+        enum_def = EnumDef(name=name_tok.value, variants=variants, line=name_tok.line)
         if self._check(TokenType.TRIPLE_STRING):
             enum_def.description = self._advance().value
         while self._check(TokenType.AT):
@@ -371,11 +374,12 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_type_def(self) -> TypeDef:
-        """Parse: type <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* field* }"""
+        """Parse: type[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* field* }"""
         self._expect(TokenType.TYPE)
+        variants = self._parse_variant_annotation()
         name_tok = self._expect_name()
         self._expect(TokenType.LBRACE)
-        type_def = TypeDef(name=name_tok.value, line=name_tok.line)
+        type_def = TypeDef(name=name_tok.value, variants=variants, line=name_tok.line)
         if self._check(TokenType.TRIPLE_STRING):
             type_def.description = self._advance().value
         while self._check(TokenType.AT):
@@ -496,6 +500,8 @@ class _Parser:
                 comp.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 comp.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
+            elif self._check(TokenType.CONFIG):
+                comp.configs.append(self._parse_config_decl())
             elif self._check(TokenType.INTERFACE):
                 comp.interfaces.append(self._parse_interface(parent_variants=effective_variants))
             elif self._check(TokenType.COMPONENT):
@@ -516,6 +522,20 @@ class _Parser:
                         inner.column,
                         self._filename,
                     )
+            elif self._check(TokenType.USE):
+                # Only 'use component' is allowed inside a component body.
+                # Peek at the kind token (one position ahead) before parsing.
+                kind_tok = self._tokens[self._pos + 1] if self._pos + 1 < len(self._tokens) else self._current()
+                if kind_tok.type != TokenType.COMPONENT:
+                    raise ParseError(
+                        f"Only 'use component' is allowed inside a component body, got 'use {kind_tok.value}'",
+                        kind_tok.line,
+                        kind_tok.column,
+                        self._filename,
+                    )
+                entity = self._parse_use_statement(parent_variants=effective_variants)
+                assert isinstance(entity, Component)
+                comp.components.append(entity)
             else:
                 tok = self._current()
                 raise ParseError(
@@ -562,6 +582,8 @@ class _Parser:
                 system.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 system.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
+            elif self._check(TokenType.CONFIG):
+                system.configs.append(self._parse_config_decl())
             elif self._check(TokenType.INTERFACE):
                 system.interfaces.append(self._parse_interface(parent_variants=effective_variants))
             elif self._check(TokenType.COMPONENT):
@@ -672,6 +694,8 @@ class _Parser:
                 user.requires.append(self._parse_interface_ref(TokenType.REQUIRES))
             elif self._check(TokenType.PROVIDES):
                 user.provides.append(self._parse_interface_ref(TokenType.PROVIDES))
+            elif self._check(TokenType.CONFIG):
+                user.configs.append(self._parse_config_decl())
             else:
                 tok = self._current()
                 raise ParseError(
@@ -851,6 +875,18 @@ class _Parser:
     # ------------------------------------------------------------------
     # Interface references (requires / provides)
     # ------------------------------------------------------------------
+
+    def _parse_config_decl(self) -> ConfigRef:
+        """Parse: config[<v1, v2>] <TypeName> [as <config_name>]"""
+        self._expect(TokenType.CONFIG)
+        variants = self._parse_variant_annotation()
+        name_tok = self._expect_name()
+        config_name: str | None = None
+        if self._check(TokenType.AS):
+            self._advance()  # consume 'as'
+            alias_tok = self._expect_name()
+            config_name = alias_tok.value
+        return ConfigRef(name=name_tok.value, config_name=config_name, variants=variants, line=name_tok.line)
 
     def _parse_interface_ref(self, keyword: TokenType) -> InterfaceRef:
         """Parse: requires/provides[<v1, v2>] <Name> [as <port_name>]"""

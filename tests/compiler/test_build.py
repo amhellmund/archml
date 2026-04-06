@@ -57,20 +57,20 @@ class TestSingleFile:
         src = tmp_path / "src"
         build = tmp_path / "build"
         _write(
-            src / "simple.archml",
+            src / "simple.farchml",
             """
 interface Signal { v: Int }
 component A { provides Signal }
 """,
         )
-        result = compile_files([src / "simple.archml"], build, {("", "app"): src})
+        result = compile_files([src / "simple.farchml"], build, {("", "app"): src})
         assert "app/simple" in result
         assert result["app/simple"].components[0].name == "A"
 
     def test_artifact_written_to_build_dir(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        source = src / "x.archml"
+        source = src / "x.farchml"
         _write(source, "component C {}")
         compile_files([source], build, {("", "app"): src})
         artifact = _artifact(build, "app/x")
@@ -79,7 +79,7 @@ component A { provides Signal }
     def test_artifact_can_be_read_back(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        source = src / "x.archml"
+        source = src / "x.farchml"
         _write(source, "component MyComp {}")
         compile_files([source], build, {("", "app"): src})
         artifact = _artifact(build, "app/x")
@@ -90,7 +90,7 @@ component A { provides Signal }
         src = tmp_path / "src"
         build = tmp_path / "build"
         _write(
-            src / "types.archml",
+            src / "types.farchml",
             """
 enum Color {
     Red
@@ -100,7 +100,7 @@ enum Color {
 type Point { x: Int y: Int }
 """,
         )
-        result = compile_files([src / "types.archml"], build, {("", "app"): src})
+        result = compile_files([src / "types.farchml"], build, {("", "app"): src})
         af = result["app/types"]
         assert af.enums[0].name == "Color"
         assert af.types[0].name == "Point"
@@ -115,7 +115,7 @@ class TestCache:
     def test_cache_hit_skips_recompile(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        source = src / "x.archml"
+        source = src / "x.farchml"
         _write(source, "component A {}")  # mtime set 2s in the past
 
         compile_files([source], build, {("", "app"): src})
@@ -130,7 +130,7 @@ class TestCache:
     def test_stale_artifact_triggers_recompile(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        source = src / "x.archml"
+        source = src / "x.farchml"
         _write(source, "component A {}")  # mtime 2s in the past
 
         compile_files([source], build, {("", "app"): src})
@@ -148,7 +148,7 @@ class TestCache:
     def test_stale_artifact_reads_updated_content(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        source = src / "x.archml"
+        source = src / "x.farchml"
         _write(source, "component A {}", mtime_offset=-2.0)
 
         compile_files([source], build, {("", "app"): src})
@@ -169,38 +169,38 @@ class TestMultiFile:
         src = tmp_path / "src"
         build = tmp_path / "build"
         _write(
-            src / "types.archml",
+            src / "types.farchml",
             "interface Signal { v: Int }",
         )
         _write(
-            src / "app.archml",
+            src / "app.farchml",
             """
 from app/types import Signal
 component Worker { requires Signal }
 """,
         )
-        result = compile_files([src / "app.archml"], build, {("", "app"): src})
+        result = compile_files([src / "app.farchml"], build, {("", "app"): src})
         assert "app/app" in result
         assert "app/types" in result
 
     def test_dependency_artifact_also_written(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "types.archml", "interface Signal { v: Int }")
-        _write(src / "app.archml", "from app/types import Signal\ncomponent W { requires Signal }")
-        compile_files([src / "app.archml"], build, {("", "app"): src})
+        _write(src / "types.farchml", "interface Signal { v: Int }")
+        _write(src / "app.farchml", "from app/types import Signal\ncomponent W { requires Signal }")
+        compile_files([src / "app.farchml"], build, {("", "app"): src})
         types_artifact = _artifact(build, "app/types")
         assert types_artifact.exists()
 
     def test_three_level_dependency_chain(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "base.archml", "interface IBase { x: Int }")
-        _write(src / "mid.archml", "from app/base import IBase\ncomponent Mid { requires IBase }")
+        _write(src / "base.farchml", "interface IBase { x: Int }")
+        _write(src / "mid.farchml", "from app/base import IBase\ncomponent Mid { requires IBase }")
         _write(
-            src / "top.archml", "from app/base import IBase\nfrom app/mid import Mid\ncomponent Top { requires IBase }"
+            src / "top.farchml", "from app/base import IBase\nfrom app/mid import Mid\ncomponent Top { requires IBase }"
         )
-        result = compile_files([src / "top.archml"], build, {("", "app"): src})
+        result = compile_files([src / "top.farchml"], build, {("", "app"): src})
         assert "app/base" in result
         assert "app/mid" in result
         assert "app/top" in result
@@ -209,10 +209,10 @@ component Worker { requires Signal }
         """Two top-level files sharing a dependency don't recompile it."""
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "shared.archml", "interface I { v: Int }")
-        _write(src / "a.archml", "from app/shared import I\ncomponent A { requires I }")
-        _write(src / "b.archml", "from app/shared import I\ncomponent B { requires I }")
-        result = compile_files([src / "a.archml", src / "b.archml"], build, {("", "app"): src})
+        _write(src / "shared.farchml", "interface I { v: Int }")
+        _write(src / "a.farchml", "from app/shared import I\ncomponent A { requires I }")
+        _write(src / "b.farchml", "from app/shared import I\ncomponent B { requires I }")
+        result = compile_files([src / "a.farchml", src / "b.farchml"], build, {("", "app"): src})
         assert "app/shared" in result
         assert "app/a" in result
         assert "app/b" in result
@@ -220,19 +220,19 @@ component Worker { requires Signal }
     def test_subdirectory_dependency(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "shared" / "types.archml", "interface Signal { v: Int }")
+        _write(src / "shared" / "types.farchml", "interface Signal { v: Int }")
         _write(
-            src / "worker.archml",
+            src / "worker.farchml",
             "from app/shared/types import Signal\ncomponent Worker { requires Signal }",
         )
-        result = compile_files([src / "worker.archml"], build, {("", "app"): src})
+        result = compile_files([src / "worker.farchml"], build, {("", "app"): src})
         assert "app/worker" in result
         assert "app/shared/types" in result
 
     def test_compiled_from_test_data(self, tmp_path: Path) -> None:
         """Compile the realistic multi-file test data under tests/data/positive/compiler/."""
         result = compile_files(
-            [DATA_DIR / "main.archml"],
+            [DATA_DIR / "main.farchml"],
             tmp_path / "build",
             {("", "compiler"): DATA_DIR},
         )
@@ -253,14 +253,14 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "types.archml", "interface Signal { v: Int }")
+        _write(lib / "types.farchml", "interface Signal { v: Int }")
         _write(
-            src / "app.archml",
+            src / "app.farchml",
             "from mylib/types import Signal\ncomponent Worker { requires Signal }",
         )
 
         result = compile_files(
-            [src / "app.archml"],
+            [src / "app.farchml"],
             build,
             {("", "app"): src, ("", "mylib"): lib},
         )
@@ -273,10 +273,10 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "types.archml", "interface Signal { v: Int }")
-        _write(src / "app.archml", "from mylib/types import Signal\ncomponent C { requires Signal }")
+        _write(lib / "types.farchml", "interface Signal { v: Int }")
+        _write(src / "app.farchml", "from mylib/types import Signal\ncomponent C { requires Signal }")
 
-        compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
+        compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "mylib"): lib})
 
         assert _artifact(build, "mylib/types").exists()
 
@@ -286,14 +286,14 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "shared" / "base.archml", "interface IBase { x: Int }")
+        _write(lib / "shared" / "base.farchml", "interface IBase { x: Int }")
         _write(
-            src / "app.archml",
+            src / "app.farchml",
             "from mylib/shared/base import IBase\ncomponent C { requires IBase }",
         )
 
         result = compile_files(
-            [src / "app.archml"],
+            [src / "app.farchml"],
             build,
             {("", "app"): src, ("", "mylib"): lib},
         )
@@ -306,16 +306,16 @@ class TestSourceImports:
         lib_b = tmp_path / "lib_b"
         build = tmp_path / "build"
 
-        _write(lib_a / "types.archml", "interface TypeA { x: Int }")
-        _write(lib_b / "types.archml", "interface TypeB { y: Int }")
+        _write(lib_a / "types.farchml", "interface TypeA { x: Int }")
+        _write(lib_b / "types.farchml", "interface TypeB { y: Int }")
         _write(
-            src / "app.archml",
+            src / "app.farchml",
             "from liba/types import TypeA\nfrom libb/types import TypeB\n"
             "component C { requires TypeA\n requires TypeB }",
         )
 
         result = compile_files(
-            [src / "app.archml"],
+            [src / "app.farchml"],
             build,
             {("", "app"): src, ("", "liba"): lib_a, ("", "libb"): lib_b},
         )
@@ -328,12 +328,12 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "iface.archml", "interface IFace { v: Int }")
-        _write(src / "mid.archml", "from ext/iface import IFace\ncomponent Mid { requires IFace }")
-        _write(src / "top.archml", "from app/mid import Mid\ncomponent Top {}")
+        _write(lib / "iface.farchml", "interface IFace { v: Int }")
+        _write(src / "mid.farchml", "from ext/iface import IFace\ncomponent Mid { requires IFace }")
+        _write(src / "top.farchml", "from app/mid import Mid\ncomponent Top {}")
 
         result = compile_files(
-            [src / "top.archml"],
+            [src / "top.farchml"],
             build,
             {("", "app"): src, ("", "ext"): lib},
         )
@@ -346,10 +346,10 @@ class TestSourceImports:
         src = tmp_path / "src"
         build = tmp_path / "build"
 
-        _write(src / "app.archml", "from @myrepo/mylib/types import X\ncomponent C {}")
+        _write(src / "app.farchml", "from @myrepo/mylib/types import X\ncomponent C {}")
 
         with pytest.raises(CompilerError, match="not found in workspace"):
-            compile_files([src / "app.archml"], build, {("", "app"): src})
+            compile_files([src / "app.farchml"], build, {("", "app"): src})
 
     def test_remote_git_import_resolves_from_source_import_map(self, tmp_path: Path) -> None:
         """Files imported via @repo/mnemonic/path resolve when the mnemonic key is present."""
@@ -357,14 +357,14 @@ class TestSourceImports:
         remote_services = tmp_path / "remote" / "services"
         build = tmp_path / "build"
 
-        _write(remote_services / "payment.archml", "interface PaymentService { amount: Float }")
+        _write(remote_services / "payment.farchml", "interface PaymentService { amount: Float }")
         _write(
-            src / "app.archml",
+            src / "app.farchml",
             "from @payments/services/payment import PaymentService\ncomponent C { requires PaymentService }",
         )
 
         result = compile_files(
-            [src / "app.archml"],
+            [src / "app.farchml"],
             build,
             {("", "app"): src, ("@payments", "services"): remote_services},
         )
@@ -378,10 +378,10 @@ class TestSourceImports:
         remote_api = tmp_path / "remote" / "api"
         build = tmp_path / "build"
 
-        _write(remote_api / "types.archml", "interface RemoteType { v: Int }")
-        _write(src / "app.archml", "from @ext/api/types import RemoteType\ncomponent C { requires RemoteType }")
+        _write(remote_api / "types.farchml", "interface RemoteType { v: Int }")
+        _write(src / "app.farchml", "from @ext/api/types import RemoteType\ncomponent C { requires RemoteType }")
 
-        compile_files([src / "app.archml"], build, {("", "app"): src, ("@ext", "api"): remote_api})
+        compile_files([src / "app.farchml"], build, {("", "app"): src, ("@ext", "api"): remote_api})
 
         assert _artifact(build, "@ext/api/types").exists()
 
@@ -391,14 +391,14 @@ class TestSourceImports:
         remote_utils = tmp_path / "remote" / "utils"
         build = tmp_path / "build"
 
-        _write(remote_utils / "helpers.archml", "interface Helper { v: Int }")
+        _write(remote_utils / "helpers.farchml", "interface Helper { v: Int }")
         _write(
-            src / "app.archml",
+            src / "app.farchml",
             "from @payments/utils/helpers import Helper\ncomponent C { requires Helper }",
         )
 
         result = compile_files(
-            [src / "app.archml"],
+            [src / "app.farchml"],
             build,
             {("", "app"): src, ("@payments", "utils"): remote_utils},
         )
@@ -412,12 +412,12 @@ class TestSourceImports:
         build = tmp_path / "build"
 
         _write(
-            src / "app.archml",
+            src / "app.farchml",
             "from @ext/lib/types import T\ncomponent C { requires T }",
         )
 
         with pytest.raises(CompilerError, match="not found in workspace"):
-            compile_files([src / "app.archml"], build, {("", "app"): src})
+            compile_files([src / "app.farchml"], build, {("", "app"): src})
 
     def test_mnemonic_missing_file_raises_compiler_error(self, tmp_path: Path) -> None:
         """A mnemonic import that refers to a non-existent file raises CompilerError."""
@@ -426,18 +426,18 @@ class TestSourceImports:
         build = tmp_path / "build"
         lib.mkdir()
 
-        _write(src / "app.archml", "from mylib/missing import X\ncomponent C {}")
+        _write(src / "app.farchml", "from mylib/missing import X\ncomponent C {}")
 
         with pytest.raises(CompilerError, match="not found"):
-            compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
+            compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "mylib"): lib})
 
     def test_mnemonic_based_import_resolves_correctly(self, tmp_path: Path) -> None:
         """compile_files resolves mnemonic-based imports from the source import map."""
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "x.archml", "component C {}")
+        _write(src / "x.farchml", "component C {}")
 
-        result = compile_files([src / "x.archml"], build, {("", "app"): src})
+        result = compile_files([src / "x.farchml"], build, {("", "app"): src})
         assert "app/x" in result
 
     def test_mnemonic_cache_hit(self, tmp_path: Path) -> None:
@@ -446,14 +446,14 @@ class TestSourceImports:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "types.archml", "interface Signal { v: Int }")
-        _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
+        _write(lib / "types.farchml", "interface Signal { v: Int }")
+        _write(src / "app.farchml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
-        compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
+        compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "mylib"): lib})
         artifact = _artifact(build, "mylib/types")
         mtime_first = artifact.stat().st_mtime
 
-        compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
+        compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "mylib"): lib})
         mtime_second = artifact.stat().st_mtime
 
         assert mtime_first == mtime_second
@@ -463,32 +463,32 @@ class TestSourceImports:
         src = tmp_path / "src"
         build = tmp_path / "build"
 
-        _write(src / "app.archml", "from types import Signal\ncomponent C {}")
+        _write(src / "app.farchml", "from types import Signal\ncomponent C {}")
 
         with pytest.raises(CompilerError, match="mnemonic/path"):
-            compile_files([src / "app.archml"], build, {("", "app"): src})
+            compile_files([src / "app.farchml"], build, {("", "app"): src})
 
     def test_remote_import_without_path_raises_compiler_error(self, tmp_path: Path) -> None:
         """A remote import missing the path component raises CompilerError."""
         src = tmp_path / "src"
         build = tmp_path / "build"
 
-        _write(src / "app.archml", "from @repo/mnemonic import X\ncomponent C {}")
+        _write(src / "app.farchml", "from @repo/mnemonic import X\ncomponent C {}")
 
         with pytest.raises(CompilerError, match="missing path component"):
-            compile_files([src / "app.archml"], build, {("", "app"): src})
+            compile_files([src / "app.farchml"], build, {("", "app"): src})
 
     def test_local_mnemonic_resolves_using_source_repo(self, tmp_path: Path) -> None:
         """Bare mnemonic imports resolve using the source file's repo context."""
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "utils.archml", "interface IUtil { v: Int }")
-        # lib/main.archml imports from "lib" mnemonic (same repo "")
-        _write(lib / "main.archml", "from lib/utils import IUtil\ncomponent Main { requires IUtil }")
+        _write(lib / "utils.farchml", "interface IUtil { v: Int }")
+        # lib/main.farchml imports from "lib" mnemonic (same repo "")
+        _write(lib / "main.farchml", "from lib/utils import IUtil\ncomponent Main { requires IUtil }")
 
         result = compile_files(
-            [lib / "main.archml"],
+            [lib / "main.farchml"],
             build,
             {("", "lib"): lib},
         )
@@ -508,26 +508,26 @@ class TestFileMoveRecompilation:
         build = tmp_path / "build"
 
         # Initial setup: app imports types from same mnemonic
-        _write(src / "types.archml", "interface Signal { v: Int }")
-        _write(src / "app.archml", "from app/types import Signal\ncomponent W { requires Signal }")
+        _write(src / "types.farchml", "interface Signal { v: Int }")
+        _write(src / "app.farchml", "from app/types import Signal\ncomponent W { requires Signal }")
 
-        compile_files([src / "app.archml"], build, {("", "app"): src})
+        compile_files([src / "app.farchml"], build, {("", "app"): src})
         app_artifact = _artifact(build, "app/app")
         mtime_before = app_artifact.stat().st_mtime
 
-        # Simulate file being moved: delete 'types.archml' (old location no longer exists)
-        (src / "types.archml").unlink()
+        # Simulate file being moved: delete 'types.farchml' (old location no longer exists)
+        (src / "types.farchml").unlink()
 
         # Place the file at a new location and update app to import from new location
-        _write(src / "signals" / "types.archml", "interface Signal { v: Int }")
-        _write(src / "app.archml", "from app/signals/types import Signal\ncomponent W { requires Signal }")
+        _write(src / "signals" / "types.farchml", "interface Signal { v: Int }")
+        _write(src / "app.farchml", "from app/signals/types import Signal\ncomponent W { requires Signal }")
 
-        compile_files([src / "app.archml"], build, {("", "app"): src})
+        compile_files([src / "app.farchml"], build, {("", "app"): src})
         mtime_after = app_artifact.stat().st_mtime
 
         # app was recompiled because its source changed
         assert mtime_after != mtime_before
-        assert "app/signals/types" in compile_files([src / "app.archml"], build, {("", "app"): src})
+        assert "app/signals/types" in compile_files([src / "app.farchml"], build, {("", "app"): src})
 
     def test_cache_busted_when_mnemonic_dep_is_moved(self, tmp_path: Path) -> None:
         """Cache is invalidated when a mnemonic-based dependency no longer exists."""
@@ -536,21 +536,21 @@ class TestFileMoveRecompilation:
         build = tmp_path / "build"
 
         # First compilation: mylib/types exists
-        _write(lib / "types.archml", "interface Signal { v: Int }")
-        _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
+        _write(lib / "types.farchml", "interface Signal { v: Int }")
+        _write(src / "app.farchml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
-        compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
+        compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "mylib"): lib})
         app_artifact = _artifact(build, "app/app")
         assert app_artifact.exists()
 
         # Simulate a move: the dependency at mylib/types is gone
-        (lib / "types.archml").unlink()
-        # app.archml is NOT updated yet — it still refers to the old path
+        (lib / "types.farchml").unlink()
+        # app.farchml is NOT updated yet — it still refers to the old path
 
         # Now trigger a recompile: since mylib/types is gone, the cache for
         # 'app' should be busted and re-parsing app should fail because the dep is missing.
         with pytest.raises(CompilerError, match="not found"):
-            compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
+            compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "mylib"): lib})
 
     def test_up_to_date_cache_hit_survives_when_deps_still_exist(self, tmp_path: Path) -> None:
         """An up-to-date artifact is reused when all its imports still exist."""
@@ -558,15 +558,15 @@ class TestFileMoveRecompilation:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "types.archml", "interface Signal { v: Int }")
-        _write(src / "app.archml", "from mylib/types import Signal\ncomponent W { requires Signal }")
+        _write(lib / "types.farchml", "interface Signal { v: Int }")
+        _write(src / "app.farchml", "from mylib/types import Signal\ncomponent W { requires Signal }")
 
-        compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
+        compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "mylib"): lib})
         app_artifact = _artifact(build, "app/app")
         mtime_before = app_artifact.stat().st_mtime
 
         # Second run: deps still exist, artifact is up-to-date → cache hit
-        compile_files([src / "app.archml"], build, {("", "app"): src, ("", "mylib"): lib})
+        compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "mylib"): lib})
         mtime_after = app_artifact.stat().st_mtime
 
         assert mtime_before == mtime_after
@@ -581,59 +581,59 @@ class TestErrorCases:
     def test_parse_error_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "bad.archml", "component {}")  # missing name
+        _write(src / "bad.farchml", "component {}")  # missing name
         with pytest.raises(CompilerError) as exc_info:
-            compile_files([src / "bad.archml"], build, {("", "app"): src})
-        assert "bad.archml" in str(exc_info.value)
+            compile_files([src / "bad.farchml"], build, {("", "app"): src})
+        assert "bad.farchml" in str(exc_info.value)
 
     def test_lexer_error_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "bad.archml", "component C { ~ }")  # invalid character
+        _write(src / "bad.farchml", "component C { ~ }")  # invalid character
         with pytest.raises(CompilerError) as exc_info:
-            compile_files([src / "bad.archml"], build, {("", "app"): src})
-        assert "bad.archml" in str(exc_info.value)
+            compile_files([src / "bad.farchml"], build, {("", "app"): src})
+        assert "bad.farchml" in str(exc_info.value)
 
     def test_missing_dependency_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "app.archml", "from app/nonexistent import Something\ncomponent C {}")
+        _write(src / "app.farchml", "from app/nonexistent import Something\ncomponent C {}")
         with pytest.raises(CompilerError, match="not found"):
-            compile_files([src / "app.archml"], build, {("", "app"): src})
+            compile_files([src / "app.farchml"], build, {("", "app"): src})
 
     def test_semantic_error_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
         _write(
-            src / "bad.archml",
+            src / "bad.farchml",
             "component C { requires UnknownInterface }",
         )
         with pytest.raises(CompilerError) as exc_info:
-            compile_files([src / "bad.archml"], build, {("", "app"): src})
-        assert "bad.archml" in str(exc_info.value)
+            compile_files([src / "bad.farchml"], build, {("", "app"): src})
+        assert "bad.farchml" in str(exc_info.value)
 
     def test_circular_dependency_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
         # a imports b, b imports a
-        _write(src / "a.archml", "from app/b import Something\ncomponent A {}")
-        _write(src / "b.archml", "from app/a import Something\ncomponent B {}")
+        _write(src / "a.farchml", "from app/b import Something\ncomponent A {}")
+        _write(src / "b.farchml", "from app/a import Something\ncomponent B {}")
         with pytest.raises(CompilerError, match="Circular dependency"):
-            compile_files([src / "a.archml"], build, {("", "app"): src})
+            compile_files([src / "a.farchml"], build, {("", "app"): src})
 
     def test_compiler_error_message_includes_file_path(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "myfile.archml", "component {}")
+        _write(src / "myfile.farchml", "component {}")
         with pytest.raises(CompilerError) as exc_info:
-            compile_files([src / "myfile.archml"], build, {("", "app"): src})
+            compile_files([src / "myfile.farchml"], build, {("", "app"): src})
         assert "myfile" in str(exc_info.value)
 
     def test_multiple_semantic_errors_in_message(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
         _write(
-            src / "bad.archml",
+            src / "bad.farchml",
             """
 enum Dup {
     A
@@ -644,8 +644,8 @@ enum Dup {
 """,
         )
         with pytest.raises(CompilerError) as exc_info:
-            compile_files([src / "bad.archml"], build, {("", "app"): src})
-        assert "bad.archml" in str(exc_info.value)
+            compile_files([src / "bad.farchml"], build, {("", "app"): src})
+        assert "bad.farchml" in str(exc_info.value)
 
 
 # ###############
@@ -657,44 +657,44 @@ class TestReservedFileNames:
     def test_file_named_after_keyword_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "system.archml", "component C {}")
+        _write(src / "system.farchml", "component C {}")
         with pytest.raises(CompilerError, match="reserved"):
-            compile_files([src / "system.archml"], build, {("", "app"): src})
+            compile_files([src / "system.farchml"], build, {("", "app"): src})
 
     def test_file_named_component_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "component.archml", "system S {}")
+        _write(src / "component.farchml", "system S {}")
         with pytest.raises(CompilerError, match="reserved"):
-            compile_files([src / "component.archml"], build, {("", "app"): src})
+            compile_files([src / "component.farchml"], build, {("", "app"): src})
 
     def test_file_named_type_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "type.archml", "enum E { A }")
+        _write(src / "type.farchml", "enum E { A }")
         with pytest.raises(CompilerError, match="reserved"):
-            compile_files([src / "type.archml"], build, {("", "app"): src})
+            compile_files([src / "type.farchml"], build, {("", "app"): src})
 
     def test_directory_segment_named_after_keyword_raises_compiler_error(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "interface" / "order.archml", "component C {}")
+        _write(src / "interface" / "order.farchml", "component C {}")
         with pytest.raises(CompilerError, match="reserved"):
-            compile_files([src / "interface" / "order.archml"], build, {("", "app"): src})
+            compile_files([src / "interface" / "order.farchml"], build, {("", "app"): src})
 
     def test_non_reserved_file_name_is_accepted(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "order.archml", "component C {}")
-        result = compile_files([src / "order.archml"], build, {("", "app"): src})
+        _write(src / "order.farchml", "component C {}")
+        result = compile_files([src / "order.farchml"], build, {("", "app"): src})
         assert "app/order" in result
 
     def test_error_message_includes_keyword(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "import.archml", "component C {}")
+        _write(src / "import.farchml", "component C {}")
         with pytest.raises(CompilerError) as exc_info:
-            compile_files([src / "import.archml"], build, {("", "app"): src})
+            compile_files([src / "import.farchml"], build, {("", "app"): src})
         assert "'import'" in str(exc_info.value)
         assert "reserved" in str(exc_info.value)
 
@@ -712,15 +712,15 @@ class TestReturnValue:
     def test_key_uses_mnemonic_and_relative_path_without_extension(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "subdir" / "myfile.archml", "component C {}")
-        result = compile_files([src / "subdir" / "myfile.archml"], build, {("", "app"): src})
+        _write(src / "subdir" / "myfile.farchml", "component C {}")
+        result = compile_files([src / "subdir" / "myfile.farchml"], build, {("", "app"): src})
         assert "app/subdir/myfile" in result
 
     def test_compiling_same_file_twice_returns_same_model(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "x.archml", "component C {}")
-        result = compile_files([src / "x.archml", src / "x.archml"], build, {("", "app"): src})
+        _write(src / "x.farchml", "component C {}")
+        result = compile_files([src / "x.farchml", src / "x.farchml"], build, {("", "app"): src})
         assert len(result) == 1
         assert "app/x" in result
 
@@ -730,10 +730,10 @@ class TestReturnValue:
         lib = tmp_path / "lib"
         build = tmp_path / "build"
 
-        _write(lib / "iface.archml", "interface I { v: Int }")
-        _write(src / "app.archml", "from ext/iface import I\ncomponent C { requires I }")
+        _write(lib / "iface.farchml", "interface I { v: Int }")
+        _write(src / "app.farchml", "from ext/iface import I\ncomponent C { requires I }")
 
-        result = compile_files([src / "app.archml"], build, {("", "app"): src, ("", "ext"): lib})
+        result = compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "ext"): lib})
         assert "ext/iface" in result
 
 
@@ -753,7 +753,7 @@ class TestParallelCompilation:
         n = 8
         sources = []
         for i in range(n):
-            f = src / f"comp{i}.archml"
+            f = src / f"comp{i}.farchml"
             _write(f, f"component C{i} {{}}")
             sources.append(f)
 
@@ -771,7 +771,7 @@ class TestParallelCompilation:
         n = 6
         sources = []
         for i in range(n):
-            f = src / f"file{i}.archml"
+            f = src / f"file{i}.farchml"
             _write(f, f"interface I{i} {{ v: Int }}")
             sources.append(f)
 
@@ -783,13 +783,13 @@ class TestParallelCompilation:
         """A shared dependency is compiled exactly once even with many dependents."""
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "shared.archml", "interface Common { v: Int }")
+        _write(src / "shared.farchml", "interface Common { v: Int }")
         for i in range(4):
             _write(
-                src / f"user{i}.archml",
+                src / f"user{i}.farchml",
                 f"from app/shared import Common\ncomponent User{i} {{ requires Common }}",
             )
-        sources = [src / f"user{i}.archml" for i in range(4)] + [src / "shared.archml"]
+        sources = [src / f"user{i}.farchml" for i in range(4)] + [src / "shared.farchml"]
 
         result = compile_files(sources, build, {("", "app"): src})
         assert "app/shared" in result
@@ -800,14 +800,14 @@ class TestParallelCompilation:
         """A → B → C dependency chain compiles correctly in the right order."""
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "c.archml", "interface Base { id: Int }")
-        _write(src / "b.archml", "from app/c import Base\ninterface Mid { b: Int }")
+        _write(src / "c.farchml", "interface Base { id: Int }")
+        _write(src / "b.farchml", "from app/c import Base\ninterface Mid { b: Int }")
         _write(
-            src / "a.archml",
+            src / "a.farchml",
             "from app/b import Mid\nfrom app/c import Base\ncomponent Top { requires Mid }",
         )
 
-        result = compile_files([src / "a.archml"], build, {("", "app"): src})
+        result = compile_files([src / "a.farchml"], build, {("", "app"): src})
         assert "app/a" in result
         assert "app/b" in result
         assert "app/c" in result
@@ -816,22 +816,22 @@ class TestParallelCompilation:
         """Diamond: A and B both depend on C, D depends on both A and B."""
         src = tmp_path / "src"
         build = tmp_path / "build"
-        _write(src / "c.archml", "interface Base { id: Int }")
-        _write(src / "a.archml", "from app/c import Base\ninterface A { x: Int }")
-        _write(src / "b.archml", "from app/c import Base\ninterface B { y: Int }")
+        _write(src / "c.farchml", "interface Base { id: Int }")
+        _write(src / "a.farchml", "from app/c import Base\ninterface A { x: Int }")
+        _write(src / "b.farchml", "from app/c import Base\ninterface B { y: Int }")
         _write(
-            src / "d.archml",
+            src / "d.farchml",
             "from app/a import A\nfrom app/b import B\ncomponent D { requires A }",
         )
 
-        result = compile_files([src / "d.archml"], build, {("", "app"): src})
+        result = compile_files([src / "d.farchml"], build, {("", "app"): src})
         assert {"app/c", "app/a", "app/b", "app/d"} == set(result.keys())
 
     def test_duplicate_file_in_input_list_compiled_once(self, tmp_path: Path) -> None:
         """The same file listed multiple times is compiled only once."""
         src = tmp_path / "src"
         build = tmp_path / "build"
-        f = src / "x.archml"
+        f = src / "x.farchml"
         _write(f, "component X {}")
         result = compile_files([f, f, f], build, {("", "app"): src})
         assert list(result.keys()) == ["app/x"]
@@ -841,7 +841,7 @@ class TestParallelCompilation:
         src = tmp_path / "src"
         build = tmp_path / "build"
         n = 5
-        sources = [src / f"f{i}.archml" for i in range(n)]
+        sources = [src / f"f{i}.farchml" for i in range(n)]
         for i, f in enumerate(sources):
             _write(f, f"component F{i} {{}}")
 

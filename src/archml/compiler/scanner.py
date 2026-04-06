@@ -1,7 +1,7 @@
 # Copyright 2026 ArchML Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Lexical scanner for .archml files.
+"""Lexical scanner for .farchml files.
 
 Converts raw source text into a sequence of tokens for subsequent parsing.
 """
@@ -33,6 +33,7 @@ class TokenType(enum.Enum):
     IMPORT = "import"
     USE = "use"
     EXTERNAL = "external"
+    CONFIG = "config"
     # Symbols and operators
     LBRACE = "{"
     RBRACE = "}"
@@ -108,12 +109,13 @@ RESERVED_KEYWORDS: frozenset[str] = frozenset(
         "import",
         "use",
         "external",
+        "config",
     }
 )
 """The set of all reserved keywords in the ArchML language.
 
 Identifiers matching any of these strings are forbidden as user-defined names
-and as path segments in ``.archml`` filenames.
+and as path segments in ``.farchml`` filenames.
 """
 
 
@@ -124,7 +126,7 @@ def tokenize(source: str, filename: str = "") -> list[Token]:
     Comments and whitespace are consumed and not included in the output.
 
     Args:
-        source: The full text of an .archml file.
+        source: The full text of an .farchml file.
         filename: Optional source file path included in error messages.
 
     Returns:
@@ -157,6 +159,7 @@ _KEYWORDS: dict[str, TokenType] = {
     "import": TokenType.IMPORT,
     "use": TokenType.USE,
     "external": TokenType.EXTERNAL,
+    "config": TokenType.CONFIG,
 }
 
 _SINGLE_CHAR_TOKENS: dict[str, TokenType] = {
@@ -343,9 +346,17 @@ class _Lexer:
         self._tokens.append(Token(TokenType.INTEGER, value, line, col))
 
     def _scan_identifier_or_keyword(self, line: int, col: int) -> None:
-        """Scan an identifier and map it to a keyword token type if applicable."""
+        """Scan an identifier and map it to a keyword token type if applicable.
+
+        Identifiers may contain letters, digits, underscores, and dashes, but
+        cannot *start* with a dash.  A dash followed immediately by ``>`` is
+        never consumed here because ``->`` is handled before this method is
+        called (see ``_scan_token``).
+        """
         start = self._pos
-        while self._pos < len(self._source) and (self._current().isalnum() or self._current() == "_"):
+        while self._pos < len(self._source) and (
+            self._current().isalnum() or self._current() == "_" or (self._current() == "-" and self._peek() != ">")
+        ):
             self._advance()
         value = self._source[start : self._pos]
         token_type = _KEYWORDS.get(value, TokenType.IDENTIFIER)

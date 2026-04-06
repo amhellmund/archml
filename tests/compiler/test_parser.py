@@ -219,6 +219,22 @@ enum OrderStatus {
             _parse("enum Status {\n    Active Inactive\n}")
         assert "new line" in str(exc_info.value)
 
+    def test_enum_with_single_variant(self) -> None:
+        result = _parse("enum<cloud> OrderStatus {\n    Pending\n}")
+        enum = result.enums[0]
+        assert enum.name == "OrderStatus"
+        assert enum.variants == ["cloud"]
+        assert enum.values == ["Pending"]
+
+    def test_enum_with_multiple_variants(self) -> None:
+        result = _parse("enum<cloud, hybrid> Status {\n    Active\n}")
+        enum = result.enums[0]
+        assert enum.variants == ["cloud", "hybrid"]
+
+    def test_enum_without_variant_has_empty_variants(self) -> None:
+        result = _parse("enum Status {\n    Active\n}")
+        assert result.enums[0].variants == []
+
 
 # ###############
 # Type Declarations
@@ -300,6 +316,20 @@ type Order {
         assert len(result.types) == 2
         assert result.types[0].name == "A"
         assert result.types[1].name == "B"
+
+    def test_type_with_single_variant(self) -> None:
+        result = _parse("type<cloud> DbConfig { url: String }")
+        t = result.types[0]
+        assert t.name == "DbConfig"
+        assert t.variants == ["cloud"]
+
+    def test_type_with_multiple_variants(self) -> None:
+        result = _parse("type<cloud, hybrid> Config { url: String }")
+        assert result.types[0].variants == ["cloud", "hybrid"]
+
+    def test_type_without_variant_has_empty_variants(self) -> None:
+        result = _parse("type Config { url: String }")
+        assert result.types[0].variants == []
 
 
 # ###############
@@ -654,6 +684,98 @@ component OrderService {
         result = _parse(source)
         assert len(result.components) == 3
         assert [c.name for c in result.components] == ["A", "B", "C"]
+
+    def test_use_component_in_component_body(self) -> None:
+        source = """\
+component OrderService {
+    use component Validator
+    connect Validator.ValidationResult -> $v -> OrderService.ValidationResult
+}"""
+        result = _parse(source)
+        outer = result.components[0]
+        assert len(outer.components) == 1
+        stub = outer.components[0]
+        assert stub.name == "Validator"
+        assert stub.is_stub is True
+
+    def test_use_system_in_component_body_raises(self) -> None:
+        source = "component Outer { use system Inner }"
+        with pytest.raises(ParseError, match="'use component'"):
+            _parse(source)
+
+    def test_use_user_in_component_body_raises(self) -> None:
+        source = "component Outer { use user Admin }"
+        with pytest.raises(ParseError, match="'use component'"):
+            _parse(source)
+
+
+# ###############
+# Config Declarations
+# ###############
+
+
+class TestConfigDeclarations:
+    def test_config_in_component_body(self) -> None:
+        source = "component C { config DbConfig }"
+        result = _parse(source)
+        comp = result.components[0]
+        assert len(comp.configs) == 1
+        cfg = comp.configs[0]
+        assert cfg.name == "DbConfig"
+        assert cfg.config_name is None
+        assert cfg.variants == []
+
+    def test_config_with_alias_in_component(self) -> None:
+        source = "component C { config DbConfig as worker_db }"
+        result = _parse(source)
+        cfg = result.components[0].configs[0]
+        assert cfg.name == "DbConfig"
+        assert cfg.config_name == "worker_db"
+
+    def test_config_with_variant_annotation(self) -> None:
+        source = "component C { config<cloud> DbConfig }"
+        result = _parse(source)
+        cfg = result.components[0].configs[0]
+        assert cfg.name == "DbConfig"
+        assert cfg.variants == ["cloud"]
+
+    def test_config_with_variant_and_alias(self) -> None:
+        source = "component C { config<cloud, hybrid> FeatureFlags as flags }"
+        result = _parse(source)
+        cfg = result.components[0].configs[0]
+        assert cfg.name == "FeatureFlags"
+        assert cfg.variants == ["cloud", "hybrid"]
+        assert cfg.config_name == "flags"
+
+    def test_multiple_configs_in_component(self) -> None:
+        source = "component C { config DbConfig\nconfig FeatureFlags }"
+        result = _parse(source)
+        comp = result.components[0]
+        assert len(comp.configs) == 2
+        assert comp.configs[0].name == "DbConfig"
+        assert comp.configs[1].name == "FeatureFlags"
+
+    def test_config_in_system_body(self) -> None:
+        source = "system S { config AppConfig }"
+        result = _parse(source)
+        sys = result.systems[0]
+        assert len(sys.configs) == 1
+        assert sys.configs[0].name == "AppConfig"
+
+    def test_config_in_user_body(self) -> None:
+        source = "user Admin { config UserPrefs }"
+        result = _parse(source)
+        user = result.users[0]
+        assert len(user.configs) == 1
+        assert user.configs[0].name == "UserPrefs"
+
+    def test_config_at_top_level_raises(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("config DbConfig")
+
+    def test_component_no_configs_by_default(self) -> None:
+        result = _parse("component C {}")
+        assert result.components[0].configs == []
 
 
 # ###############
@@ -1251,7 +1373,7 @@ system B {
 
 class TestFullLanguageExamples:
     def test_complete_spec_example_types_file(self) -> None:
-        """Parse the types.archml portion of the complete spec example."""
+        """Parse the types.farchml portion of the complete spec example."""
         source = (
             "type OrderItem {\n"
             "    product_id: String\n"
@@ -1329,7 +1451,7 @@ class TestFullLanguageExamples:
         assert isinstance(report.fields[0].type, PrimitiveTypeRef)
 
     def test_complete_spec_example_order_service_component(self) -> None:
-        """Parse the components/order_service.archml portion."""
+        """Parse the components/order_service.farchml portion."""
         import_line = "from types import OrderItem, OrderRequest, PaymentRequest, InventoryCheck, OrderConfirmation"
         source = f"""\
 {import_line}
@@ -1360,7 +1482,7 @@ component OrderService {{
         assert len(comp.provides) == 1
 
     def test_complete_spec_example_ecommerce_system(self) -> None:
-        """Parse the systems/ecommerce.archml portion."""
+        """Parse the systems/ecommerce.farchml portion."""
         source = """\
 from types import PaymentRequest, PaymentResult, InventoryCheck, InventoryStatus
 from components/order_service import OrderService
@@ -1617,8 +1739,8 @@ class TestParseErrors:
 
     def test_error_message_includes_filename_when_given(self) -> None:
         with pytest.raises(ParseError) as exc_info:
-            parse("requires X", filename="myfile.archml")
-        assert "myfile.archml:1:1:" in str(exc_info.value)
+            parse("requires X", filename="myfile.farchml")
+        assert "myfile.farchml:1:1:" in str(exc_info.value)
 
     def test_external_inside_component_body_non_component_raises(self) -> None:
         with pytest.raises(ParseError) as exc_info:

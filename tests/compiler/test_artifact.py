@@ -43,7 +43,7 @@ def _roundtrip(arch_file: ArchFile) -> ArchFile:
 
 def _roundtrip_file(arch_file: ArchFile, tmp_path: Path) -> ArchFile:
     """Write and read an ArchFile artifact."""
-    path = tmp_path / "test.archml.json"
+    path = tmp_path / "test.farchml.json"
     write_artifact(arch_file, path)
     return read_artifact(path)
 
@@ -367,14 +367,14 @@ class TestFileIO:
         import json
 
         af = ArchFile(components=[Component(name="C")])
-        path = tmp_path / "test.archml.json"
+        path = tmp_path / "test.farchml.json"
         write_artifact(af, path)
         # Must be parseable as JSON
         data = json.loads(path.read_text(encoding="utf-8"))
         assert "components" in data
 
     def test_roundtrip_parsed_file(self, tmp_path: Path) -> None:
-        """Parsing a real .archml file and roundtripping through artifact."""
+        """Parsing a real .farchml file and roundtripping through artifact."""
         source = """
 enum Status {
     Active
@@ -387,7 +387,7 @@ type Config {
 
 interface Request {
     id: String
-    config: Config
+    settings: Config
 }
 
 component Worker {

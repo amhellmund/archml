@@ -20,7 +20,7 @@ from archml.sphinx_ext.extension import (
 # Fixtures
 # ###############
 
-_MINIMAL_WORKSPACE = "name: src\nbuild-directory: .archml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
+_MINIMAL_WORKSPACE = "name: src\nbuild-directory: .farchml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
 
 _SIMPLE_ARCHML = "component OrderProcessor {}\n"
 
@@ -61,13 +61,13 @@ def _make_directive(
 
 def test_find_workspace_root_finds_workspace_in_same_dir(tmp_path: Path) -> None:
     """find_workspace_root returns the directory when the workspace file is there."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     assert find_workspace_root(tmp_path) == tmp_path
 
 
 def test_find_workspace_root_walks_up(tmp_path: Path) -> None:
     """find_workspace_root walks up parent directories to find the workspace."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     subdir = tmp_path / "a" / "b" / "c"
     subdir.mkdir(parents=True)
     assert find_workspace_root(subdir) == tmp_path
@@ -80,10 +80,10 @@ def test_find_workspace_root_returns_none_when_not_found(tmp_path: Path) -> None
 
 def test_find_workspace_root_stops_at_closest_ancestor(tmp_path: Path) -> None:
     """find_workspace_root returns the nearest workspace, not a more distant ancestor."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     inner = tmp_path / "sub"
     inner.mkdir()
-    (inner / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (inner / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     assert find_workspace_root(inner) == inner
 
 
@@ -148,8 +148,8 @@ def test_setup_declares_parallel_write_safe() -> None:
 
 def test_generate_diagram_creates_svg(tmp_path: Path) -> None:
     """_generate_diagram writes an SVG file and returns its path."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     svg_path = _generate_diagram(env, "OrderProcessor", None)
@@ -160,8 +160,8 @@ def test_generate_diagram_creates_svg(tmp_path: Path) -> None:
 
 def test_generate_diagram_svg_content_is_valid_xml(tmp_path: Path) -> None:
     """The generated SVG file contains valid XML starting with an XML declaration."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     svg_path = _generate_diagram(env, "OrderProcessor", None)
@@ -173,8 +173,8 @@ def test_generate_diagram_svg_content_is_valid_xml(tmp_path: Path) -> None:
 
 def test_generate_diagram_places_svg_in_archml_images(tmp_path: Path) -> None:
     """The SVG is written into the _archml_images subdirectory of srcdir."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     svg_path = _generate_diagram(env, "OrderProcessor", None)
@@ -184,8 +184,8 @@ def test_generate_diagram_places_svg_in_archml_images(tmp_path: Path) -> None:
 
 def test_generate_diagram_filename_encodes_entity(tmp_path: Path) -> None:
     """The SVG filename is derived from the entity path."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     svg_path = _generate_diagram(env, "OrderProcessor", None)
@@ -195,8 +195,8 @@ def test_generate_diagram_filename_encodes_entity(tmp_path: Path) -> None:
 
 def test_generate_diagram_filename_encodes_depth(tmp_path: Path) -> None:
     """When depth is given, the filename includes a depth suffix."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     svg_path = _generate_diagram(env, "OrderProcessor", 0)
@@ -206,8 +206,8 @@ def test_generate_diagram_filename_encodes_depth(tmp_path: Path) -> None:
 
 def test_generate_diagram_no_depth_suffix_when_depth_is_none(tmp_path: Path) -> None:
     """When depth is None, no depth suffix is added to the filename."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     svg_path = _generate_diagram(env, "OrderProcessor", None)
@@ -224,8 +224,8 @@ def test_generate_diagram_raises_when_no_workspace(tmp_path: Path) -> None:
 
 def test_generate_diagram_raises_when_entity_not_found(tmp_path: Path) -> None:
     """_generate_diagram raises _DiagramError when the entity path does not exist."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     with pytest.raises(_DiagramError):
@@ -233,18 +233,18 @@ def test_generate_diagram_raises_when_entity_not_found(tmp_path: Path) -> None:
 
 
 def test_generate_diagram_raises_when_no_archml_files(tmp_path: Path) -> None:
-    """_generate_diagram raises _DiagramError when the workspace has no .archml files."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    """_generate_diagram raises _DiagramError when the workspace has no .farchml files."""
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
 
     env = _make_env(tmp_path)
-    with pytest.raises(_DiagramError, match="No .archml files"):
+    with pytest.raises(_DiagramError, match="No .farchml files"):
         _generate_diagram(env, "OrderProcessor", None)
 
 
 def test_generate_diagram_finds_workspace_above_srcdir(tmp_path: Path) -> None:
     """_generate_diagram finds the workspace when srcdir is a subdirectory of it."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
@@ -259,8 +259,8 @@ def test_generate_diagram_uses_configured_workspace_dir(tmp_path: Path) -> None:
     """_generate_diagram uses archml_workspace_dir from config when set."""
     ws_dir = tmp_path / "workspace"
     ws_dir.mkdir()
-    (ws_dir / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (ws_dir / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (ws_dir / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (ws_dir / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
@@ -274,8 +274,8 @@ def test_generate_diagram_uses_configured_workspace_dir(tmp_path: Path) -> None:
 
 def test_generate_diagram_configured_dir_relative_to_srcdir(tmp_path: Path) -> None:
     """A relative archml_workspace_dir is resolved against srcdir."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
@@ -313,8 +313,8 @@ def test_setup_registers_workspace_dir_config() -> None:
 
 def test_directive_run_returns_image_node(tmp_path: Path) -> None:
     """run() returns a single image node on success."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "OrderProcessor"}, tmp_path)
     result = directive.run()
@@ -325,8 +325,8 @@ def test_directive_run_returns_image_node(tmp_path: Path) -> None:
 
 def test_directive_run_image_uri_contains_svg(tmp_path: Path) -> None:
     """The image node URI points to an SVG file."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "OrderProcessor"}, tmp_path)
     result = directive.run()
@@ -336,8 +336,8 @@ def test_directive_run_image_uri_contains_svg(tmp_path: Path) -> None:
 
 def test_directive_run_sets_image_width(tmp_path: Path) -> None:
     """When image-width is given, the image node carries a width attribute."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "OrderProcessor", "image-width": "400px"}, tmp_path)
     result = directive.run()
@@ -347,8 +347,8 @@ def test_directive_run_sets_image_width(tmp_path: Path) -> None:
 
 def test_directive_run_no_width_when_not_specified(tmp_path: Path) -> None:
     """When image-width is omitted, the image node has no width attribute."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "OrderProcessor"}, tmp_path)
     result = directive.run()
@@ -358,8 +358,8 @@ def test_directive_run_no_width_when_not_specified(tmp_path: Path) -> None:
 
 def test_directive_run_returns_error_node_on_missing_entity(tmp_path: Path) -> None:
     """run() returns an error system_message when the entity is not found."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "DoesNotExist"}, tmp_path)
     result = directive.run()
@@ -379,8 +379,8 @@ def test_directive_run_returns_error_node_on_missing_workspace(tmp_path: Path) -
 
 def test_directive_run_uri_relative_to_doc_in_subdir(tmp_path: Path) -> None:
     """URI is computed relative to the document directory, not srcdir."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     # Document lives in a subdirectory of srcdir.
     directive = _make_directive({"root": "OrderProcessor"}, tmp_path, docname="guide/index")
@@ -401,8 +401,8 @@ _VARIANT_ARCHML = "interface IFoo {}\ncomponent<cloud> CloudOnly { provides IFoo
 
 def test_directive_variant_all_returns_image_node(tmp_path: Path) -> None:
     """variant:all produces a valid image node (same as no variant)."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "OrderProcessor", "variant": "all"}, tmp_path)
     result = directive.run()
@@ -413,8 +413,8 @@ def test_directive_variant_all_returns_image_node(tmp_path: Path) -> None:
 
 def test_directive_variant_baseline_returns_image_node(tmp_path: Path) -> None:
     """variant:baseline produces a valid image node."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "OrderProcessor", "variant": "baseline"}, tmp_path)
     result = directive.run()
@@ -425,8 +425,8 @@ def test_directive_variant_baseline_returns_image_node(tmp_path: Path) -> None:
 
 def test_directive_user_defined_variant_returns_image_node(tmp_path: Path) -> None:
     """A user-defined variant name produces a valid image node."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_VARIANT_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_VARIANT_ARCHML)
 
     directive = _make_directive({"root": "Base", "variant": "cloud"}, tmp_path)
     result = directive.run()
@@ -437,8 +437,8 @@ def test_directive_user_defined_variant_returns_image_node(tmp_path: Path) -> No
 
 def test_directive_variant_all_svg_filename_has_no_variant_suffix(tmp_path: Path) -> None:
     """variant:all does not add a variant suffix to the SVG filename."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "OrderProcessor", "variant": "all"}, tmp_path)
     result = directive.run()
@@ -448,8 +448,8 @@ def test_directive_variant_all_svg_filename_has_no_variant_suffix(tmp_path: Path
 
 def test_directive_variant_baseline_svg_filename_has_variant_suffix(tmp_path: Path) -> None:
     """variant:baseline adds a _vbaseline suffix to the SVG filename."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     directive = _make_directive({"root": "OrderProcessor", "variant": "baseline"}, tmp_path)
     result = directive.run()
@@ -459,8 +459,8 @@ def test_directive_variant_baseline_svg_filename_has_variant_suffix(tmp_path: Pa
 
 def test_directive_user_defined_variant_svg_filename_has_variant_suffix(tmp_path: Path) -> None:
     """A user-defined variant name adds a _v<name> suffix to the SVG filename."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_VARIANT_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_VARIANT_ARCHML)
 
     directive = _make_directive({"root": "Base", "variant": "cloud"}, tmp_path)
     result = directive.run()
@@ -470,8 +470,8 @@ def test_directive_user_defined_variant_svg_filename_has_variant_suffix(tmp_path
 
 def test_generate_diagram_variant_all_maps_to_no_filter(tmp_path: Path) -> None:
     """Passing variant=None (from 'all') and omitting variant produce the same SVG name."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     path_no_variant = _generate_diagram(env, "OrderProcessor", None, variant=None)
@@ -480,8 +480,8 @@ def test_generate_diagram_variant_all_maps_to_no_filter(tmp_path: Path) -> None:
 
 def test_generate_diagram_variant_baseline_creates_separate_svg(tmp_path: Path) -> None:
     """variant='baseline' produces a separate SVG from the unfiltered diagram."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text(_SIMPLE_ARCHML)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text(_SIMPLE_ARCHML)
 
     env = _make_env(tmp_path)
     path_all = _generate_diagram(env, "OrderProcessor", None, variant=None)

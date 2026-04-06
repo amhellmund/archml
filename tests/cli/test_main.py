@@ -28,12 +28,12 @@ def test_main_no_args_prints_help_and_exits(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_init_creates_workspace_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init creates .archml-workspace.yaml in the specified directory."""
+    """init creates .farchml-workspace.yaml in the specified directory."""
     monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
-    assert (tmp_path / ".archml-workspace.yaml").exists()
+    assert (tmp_path / ".farchml-workspace.yaml").exists()
 
 
 def test_init_workspace_yaml_has_correct_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,7 +42,7 @@ def test_init_workspace_yaml_has_correct_content(tmp_path: Path, monkeypatch: py
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
-    content = (tmp_path / ".archml-workspace.yaml").read_text()
+    content = (tmp_path / ".farchml-workspace.yaml").read_text()
     assert "name: myrepo" in content
     assert "local-path: ." in content
     assert "build-directory:" in content
@@ -57,13 +57,13 @@ def test_init_creates_workspace_dir_if_not_exists(tmp_path: Path, monkeypatch: p
         main()
     assert exc_info.value.code == 0
     assert new_dir.exists()
-    assert (new_dir / ".archml-workspace.yaml").exists()
+    assert (new_dir / ".farchml-workspace.yaml").exists()
 
 
 def test_init_fails_if_workspace_yaml_already_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init exits with error code 1 when .archml-workspace.yaml already exists."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
-        "name: src\nbuild-directory: .archml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
+    """init exits with error code 1 when .farchml-workspace.yaml already exists."""
+    (tmp_path / ".farchml-workspace.yaml").write_text(
+        "name: src\nbuild-directory: .farchml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -104,7 +104,7 @@ def test_init_fails_if_name_has_slash(
 
 
 def test_init_succeeds_if_dir_exists_without_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init succeeds when the directory exists but has no .archml-workspace.yaml."""
+    """init succeeds when the directory exists but has no .farchml-workspace.yaml."""
     monkeypatch.setattr(sys, "argv", ["archml", "init", "myrepo", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -113,12 +113,12 @@ def test_init_succeeds_if_dir_exists_without_yaml(tmp_path: Path, monkeypatch: p
 
 # -------- check tests --------
 
-_MINIMAL_WORKSPACE = "name: src\nbuild-directory: .archml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
+_MINIMAL_WORKSPACE = "name: src\nbuild-directory: .farchml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
 
 
 def test_check_with_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """check exits with code 0 and reports no files when workspace has none."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -130,9 +130,9 @@ def test_check_with_valid_archml_file(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """check discovers .archml files, compiles them, and reports success."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("interface Signal { v: Int }\ncomponent MyComponent { provides Signal }\n")
+    """check discovers .farchml files, compiles them, and reports success."""
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text("interface Signal { v: Int }\ncomponent MyComponent { provides Signal }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -147,9 +147,9 @@ def test_check_reports_compile_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """check exits with code 1 when a .archml file has a parse error."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "bad.archml").write_text("component {}")  # missing name
+    """check exits with code 1 when a .farchml file has a parse error."""
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "bad.farchml").write_text("component {}")  # missing name
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -164,9 +164,9 @@ def test_check_reports_validation_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 when business validation finds errors."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     # Interface propagation error: system provides I but no member provides I.
-    (tmp_path / "propagation.archml").write_text(
+    (tmp_path / "propagation.farchml").write_text(
         "interface I { v: Int }\ninterface J { v: Int }\nsystem S {\n  provides I\n  component A { provides J }\n}\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
@@ -179,11 +179,11 @@ def test_check_uses_workspace_yaml_build_dir(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """check uses the build-directory from .archml-workspace.yaml when present."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    """check uses the build-directory from .farchml-workspace.yaml when present."""
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: src\nbuild-directory: custom-build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
-    (tmp_path / "arch.archml").write_text("interface Signal { v: Int }\ncomponent A { provides Signal }\n")
+    (tmp_path / "arch.farchml").write_text("interface Signal { v: Int }\ncomponent A { provides Signal }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -196,9 +196,9 @@ def test_check_invalid_workspace_yaml(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """check exits with code 1 when .archml-workspace.yaml is invalid."""
-    (tmp_path / ".archml-workspace.yaml").write_text("bad yaml: [unterminated\n")
-    (tmp_path / "arch.archml").write_text("component A {}\n")
+    """check exits with code 1 when .farchml-workspace.yaml is invalid."""
+    (tmp_path / ".farchml-workspace.yaml").write_text("bad yaml: [unterminated\n")
+    (tmp_path / "arch.farchml").write_text("component A {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -219,8 +219,8 @@ def test_check_autodetects_workspace_in_parent_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """check finds the workspace by walking up from a subdirectory."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("interface Signal { v: Int }\ncomponent MyComponent { provides Signal }\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text("interface Signal { v: Int }\ncomponent MyComponent { provides Signal }\n")
     subdir = tmp_path / "src" / "components"
     subdir.mkdir(parents=True)
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(subdir)])
@@ -246,8 +246,8 @@ def test_check_reports_parse_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 and prints error message on parse failure."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "bad.archml").write_text("component {}\n")  # missing name
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "bad.farchml").write_text("component {}\n")  # missing name
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -264,15 +264,15 @@ def test_check_with_workspace_yaml_and_local_source_import(
     """check resolves mnemonic imports from the workspace YAML source-imports."""
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir()
-    (lib_dir / "iface.archml").write_text("interface MyIface { v: Int }\n")
+    (lib_dir / "iface.farchml").write_text("interface MyIface { v: Int }\n")
 
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myproject\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: src\n    local-path: .\n"
         "  - name: mylib\n    local-path: lib\n"
     )
-    (tmp_path / "app.archml").write_text("from mylib/iface import MyIface\ncomponent C { requires MyIface }\n")
+    (tmp_path / "app.farchml").write_text("from mylib/iface import MyIface\ncomponent C { requires MyIface }\n")
 
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -287,8 +287,8 @@ def test_check_with_workspace_yaml_invalid_config(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """check exits with code 1 when .archml-workspace.yaml is invalid."""
-    (tmp_path / ".archml-workspace.yaml").write_text("invalid: yaml: [broken\n")
+    """check exits with code 1 when .farchml-workspace.yaml is invalid."""
+    (tmp_path / ".farchml-workspace.yaml").write_text("invalid: yaml: [broken\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -303,16 +303,16 @@ def test_check_excludes_build_directory_from_scan(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Artifacts in the build directory are not re-scanned as source files."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: src\nbuild-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
 
     # Place a valid source file and compile it once to create the artifact.
-    (tmp_path / "comp.archml").write_text("interface I { v: Int }\ncomponent Good { provides I }\n")
-    # Also create a broken .archml inside the build directory (should be ignored).
+    (tmp_path / "comp.farchml").write_text("interface I { v: Int }\ncomponent Good { provides I }\n")
+    # Also create a broken .farchml inside the build directory (should be ignored).
     build_dir = tmp_path / "build"
     build_dir.mkdir()
-    (build_dir / "fake.archml").write_text("component {}\n")  # invalid — missing name
+    (build_dir / "fake.farchml").write_text("component {}\n")  # invalid — missing name
 
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -328,7 +328,7 @@ def test_check_fails_if_workspace_config_has_no_source_imports(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """check exits with code 1 when workspace config has no source-imports."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: build\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text("build-directory: build\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -363,8 +363,8 @@ def test_export_exits_zero_and_writes_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """export exits 0 and creates the output HTML file."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text("component MyComponent {}\n")
     output = tmp_path / "out.html"
     fake_template = _fake_template_path(tmp_path)
 
@@ -380,8 +380,8 @@ def test_export_output_contains_data_script_tag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """export embeds a <script id="archml-data"> tag in the HTML output."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("component MyComponent {}\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text("component MyComponent {}\n")
     output = tmp_path / "out.html"
     fake_template = _fake_template_path(tmp_path)
 
@@ -401,8 +401,8 @@ def test_export_output_contains_valid_json(
     import json
     import re
 
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("system S { component A {} component B {} }\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text("system S { component A {} component B {} }\n")
     output = tmp_path / "out.html"
     fake_template = _fake_template_path(tmp_path)
 
@@ -425,8 +425,8 @@ def test_export_default_output_filename(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """export uses architecture.html as the default output filename."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("component A {}\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text("component A {}\n")
     fake_template = _fake_template_path(tmp_path)
 
     monkeypatch.setattr(sys, "argv", ["archml", "export", "--workspace", str(tmp_path)])
@@ -470,8 +470,8 @@ def test_export_fails_without_built_template(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """export exits with code 1 when the viewer template does not exist."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("component A {}\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text("component A {}\n")
     output = tmp_path / "out.html"
     missing_template = tmp_path / "archml-viewer-template.html"  # does not exist
 
@@ -517,8 +517,8 @@ def test_visualize_fails_if_no_workspace(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_visualize_fails_if_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """visualize exits with error code 1 when no .archml files are found."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
+    """visualize exits with error code 1 when no .farchml files are found."""
+    (tmp_path / ".farchml-workspace.yaml").write_text("build-directory: .farchml-build\n")
     monkeypatch.setattr(sys, "argv", ["archml", "visualize", "SystemA", "out.png", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -531,8 +531,8 @@ def test_visualize_fails_if_entity_not_found(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """visualize exits with error code 1 when entity path is not found."""
-    (tmp_path / ".archml-workspace.yaml").write_text("build-directory: .archml-build\n")
-    (tmp_path / "arch.archml").write_text("component Worker {}\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text("build-directory: .farchml-build\n")
+    (tmp_path / "arch.farchml").write_text("component Worker {}\n")
     monkeypatch.setattr(sys, "argv", ["archml", "visualize", "NonExistent", "out.png", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit):
         main()
@@ -542,7 +542,7 @@ def test_sync_remote_autodetects_workspace_in_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """sync-remote finds the workspace by walking up from a subdirectory."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     subdir = tmp_path / "src" / "components"
     subdir.mkdir(parents=True)
     monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(subdir)])
@@ -555,8 +555,8 @@ def test_sync_remote_autodetects_workspace_in_parent(
 
 def test_sync_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """sync-remote exits 0 when no git imports are configured."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: src\nbuild-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
@@ -567,7 +567,7 @@ def test_sync_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 def test_sync_remote_fails_without_lockfile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """sync-remote exits 1 when the lockfile is missing."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: payments\n"
@@ -584,14 +584,14 @@ def test_sync_remote_fails_if_repo_not_in_lockfile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """sync-remote exits 1 when a configured repo is missing from the lockfile."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: payments\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    (tmp_path / ".archml-lockfile.yaml").write_text("locked-revisions: []\n")
+    (tmp_path / ".farchml-lockfile.yaml").write_text("locked-revisions: []\n")
     monkeypatch.setattr(sys, "argv", ["archml", "sync-remote", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -604,14 +604,14 @@ def test_sync_remote_skips_repo_already_at_pinned_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """sync-remote skips a repo that is already at the pinned commit."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: payments\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    (tmp_path / ".archml-lockfile.yaml").write_text(
+    (tmp_path / ".farchml-lockfile.yaml").write_text(
         f"locked-revisions:\n"
         f"  - name: payments\n"
         f"    git-repository: https://example.com/payments\n"
@@ -633,14 +633,14 @@ def test_sync_remote_clones_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """sync-remote calls clone_at_commit when repo is not at the pinned commit."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: payments\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    (tmp_path / ".archml-lockfile.yaml").write_text(
+    (tmp_path / ".farchml-lockfile.yaml").write_text(
         f"locked-revisions:\n"
         f"  - name: payments\n"
         f"    git-repository: https://example.com/payments\n"
@@ -658,7 +658,7 @@ def test_sync_remote_clones_repo(
     mock_clone.assert_called_once_with(
         "https://example.com/payments",
         _COMMIT_40,
-        tmp_path / ".archml-remotes" / "payments",
+        tmp_path / ".farchml-remotes" / "payments",
     )
 
 
@@ -668,14 +668,14 @@ def test_sync_remote_reports_error_on_clone_failure(
     """sync-remote exits 1 and reports an error if clone_at_commit fails."""
     from archml.workspace.git_ops import GitError
 
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: payments\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    (tmp_path / ".archml-lockfile.yaml").write_text(
+    (tmp_path / ".farchml-lockfile.yaml").write_text(
         f"locked-revisions:\n"
         f"  - name: payments\n"
         f"    git-repository: https://example.com/payments\n"
@@ -700,8 +700,8 @@ def test_visualize_succeeds_with_mocked_svg_renderer(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """visualize with .svg output calls the SVG renderer and exits with code 0."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
-    (tmp_path / "arch.archml").write_text("component Worker {}\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / "arch.farchml").write_text("component Worker {}\n")
     out_file = tmp_path / "diagram.svg"
     monkeypatch.setattr(sys, "argv", ["archml", "visualize", "Worker", str(out_file), "--workspace", str(tmp_path)])
     with patch("archml.views.diagram.render_diagram") as mock_render, pytest.raises(SystemExit) as exc_info:
@@ -714,7 +714,7 @@ def test_visualize_succeeds_with_mocked_svg_renderer(
 
 def test_sync_remote_uses_custom_sync_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """sync-remote uses the remote-sync-directory from workspace config."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "remote-sync-directory: custom-remotes\n"
         "source-imports:\n"
@@ -722,7 +722,7 @@ def test_sync_remote_uses_custom_sync_directory(tmp_path: Path, monkeypatch: pyt
         "    git-repository: https://example.com/lib\n"
         "    revision: main\n"
     )
-    (tmp_path / ".archml-lockfile.yaml").write_text(
+    (tmp_path / ".farchml-lockfile.yaml").write_text(
         f"locked-revisions:\n"
         f"  - name: lib\n"
         f"    git-repository: https://example.com/lib\n"
@@ -768,7 +768,7 @@ def test_update_remote_autodetects_workspace_in_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """update-remote finds the workspace by walking up from a subdirectory."""
-    (tmp_path / ".archml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
+    (tmp_path / ".farchml-workspace.yaml").write_text(_MINIMAL_WORKSPACE)
     subdir = tmp_path / "src" / "components"
     subdir.mkdir(parents=True)
     monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(subdir)])
@@ -781,8 +781,8 @@ def test_update_remote_autodetects_workspace_in_parent(
 
 def test_update_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """update-remote exits 0 when no git imports are configured."""
-    (tmp_path / ".archml-workspace").write_text("[workspace]\nversion = '1'\n")
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace").write_text("[workspace]\nversion = '1'\n")
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: src\nbuild-directory: build\nsource-imports:\n  - name: src\n    local-path: .\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
@@ -794,7 +794,7 @@ def test_update_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_update_remote_creates_lockfile_from_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """update-remote creates a lockfile by resolving branch revisions."""
     resolved_commit = "c" * 40
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: payments\n"
@@ -808,7 +808,7 @@ def test_update_remote_creates_lockfile_from_branch(tmp_path: Path, monkeypatch:
     ):
         main()
     assert exc_info.value.code == 0
-    lockfile_path = tmp_path / ".archml-lockfile.yaml"
+    lockfile_path = tmp_path / ".farchml-lockfile.yaml"
     assert lockfile_path.exists()
 
     from archml.workspace.lockfile import load_lockfile
@@ -822,7 +822,7 @@ def test_update_remote_creates_lockfile_from_branch(tmp_path: Path, monkeypatch:
 
 def test_update_remote_pins_commit_hash_without_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """update-remote does not call git for revisions that are already commit hashes."""
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: lib\n"
@@ -840,7 +840,7 @@ def test_update_remote_pins_commit_hash_without_network(tmp_path: Path, monkeypa
 
     from archml.workspace.lockfile import load_lockfile
 
-    lockfile = load_lockfile(tmp_path / ".archml-lockfile.yaml")
+    lockfile = load_lockfile(tmp_path / ".farchml-lockfile.yaml")
     assert lockfile.locked_revisions[0].commit == _COMMIT_40
 
 
@@ -848,14 +848,14 @@ def test_update_remote_updates_existing_lockfile(tmp_path: Path, monkeypatch: py
     """update-remote updates an existing lockfile with new commits."""
     old_commit = "0" * 40
     new_commit = "1" * 40
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: payments\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    (tmp_path / ".archml-lockfile.yaml").write_text(
+    (tmp_path / ".farchml-lockfile.yaml").write_text(
         f"locked-revisions:\n"
         f"  - name: payments\n"
         f"    git-repository: https://example.com/payments\n"
@@ -872,7 +872,7 @@ def test_update_remote_updates_existing_lockfile(tmp_path: Path, monkeypatch: py
 
     from archml.workspace.lockfile import load_lockfile
 
-    lockfile = load_lockfile(tmp_path / ".archml-lockfile.yaml")
+    lockfile = load_lockfile(tmp_path / ".farchml-lockfile.yaml")
     assert lockfile.locked_revisions[0].commit == new_commit
 
 
@@ -882,7 +882,7 @@ def test_update_remote_exits_1_on_resolution_failure(
     """update-remote exits 1 if a revision cannot be resolved."""
     from archml.workspace.git_ops import GitError
 
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: lib\n"
@@ -904,16 +904,16 @@ def test_check_command_uses_synced_remote_repos(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """check includes synced remote repos' mnemonics in the source import map when they exist."""
-    remote_dir = tmp_path / ".archml-remotes" / "payments"
+    remote_dir = tmp_path / ".farchml-remotes" / "payments"
     remote_api_dir = remote_dir / "api"
     remote_api_dir.mkdir(parents=True)
-    (remote_api_dir / "types.archml").write_text("interface PaymentAPI { amount: Float }\n")
+    (remote_api_dir / "types.farchml").write_text("interface PaymentAPI { amount: Float }\n")
     # Remote repo defines its own workspace config with the "api" mnemonic.
-    (remote_dir / ".archml-workspace.yaml").write_text(
+    (remote_dir / ".farchml-workspace.yaml").write_text(
         "name: payments\nbuild-directory: build\nsource-imports:\n  - name: api\n    local-path: api\n"
     )
 
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: src\n    local-path: .\n"
@@ -921,7 +921,7 @@ def test_check_command_uses_synced_remote_repos(
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
-    (tmp_path / "app.archml").write_text(
+    (tmp_path / "app.farchml").write_text(
         "from @payments/api/types import PaymentAPI\ncomponent C { requires PaymentAPI }\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
@@ -936,17 +936,17 @@ def test_check_command_loads_remote_repo_mnemonics(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """check exposes @repo/mnemonic keys from the remote repo's workspace config."""
-    remote_dir = tmp_path / ".archml-remotes" / "payments"
+    remote_dir = tmp_path / ".farchml-remotes" / "payments"
     remote_lib_dir = remote_dir / "src" / "lib"
     remote_lib_dir.mkdir(parents=True)
-    (remote_lib_dir / "types.archml").write_text("interface PaymentType { amount: Float }\n")
+    (remote_lib_dir / "types.farchml").write_text("interface PaymentType { amount: Float }\n")
 
-    # Remote repo has its own .archml-workspace.yaml defining a "lib" mnemonic.
-    (remote_dir / ".archml-workspace.yaml").write_text(
+    # Remote repo has its own .farchml-workspace.yaml defining a "lib" mnemonic.
+    (remote_dir / ".farchml-workspace.yaml").write_text(
         "name: payments\nbuild-directory: build\nsource-imports:\n  - name: lib\n    local-path: src/lib\n"
     )
 
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: src\n    local-path: .\n"
@@ -955,7 +955,7 @@ def test_check_command_loads_remote_repo_mnemonics(
         "    revision: main\n"
     )
     # Import using the remote mnemonic: @payments/lib/types
-    (tmp_path / "app.archml").write_text(
+    (tmp_path / "app.farchml").write_text(
         "from @payments/lib/types import PaymentType\ncomponent C { requires PaymentType }\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
@@ -969,13 +969,13 @@ def test_check_command_loads_remote_repo_mnemonics(
 def test_check_command_warns_on_invalid_remote_workspace_yaml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """check emits a warning when a remote repo's .archml-workspace.yaml is invalid."""
-    remote_dir = tmp_path / ".archml-remotes" / "payments"
+    """check emits a warning when a remote repo's .farchml-workspace.yaml is invalid."""
+    remote_dir = tmp_path / ".farchml-remotes" / "payments"
     remote_dir.mkdir(parents=True)
     # Malformed remote workspace config — no mnemonics loaded for @payments.
-    (remote_dir / ".archml-workspace.yaml").write_text("bad yaml: [unterminated\n")
+    (remote_dir / ".farchml-workspace.yaml").write_text("bad yaml: [unterminated\n")
 
-    (tmp_path / ".archml-workspace.yaml").write_text(
+    (tmp_path / ".farchml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: src\n    local-path: .\n"
@@ -984,7 +984,7 @@ def test_check_command_warns_on_invalid_remote_workspace_yaml(
         "    revision: main\n"
     )
     # Local file with no imports from @payments — compilation succeeds despite bad remote config.
-    (tmp_path / "app.archml").write_text("interface I { v: Int }\ncomponent C { provides I }\n")
+    (tmp_path / "app.farchml").write_text("interface I { v: Int }\ncomponent C { provides I }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
         main()

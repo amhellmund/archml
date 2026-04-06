@@ -151,7 +151,7 @@ def main() -> None:
 # Implementation
 # ################
 
-_DEFAULT_BUILD_DIR = ".archml-build"
+_DEFAULT_BUILD_DIR = ".farchml-build"
 
 
 def _print_errors(errors: list[str]) -> None:
@@ -200,7 +200,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
     workspace_dir = Path(args.workspace_dir).resolve()
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    workspace_yaml = workspace_dir / ".archml-workspace.yaml"
+    workspace_yaml = workspace_dir / ".farchml-workspace.yaml"
     if workspace_yaml.exists():
         print(
             f"Error: workspace already exists at '{workspace_yaml}'.",
@@ -227,7 +227,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".archml-workspace.yaml"
+    workspace_yaml = directory / ".farchml-workspace.yaml"
 
     if not workspace_yaml.exists():
         root = find_workspace_root(directory)
@@ -239,7 +239,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
             )
             return 1
         directory = root
-        workspace_yaml = directory / ".archml-workspace.yaml"
+        workspace_yaml = directory / ".farchml-workspace.yaml"
 
     try:
         config = load_workspace_config(workspace_yaml)
@@ -260,7 +260,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         elif isinstance(imp, GitPathImport):
             repo_dir = (sync_dir / imp.name).resolve()
             if repo_dir.exists():
-                remote_workspace_yaml = repo_dir / ".archml-workspace.yaml"
+                remote_workspace_yaml = repo_dir / ".farchml-workspace.yaml"
                 if remote_workspace_yaml.exists():
                     try:
                         remote_config = load_workspace_config(remote_workspace_yaml)
@@ -276,13 +276,13 @@ def _cmd_check(args: argparse.Namespace) -> int:
     seen_files: set[Path] = set()
     archml_files: list[Path] = []
     for base_path in sorted(local_mnemonic_paths):
-        for f in base_path.rglob("*.archml"):
+        for f in base_path.rglob("*.farchml"):
             if f not in seen_files and build_dir not in f.parents and sync_dir not in f.parents:
                 seen_files.add(f)
                 archml_files.append(f)
 
     if not archml_files:
-        print("No .archml files found in the workspace.")
+        print("No .farchml files found in the workspace.")
         return 0
 
     print(f"Checking {len(archml_files)} architecture file(s)...")
@@ -320,7 +320,7 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".archml-workspace.yaml"
+    workspace_yaml = directory / ".farchml-workspace.yaml"
 
     if not workspace_yaml.exists():
         print(
@@ -342,9 +342,9 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
         if isinstance(imp, LocalPathImport):
             source_import_map[SourceImportKey(config.name, imp.name)] = (directory / imp.local_path).resolve()
 
-    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents]
+    archml_files = [f for f in directory.rglob("*.farchml") if build_dir not in f.parents]
     if not archml_files:
-        print("No .archml files found in the workspace.", file=sys.stderr)
+        print("No .farchml files found in the workspace.", file=sys.stderr)
         return 1
 
     try:
@@ -401,7 +401,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".archml-workspace.yaml"
+    workspace_yaml = directory / ".farchml-workspace.yaml"
 
     if not workspace_yaml.exists():
         print(
@@ -423,9 +423,9 @@ def _cmd_export(args: argparse.Namespace) -> int:
         if isinstance(imp, LocalPathImport):
             source_import_map[SourceImportKey(config.name, imp.name)] = (directory / imp.local_path).resolve()
 
-    archml_files = [f for f in directory.rglob("*.archml") if build_dir not in f.parents]
+    archml_files = [f for f in directory.rglob("*.farchml") if build_dir not in f.parents]
     if not archml_files:
-        print("No .archml files found in the workspace.", file=sys.stderr)
+        print("No .farchml files found in the workspace.", file=sys.stderr)
         return 1
 
     try:
@@ -458,7 +458,7 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".archml-workspace.yaml"
+    workspace_yaml = directory / ".farchml-workspace.yaml"
     if not workspace_yaml.exists():
         root = find_workspace_root(directory)
         if root is None:
@@ -469,7 +469,7 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
             )
             return 1
         directory = root
-        workspace_yaml = directory / ".archml-workspace.yaml"
+        workspace_yaml = directory / ".farchml-workspace.yaml"
 
     try:
         config = load_workspace_config(workspace_yaml)
@@ -553,7 +553,7 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
         print(f"Error: directory '{directory}' does not exist.", file=sys.stderr)
         return 1
 
-    workspace_yaml = directory / ".archml-workspace.yaml"
+    workspace_yaml = directory / ".farchml-workspace.yaml"
     if not workspace_yaml.exists():
         root = find_workspace_root(directory)
         if root is None:
@@ -564,7 +564,7 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
             )
             return 1
         directory = root
-        workspace_yaml = directory / ".archml-workspace.yaml"
+        workspace_yaml = directory / ".farchml-workspace.yaml"
 
     try:
         config = load_workspace_config(workspace_yaml)

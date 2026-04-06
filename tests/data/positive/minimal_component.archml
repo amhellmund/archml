@@ -1,6 +1,0 @@
-# Minimal component: no ports, no fields
-# Expected result: no semantic errors
-
-component Processor {
-    """A minimal component with no interface requirements."""
-}

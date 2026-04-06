@@ -86,6 +86,7 @@ class TestKeywords:
             ("import", TokenType.IMPORT),
             ("use", TokenType.USE),
             ("external", TokenType.EXTERNAL),
+            ("config", TokenType.CONFIG),
         ],
     )
     def test_keyword_recognized(self, source: str, expected_type: TokenType) -> None:
@@ -141,6 +142,40 @@ class TestIdentifiers:
         types = _types("2service")
         assert types[0] == TokenType.INTEGER
         assert types[1] == TokenType.IDENTIFIER
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "order-service",
+            "a-b-c",
+            "my-component-v2",
+            "kebab-case-name",
+        ],
+    )
+    def test_identifier_with_dashes(self, source: str) -> None:
+        tokens = _tokens_no_eof(source)
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.IDENTIFIER
+        assert tokens[0].value == source
+
+    def test_identifier_cannot_start_with_dash(self) -> None:
+        # A leading dash is not a valid identifier start — it is an unexpected char
+        with pytest.raises(LexerError):
+            tokenize("-leading")
+
+    def test_arrow_after_identifier_not_consumed_as_dash(self) -> None:
+        # 'a->b' must tokenize as IDENT ARROW IDENT, not as IDENT('-') RANGLE IDENT
+        types = _types("a->b")
+        assert types == [TokenType.IDENTIFIER, TokenType.ARROW, TokenType.IDENTIFIER]
+
+    def test_dashed_ident_followed_by_arrow(self) -> None:
+        # 'order-service -> result' must tokenize correctly
+        tokens = _tokens_no_eof("order-service -> result")
+        assert tokens[0].type == TokenType.IDENTIFIER
+        assert tokens[0].value == "order-service"
+        assert tokens[1].type == TokenType.ARROW
+        assert tokens[2].type == TokenType.IDENTIFIER
+        assert tokens[2].value == "result"
 
 
 # ###############
@@ -537,8 +572,8 @@ class TestErrors:
 
     def test_error_message_format_with_filename(self) -> None:
         with pytest.raises(LexerError) as exc_info:
-            tokenize("~", filename="foo.archml")
-        assert "foo.archml:1:1:" in str(exc_info.value)
+            tokenize("~", filename="foo.farchml")
+        assert "foo.farchml:1:1:" in str(exc_info.value)
 
     def test_unterminated_string_error_location(self) -> None:
         with pytest.raises(LexerError) as exc_info:

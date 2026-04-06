@@ -1,7 +1,7 @@
 # Copyright 2026 ArchML Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Incremental compiler workflow for .archml files.
+"""Incremental compiler workflow for .farchml files.
 
 Implements a CMake-style cache: an artifact is reused when it already exists
 and is strictly newer than the corresponding source file.  All files are
@@ -80,7 +80,7 @@ def compile_files(
     build_dir: Path,
     source_import_map: dict[SourceImportKey, Path],
 ) -> dict[str, ArchFile]:
-    """Compile a list of .archml source files in parallel.
+    """Compile a list of .farchml source files in parallel.
 
     For each file, the compiler:
     1. Checks whether an up-to-date artifact already exists (cache hit).
@@ -94,7 +94,7 @@ def compile_files(
     6. Writes the artifact to *build_dir* (mirroring the source layout).
 
     Args:
-        files: Absolute paths to the .archml source files to compile.
+        files: Absolute paths to the .farchml source files to compile.
         build_dir: Root directory for compiled artifacts.
         source_import_map: Mapping from :class:`SourceImportKey` pairs to
             absolute base paths.  Local mnemonics use the workspace name as
@@ -125,7 +125,7 @@ def compile_files(
 
 @dataclass
 class _ParseResult:
-    """Intermediate state for a single .archml file after the parse phase."""
+    """Intermediate state for a single .farchml file after the parse phase."""
 
     key: str
     """Canonical key, e.g. ``"myapp/types"`` or ``"@payments/lib/types"``."""
@@ -148,7 +148,7 @@ def _check_reserved_path_segments(source_file: Path, source_import_map: dict[Sou
 
     Checks the file stem and all intermediate directory names that form the
     import path of the file (i.e. the relative portion under its mnemonic base
-    path, without the ``.archml`` suffix).
+    path, without the ``.farchml`` suffix).
 
     Raises:
         CompilerError: If a path segment matches a reserved keyword.
@@ -158,7 +158,7 @@ def _check_reserved_path_segments(source_file: Path, source_import_map: dict[Sou
             rel = source_file.relative_to(base_path)
         except ValueError:
             continue
-        # rel is like "foo/bar/types.archml"; check each part (stem for last)
+        # rel is like "foo/bar/types.farchml"; check each part (stem for last)
         parts = list(rel.parts[:-1]) + [rel.stem]
         for segment in parts:
             if segment in RESERVED_KEYWORDS:
@@ -217,7 +217,7 @@ def _artifact_path(key: str, build_dir: Path) -> Path:
     """Return the artifact path for a given canonical key.
 
     The key segments (split on ``/``) map directly to subdirectory components
-    under *build_dir* (e.g. ``"myapp/types"`` → ``build_dir/myapp/types.archml.json``).
+    under *build_dir* (e.g. ``"myapp/types"`` → ``build_dir/myapp/types.farchml.json``).
     """
     parts = key.split("/")
     artifact_dir = build_dir
@@ -238,7 +238,7 @@ def _resolve_import_source(
     source_import_map: dict[SourceImportKey, Path],
     source_repo: str,
 ) -> Path:
-    """Resolve an import path to the absolute path of the ``.archml`` source file.
+    """Resolve an import path to the absolute path of the ``.farchml`` source file.
 
     Args:
         import_path: The raw import path string as stored in :class:`ImportDeclaration`.
@@ -251,7 +251,7 @@ def _resolve_import_source(
             (workspace name for local, ``"@repo"`` for remote).
 
     Returns:
-        Absolute path to the ``.archml`` file (which may or may not exist).
+        Absolute path to the ``.farchml`` file (which may or may not exist).
 
     Raises:
         CompilerError: If *import_path* has an invalid format or if the
@@ -278,7 +278,7 @@ def _resolve_import_source(
                 f"Remote import '{import_path}': mnemonic '{mnemonic}' in repository '{repo_id}' "
                 "not found in workspace. Run 'archml sync-remote' to download remote repositories."
             )
-        return source_import_map[key] / (path + ".archml")
+        return source_import_map[key] / (path + ".farchml")
 
     # Format: mnemonic/path/to/file
     slash1 = import_path.find("/")
@@ -292,7 +292,7 @@ def _resolve_import_source(
     key = SourceImportKey(source_repo, mnemonic)
     if key not in source_import_map:
         raise CompilerError(f"Import '{import_path}': mnemonic '{mnemonic}' not found in workspace configuration")
-    return source_import_map[key] / (path + ".archml")
+    return source_import_map[key] / (path + ".farchml")
 
 
 def _parse_one(
@@ -301,7 +301,7 @@ def _parse_one(
     build_dir: Path,
     source_import_map: dict[SourceImportKey, Path],
 ) -> _ParseResult:
-    """Parse or load one .archml file and compute its direct dependency paths.
+    """Parse or load one .farchml file and compute its direct dependency paths.
 
     On a cache hit (artifact newer than source and all import sources still
     present), the artifact is loaded directly.  Otherwise the source is parsed

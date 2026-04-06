@@ -64,11 +64,11 @@ def test_empty_workspace_produces_empty_collections() -> None:
 def test_file_keys_preserved() -> None:
     """The canonical file keys are preserved in the files dict."""
     compiled = {
-        "repo/services.archml": ArchFile(),
-        "repo/ui.archml": ArchFile(),
+        "repo/services.farchml": ArchFile(),
+        "repo/ui.farchml": ArchFile(),
     }
     data = _parse(build_viewer_payload(compiled))
-    assert set(data["files"].keys()) == {"repo/services.archml", "repo/ui.archml"}
+    assert set(data["files"].keys()) == {"repo/services.farchml", "repo/ui.farchml"}
 
 
 def test_full_arch_file_content_serialised() -> None:
@@ -181,10 +181,10 @@ def test_entity_keys_in_index() -> None:
 def test_entity_file_key_matches() -> None:
     """Each entity entry carries the file_key of its owning ArchFile."""
     sys = System(name="S", qualified_name="S")
-    compiled = {"services/main.archml": ArchFile(systems=[sys])}
+    compiled = {"services/main.farchml": ArchFile(systems=[sys])}
     data = _parse(build_viewer_payload(compiled))
     entry = next(e for e in data["entities"] if e["qualified_name"] == "S")
-    assert entry["file_key"] == "services/main.archml"
+    assert entry["file_key"] == "services/main.farchml"
 
 
 # -------- multi-file workspace --------
@@ -193,8 +193,8 @@ def test_entity_file_key_matches() -> None:
 def test_entities_from_multiple_files_all_included() -> None:
     """Entities across multiple ArchFiles are all present in the index."""
     compiled = {
-        "a.archml": ArchFile(systems=[System(name="A", qualified_name="A")]),
-        "b.archml": ArchFile(components=[Component(name="B", qualified_name="B")]),
+        "a.farchml": ArchFile(systems=[System(name="A", qualified_name="A")]),
+        "b.farchml": ArchFile(components=[Component(name="B", qualified_name="B")]),
     }
     data = _parse(build_viewer_payload(compiled))
     qnames = [e["qualified_name"] for e in data["entities"]]

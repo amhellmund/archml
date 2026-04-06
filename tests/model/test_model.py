@@ -258,7 +258,7 @@ def test_import_declaration() -> None:
 
 
 def test_arch_file_composition() -> None:
-    """An ArchFile holds all top-level declarations from a parsed .archml file."""
+    """An ArchFile holds all top-level declarations from a parsed .farchml file."""
     arch = ArchFile(
         imports=[
             ImportDeclaration(

@@ -32,6 +32,23 @@ class InterfaceRef(BaseModel):
     line: int = 0
 
 
+class ConfigRef(BaseModel):
+    """A configuration dependency declaration.
+
+    The optional ``config_name`` holds the explicit alias assigned with the
+    ``as`` keyword (e.g. ``config DbConfig as worker_db``).  When absent
+    the effective config name defaults to ``name``.
+
+    ``variants`` lists the variant names for which this config is active.  An
+    empty list means the config is baseline (present in all variants).
+    """
+
+    name: str
+    config_name: str | None = None
+    variants: list[str] = _Field(default_factory=list)
+    line: int = 0
+
+
 class NamedDef(BaseModel):
     """Base class for named definition entities.
 
@@ -47,12 +64,14 @@ class NamedDef(BaseModel):
 class EnumDef(NamedDef):
     """An enumeration definition."""
 
+    variants: list[str] = _Field(default_factory=list)
     values: list[str] = _Field(default_factory=list)
 
 
 class TypeDef(NamedDef):
     """A reusable composite data type definition."""
 
+    variants: list[str] = _Field(default_factory=list)
     fields: list[FieldDef] = _Field(default_factory=list)
 
 
@@ -122,6 +141,7 @@ class ArchEntity(BaseModel):
     variants: list[str] = _Field(default_factory=list)
     requires: list[InterfaceRef] = _Field(default_factory=list)
     provides: list[InterfaceRef] = _Field(default_factory=list)
+    configs: list[ConfigRef] = _Field(default_factory=list)
     attributes: dict[str, list[str]] = _Field(default_factory=dict)
     is_external: bool = False
     qualified_name: str = ""
@@ -178,7 +198,7 @@ class ImportDeclaration(BaseModel):
 
 
 class ArchFile(BaseModel):
-    """Top-level model representing the parsed contents of a single .archml file."""
+    """Top-level model representing the parsed contents of a single .farchml file."""
 
     imports: list[ImportDeclaration] = _Field(default_factory=list)
     enums: list[EnumDef] = _Field(default_factory=list)

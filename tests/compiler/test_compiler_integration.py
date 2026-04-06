@@ -4,7 +4,7 @@
 """Integration tests for the ArchML compiler pipeline.
 
 These tests exercise the full compiler pipeline — scanning, parsing, and
-semantic analysis — against real .archml files stored in tests/data/. They
+semantic analysis — against real .farchml files stored in tests/data/. They
 serve as both regression tests and living documentation of which constructs
 the compiler accepts or rejects.
 """
@@ -27,7 +27,7 @@ NEGATIVE_DIR = DATA_DIR / "negative"
 
 
 def _compile(path: Path, resolved_imports: dict[str, ArchFile] | None = None) -> list[SemanticError]:
-    """Parse and semantically analyse the given .archml file."""
+    """Parse and semantically analyse the given .farchml file."""
     source = path.read_text(encoding="utf-8")
     arch_file = parse(source)
     return analyze(arch_file, resolved_imports=resolved_imports)
@@ -62,49 +62,49 @@ class TestPositiveExamples:
     """All files in tests/data/positive/ should compile without errors."""
 
     def test_minimal_component(self) -> None:
-        _assert_clean(POSITIVE_DIR / "minimal_component.archml")
+        _assert_clean(POSITIVE_DIR / "minimal_component.farchml")
 
     def test_types_and_enums(self) -> None:
-        _assert_clean(POSITIVE_DIR / "types_and_enums.archml")
+        _assert_clean(POSITIVE_DIR / "types_and_enums.farchml")
 
     def test_interfaces(self) -> None:
-        _assert_clean(POSITIVE_DIR / "interfaces.archml")
+        _assert_clean(POSITIVE_DIR / "interfaces.farchml")
 
     def test_nested_components(self) -> None:
-        _assert_clean(POSITIVE_DIR / "nested_components.archml")
+        _assert_clean(POSITIVE_DIR / "nested_components.farchml")
 
     def test_system_with_connections(self) -> None:
-        _assert_clean(POSITIVE_DIR / "system_with_connections.archml")
+        _assert_clean(POSITIVE_DIR / "system_with_connections.farchml")
 
     def test_versioned_interfaces(self) -> None:
-        _assert_clean(POSITIVE_DIR / "versioned_interfaces.archml")
+        _assert_clean(POSITIVE_DIR / "versioned_interfaces.farchml")
 
     def test_imports_types_source(self) -> None:
         """The types source file itself should be self-consistent."""
-        _assert_clean(POSITIVE_DIR / "imports" / "types.archml")
+        _assert_clean(POSITIVE_DIR / "imports" / "types.farchml")
 
     def test_imports_order_service_without_resolver(self) -> None:
         """Without a resolver, imported names are accepted without cross-file check."""
-        _assert_clean(POSITIVE_DIR / "imports" / "order_service.archml")
+        _assert_clean(POSITIVE_DIR / "imports" / "order_service.farchml")
 
     def test_imports_order_service_with_resolver(self) -> None:
         """With a resolver, the imported entities are verified against the source."""
-        types_path = POSITIVE_DIR / "imports" / "types.archml"
+        types_path = POSITIVE_DIR / "imports" / "types.farchml"
         types_source = parse(types_path.read_text(encoding="utf-8"))
         resolved = {"imports/types": types_source}
-        _assert_clean(POSITIVE_DIR / "imports" / "order_service.archml", resolved)
+        _assert_clean(POSITIVE_DIR / "imports" / "order_service.farchml", resolved)
 
     def test_imports_ecommerce_system_with_resolver(self) -> None:
         """Full multi-file scenario: system imports from types and order_service."""
-        types_path = POSITIVE_DIR / "imports" / "types.archml"
-        order_path = POSITIVE_DIR / "imports" / "order_service.archml"
+        types_path = POSITIVE_DIR / "imports" / "types.farchml"
+        order_path = POSITIVE_DIR / "imports" / "order_service.farchml"
         types_source = parse(types_path.read_text(encoding="utf-8"))
         order_source = parse(order_path.read_text(encoding="utf-8"))
         resolved = {
             "imports/types": types_source,
             "imports/order_service": order_source,
         }
-        _assert_clean(POSITIVE_DIR / "imports" / "ecommerce_system.archml", resolved)
+        _assert_clean(POSITIVE_DIR / "imports" / "ecommerce_system.farchml", resolved)
 
 
 # ###############
@@ -117,25 +117,25 @@ class TestNegativeExamples:
 
     def test_duplicate_enum_name(self) -> None:
         _assert_errors(
-            NEGATIVE_DIR / "duplicate_enum_name.archml",
+            NEGATIVE_DIR / "duplicate_enum_name.farchml",
             "Duplicate enum name 'OrderStatus'",
         )
 
     def test_duplicate_type_name(self) -> None:
         _assert_errors(
-            NEGATIVE_DIR / "duplicate_type_name.archml",
+            NEGATIVE_DIR / "duplicate_type_name.farchml",
             "Duplicate type name 'Address'",
         )
 
     def test_duplicate_interface(self) -> None:
-        path = NEGATIVE_DIR / "duplicate_interface.archml"
+        path = NEGATIVE_DIR / "duplicate_interface.farchml"
         _assert_errors(
             path,
             "Duplicate interface name 'OrderRequest'",
         )
 
     def test_duplicate_component_name(self) -> None:
-        path = NEGATIVE_DIR / "duplicate_component_name.archml"
+        path = NEGATIVE_DIR / "duplicate_component_name.farchml"
         _assert_errors(
             path,
             "Duplicate component name 'OrderService'",
@@ -143,7 +143,7 @@ class TestNegativeExamples:
         )
 
     def test_duplicate_enum_values(self) -> None:
-        path = NEGATIVE_DIR / "duplicate_enum_values.archml"
+        path = NEGATIVE_DIR / "duplicate_enum_values.farchml"
         _assert_errors(
             path,
             "Duplicate value 'Active' in enum 'Status'",
@@ -151,7 +151,7 @@ class TestNegativeExamples:
         )
 
     def test_duplicate_field_names(self) -> None:
-        path = NEGATIVE_DIR / "duplicate_field_names.archml"
+        path = NEGATIVE_DIR / "duplicate_field_names.farchml"
         _assert_errors(
             path,
             "Duplicate field name 'street' in type 'Address'",
@@ -159,7 +159,7 @@ class TestNegativeExamples:
         )
 
     def test_undefined_type_ref(self) -> None:
-        path = NEGATIVE_DIR / "undefined_type_ref.archml"
+        path = NEGATIVE_DIR / "undefined_type_ref.farchml"
         _assert_errors(
             path,
             "Undefined type 'OrderStatus'",
@@ -169,7 +169,7 @@ class TestNegativeExamples:
         )
 
     def test_undefined_interface_ref(self) -> None:
-        path = NEGATIVE_DIR / "undefined_interface_ref.archml"
+        path = NEGATIVE_DIR / "undefined_interface_ref.farchml"
         _assert_errors(
             path,
             "refers to unknown interface 'OrderRequest'",
@@ -178,7 +178,7 @@ class TestNegativeExamples:
         )
 
     def test_undefined_connection_endpoint(self) -> None:
-        path = NEGATIVE_DIR / "undefined_connection_endpoint.archml"
+        path = NEGATIVE_DIR / "undefined_connection_endpoint.farchml"
         _assert_errors(
             path,
             "Ghost",
@@ -186,7 +186,7 @@ class TestNegativeExamples:
         )
 
     def test_wrong_interface_ref(self) -> None:
-        path = NEGATIVE_DIR / "wrong_interface_version.archml"
+        path = NEGATIVE_DIR / "wrong_interface_version.farchml"
         _assert_errors(
             path,
             "refers to unknown interface 'UnknownRequest'",
@@ -194,14 +194,14 @@ class TestNegativeExamples:
         )
 
     def test_component_system_name_conflict(self) -> None:
-        path = NEGATIVE_DIR / "component_system_name_conflict.archml"
+        path = NEGATIVE_DIR / "component_system_name_conflict.farchml"
         _assert_errors(
             path,
             "name 'Services' is used for both a component and a sub-system",
         )
 
     def test_enum_type_name_conflict(self) -> None:
-        path = NEGATIVE_DIR / "enum_type_name_conflict.archml"
+        path = NEGATIVE_DIR / "enum_type_name_conflict.farchml"
         _assert_errors(
             path,
             "Name 'Status' is defined as both an enum and a type",
@@ -209,7 +209,7 @@ class TestNegativeExamples:
 
     def test_import_undefined_entity_without_resolver(self) -> None:
         """Without resolver, no import errors — validation skipped."""
-        path = NEGATIVE_DIR / "imports" / "consumer.archml"
+        path = NEGATIVE_DIR / "imports" / "consumer.farchml"
         errors = _compile(path)
         # Without resolver, no import errors should be raised
         import_errors = [e for e in errors if "is not defined in" in e.message or "could not be resolved" in e.message]
@@ -217,8 +217,8 @@ class TestNegativeExamples:
 
     def test_import_undefined_entity_with_resolver(self) -> None:
         """With resolver, missing entities are reported."""
-        consumer_path = NEGATIVE_DIR / "imports" / "consumer.archml"
-        source_path = NEGATIVE_DIR / "imports" / "source.archml"
+        consumer_path = NEGATIVE_DIR / "imports" / "consumer.farchml"
+        source_path = NEGATIVE_DIR / "imports" / "source.farchml"
         source_file = parse(source_path.read_text(encoding="utf-8"))
         resolved = {"imports/source": source_file}
         _assert_errors(
@@ -230,8 +230,8 @@ class TestNegativeExamples:
 
     def test_import_missing_source_file_with_resolver(self) -> None:
         """Source path not present in resolver map is reported as unresolvable."""
-        consumer_path = NEGATIVE_DIR / "imports" / "consumer.archml"
-        # Provide an empty resolver — source.archml not included
+        consumer_path = NEGATIVE_DIR / "imports" / "consumer.farchml"
+        # Provide an empty resolver — source.farchml not included
         _assert_errors(
             consumer_path,
             "'imports/source' could not be resolved",

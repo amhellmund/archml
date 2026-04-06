@@ -16,7 +16,7 @@ from archml.model.entities import ArchFile
 # Public Interface
 # ###############
 
-ARTIFACT_SUFFIX = ".archml.json"
+ARTIFACT_SUFFIX = ".farchml.json"
 
 
 def serialize(arch_file: ArchFile) -> str:

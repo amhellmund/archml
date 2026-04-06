@@ -24,7 +24,7 @@ _COMMIT_B = "b" * 40
 
 def test_lockfile_name_constant():
     """LOCKFILE_NAME has the expected value."""
-    assert LOCKFILE_NAME == ".archml-lockfile.yaml"
+    assert LOCKFILE_NAME == ".farchml-lockfile.yaml"
 
 
 def test_load_empty_lockfile(tmp_path):

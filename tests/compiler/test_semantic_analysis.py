@@ -221,7 +221,7 @@ interface Config {
 }
 
 type ServiceSpec {
-    config: Config
+    settings: Config
 }
 """,
             "Undefined type 'Config'",
@@ -471,7 +471,7 @@ type Order { item: Item }
         _assert_error(
             """
 interface Config { host: String }
-type Spec { config: Config }
+type Spec { settings: Config }
 """,
             "Undefined type 'Config'",
         )
@@ -2145,3 +2145,124 @@ class TestReservedVariantNames:
     def test_baseline_on_interface_def_is_rejected(self) -> None:
         errors = _analyze("interface<baseline> IFoo {}")
         assert any("'baseline'" in e.message and "reserved" in e.message for e in errors)
+
+
+# ###############
+# Config Declarations
+# ###############
+
+
+class TestConfigDeclarations:
+    def test_config_valid_type_ref_in_component(self) -> None:
+        _assert_clean("type DbConfig { url: String }\ncomponent C { config DbConfig }")
+
+    def test_config_valid_type_ref_with_alias(self) -> None:
+        _assert_clean("type DbConfig { url: String }\ncomponent C { config DbConfig as worker_db }")
+
+    def test_config_valid_in_system(self) -> None:
+        _assert_clean("type AppConfig { key: String }\nsystem S { config AppConfig }")
+
+    def test_config_valid_in_user(self) -> None:
+        _assert_clean("type Prefs { theme: String }\nuser Admin { config Prefs }")
+
+    def test_config_unknown_type_in_component_raises(self) -> None:
+        errors = _analyze("component C { config UnknownType }")
+        assert any("config" in e.message and "UnknownType" in e.message for e in errors)
+
+    def test_config_unknown_type_in_system_raises(self) -> None:
+        errors = _analyze("system S { config UnknownType }")
+        assert any("config" in e.message and "UnknownType" in e.message for e in errors)
+
+    def test_config_unknown_type_in_user_raises(self) -> None:
+        errors = _analyze("user Admin { config UnknownType }")
+        assert any("config" in e.message and "UnknownType" in e.message for e in errors)
+
+    def test_config_referencing_enum_raises(self) -> None:
+        # Config must reference a type, not an enum
+        errors = _analyze("enum Status {\n    Active\n}\ncomponent C { config Status }")
+        assert any("config" in e.message for e in errors)
+
+    def test_config_referencing_interface_raises(self) -> None:
+        # Config must reference a type, not an interface
+        errors = _analyze("interface IFoo { x: String }\ncomponent C { config IFoo }")
+        assert any("config" in e.message for e in errors)
+
+    def test_duplicate_config_name_in_component(self) -> None:
+        source = "type T { x: String }\ncomponent C { config T\nconfig T }"
+        errors = _analyze(source)
+        assert any("Duplicate config name" in e.message for e in errors)
+
+    def test_duplicate_config_alias_in_component(self) -> None:
+        source = "type T { x: String }\ntype U { y: Int }\ncomponent C { config T as cfg\nconfig U as cfg }"
+        errors = _analyze(source)
+        assert any("Duplicate config name" in e.message for e in errors)
+
+    def test_duplicate_config_name_in_user(self) -> None:
+        source = "type T { x: String }\nuser Admin { config T\nconfig T }"
+        errors = _analyze(source)
+        assert any("Duplicate config name" in e.message for e in errors)
+
+    def test_config_with_variant_is_valid(self) -> None:
+        _assert_clean("type DbConfig { url: String }\ncomponent C { config<cloud> DbConfig }")
+
+    def test_config_reserved_variant_raises(self) -> None:
+        errors = _analyze("type T { x: String }\ncomponent C { config<all> T }")
+        assert any("reserved" in e.message for e in errors)
+
+    def test_multiple_configs_all_valid(self) -> None:
+        source = (
+            "type DbConfig { url: String }\n"
+            "type FeatureFlags { enabled: Bool }\n"
+            "component C { config DbConfig\nconfig FeatureFlags }"
+        )
+        _assert_clean(source)
+
+    def test_config_in_nested_component(self) -> None:
+        source = "type T { x: String }\ncomponent Outer { component Inner { config T } }"
+        _assert_clean(source)
+
+
+# ###############
+# Port Ordering
+# ###############
+
+
+class TestPortOrdering:
+    _IFACES = "interface Foo {}\ninterface Bar {}\n"
+
+    def test_requires_before_provides_is_valid(self) -> None:
+        _assert_clean(self._IFACES + "component C {\n    requires Foo\n    provides Bar\n}")
+
+    def test_only_requires_is_valid(self) -> None:
+        _assert_clean(self._IFACES + "component C { requires Foo }")
+
+    def test_only_provides_is_valid(self) -> None:
+        _assert_clean(self._IFACES + "component C { provides Bar }")
+
+    def test_provides_before_requires_raises(self) -> None:
+        source = self._IFACES + "component C {\n    provides Bar\n    requires Foo\n}"
+        errors = _analyze(source)
+        assert any("requires" in e.message and "provides" in e.message for e in errors)
+
+    def test_requires_after_provides_in_system_raises(self) -> None:
+        source = self._IFACES + "system S {\n    provides Bar\n    requires Foo\n}"
+        errors = _analyze(source)
+        assert any("requires" in e.message and "provides" in e.message for e in errors)
+
+    def test_requires_after_provides_in_user_is_allowed(self) -> None:
+        # Users represent human actors; provides-before-requires is natural for them
+        # (the user provides a request and requires a response).
+        _assert_clean(self._IFACES + "user Admin {\n    provides Bar\n    requires Foo\n}")
+
+    def test_requires_before_provides_in_nested_component_is_valid(self) -> None:
+        source = self._IFACES + (
+            "component Outer {\n    component Inner {\n        requires Foo\n        provides Bar\n    }\n}"
+        )
+        _assert_clean(source)
+
+    def test_provides_before_requires_in_nested_component_raises(self) -> None:
+        source = self._IFACES + (
+            "component Outer {\n    component Inner {\n        provides Bar\n        requires Foo\n    }\n}"
+        )
+        errors = _analyze(source)
+        assert any("requires" in e.message and "provides" in e.message for e in errors)

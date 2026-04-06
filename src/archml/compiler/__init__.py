@@ -1,7 +1,7 @@
 # Copyright 2026 ArchML Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Compiler pipeline for .archml files: scanning, parsing, and semantic analysis."""
+"""Compiler pipeline for .farchml files: scanning, parsing, and semantic analysis."""
 
 from archml.compiler.artifact import ARTIFACT_SUFFIX, deserialize, read_artifact, serialize, write_artifact
 from archml.compiler.build import CompilerError, compile_files
