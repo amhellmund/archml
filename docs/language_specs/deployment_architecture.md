@@ -2,7 +2,7 @@
 
 ArchML's deployment layer annotates the functional architecture with deployment intent. It describes how functional entities are packaged, where they run, how their channels are transported, and which credentials and artifact stores are involved. Deployment declarations never alter the functional architecture — they are purely additive.
 
-Deployment declarations may appear **inline** inside functional entity bodies or in **separate `.archml` files** using `deployment` blocks. Both forms are equivalent and may coexist; conflicting declarations for the same target are a validation error.
+Deployment declarations live in **separate `.darchml` files** using `deployment` blocks. Functional and deployment architectures are strictly separated — `.farchml` files contain no deployment declarations and `.darchml` files contain no functional entity definitions.
 
 ---
 
@@ -455,59 +455,29 @@ Deploying the same component or system more than once within the same variant an
 
 ---
 
-## Inline Deployment
+## Deployment Blocks
 
-`bind` and `deploy` are optional statements in any `system` or `component` body. They appear after functional statements (`requires`, `provides`, `connect`, `expose`) and do not affect functional semantics.
-
-```
-component OrderService {
-    """Accepts and validates customer orders."""
-
-    requires PaymentRequest
-    provides OrderConfirmation
-
-    deploy bundle OrderBundle on compute AKSCluster
-}
-
-system ECommerce {
-    use component OrderService
-    use component PaymentService
-
-    connect OrderService.PaymentRequest -> $payment -> PaymentService.PaymentRequest
-
-    bind $payment via gRPC {
-        package: payments.v1
-        service: PaymentService
-        method:  ProcessPayment
-    }
-}
-```
-
-Inline deployment is optional. Functional files with no deployment statements are valid; the deployment layer may be added separately.
-
----
-
-## External Deployment Blocks
-
-A `deployment` block in a separate file mirrors the functional nesting of a system or component and adds deployment declarations without touching the functional file. Deployment blocks may be nested to reach inner scopes.
+A `deployment` block in a `.darchml` file mirrors the functional nesting of a system or component and adds deployment declarations. Deployment blocks may be nested to reach inner scopes.
 
 ```
-deployment system <Name> [env_ann] [variant_ann] { <deployment_body> }
-deployment component <Name> [env_ann] [variant_ann] { <deployment_body> }
+deployment system <ns::System> [env_ann] [variant_ann] { <deployment_body> }
+deployment component <ns::System::Component> [env_ann] [variant_ann] { <deployment_body> }
 ```
 
-A deployment body contains any combination of `bind` statements, `deploy` statements, and nested `deployment` blocks. Nesting must match the functional hierarchy — a `deployment system Fulfillment` nested inside `deployment system ECommerce` is only valid if `Fulfillment` is a sub-system of `ECommerce` in the functional architecture.
+A top-level `deployment` block is addressed by a fully qualified entity path (`namespace::Entity`). Nested `deployment` blocks inside a body use a plain name, resolved as a direct child of the enclosing functional scope. Nesting must match the functional hierarchy — a `deployment system Fulfillment` nested inside `deployment system ECommerce` is only valid if `Fulfillment` is a sub-system of `ECommerce` in the loaded functional architecture.
 
-Functional entities referenced in a deployment block (as targets of `bind`, `deploy`, or nested `deployment` blocks) are resolved by name against the global functional namespace assembled from all `.archml` files in the build. No `use` declaration is needed inside a deployment block; the tooling knows what is structurally available.
+Functional entities are brought into scope with `load functional at` (see [Loading Functional Architectures](#loading-functional-architectures)). The top-level entity path is resolved against the loaded functional namespaces; if no matching entity exists, it is a validation error.
 
 ```
-# arch/deployment/prod.archml
+# arch/deployment/prod.darchml
 
-from deployment/infra   import AKSCluster, PlatformPrincipal
-from deployment/stores  import PlatformACR, ProdVault
-from deployment/bundles import OrderBundle, FulfillmentBundle
+load functional at arch/systems as sys
 
-deployment[prod] system ECommerce {
+from infra   import AKSCluster, PlatformPrincipal
+from stores  import PlatformACR, ProdVault
+from bundles import OrderBundle, FulfillmentBundle
+
+deployment[prod] system sys::ECommerce {
 
     bind $payment via gRPC {
         package: payments.v1
@@ -531,42 +501,19 @@ deployment[prod] system ECommerce {
 }
 ```
 
-Inline deployment and external deployment blocks may coexist. The tooling merges them; any conflict (same channel bound twice, same entity deployed twice in the same variant and environment) is a validation error regardless of which file the conflicting declarations appear in.
-
----
-
-## Top-Level Deployment Statements
-
-`bind` and `deploy` may appear at the top level of an `.archml` file — outside any `system`, `component`, or `deployment` block. This is the deployment equivalent of top-level `connect` statements in the functional layer.
-
-Top-level `bind` may only reference channels declared at the top level of any file in the build (i.e., channels introduced by top-level `connect` statements). Top-level `deploy` may only target components or systems declared at the top level.
-
-```
-# Top-level functional declarations (may be in a different file)
-# connect UserFacing.OrderRequest -> $entry -> ECommerce.OrderRequest
-
-# Top-level deployment statements
-bind $entry via HTTP {
-    method: POST
-    path:   /api/v1/orders
-}
-
-deploy bundle GatewayBundle on compute AKSCluster
-```
-
-The same conflict rule applies: a top-level `bind` or `deploy` conflicts with an inline or block-level declaration targeting the same channel or entity.
+Any conflict across deployment files (same channel bound twice, same entity deployed twice in the same variant and environment combination) is a validation error.
 
 ---
 
 ## Scoping Rules
 
-**`bind` scope:** A `bind` statement may only reference a channel (`$name`) that is declared in the same functional scope — either the `system` or `component` body where the `bind` appears, or the corresponding functional scope matched by an enclosing `deployment` block. Channels from inner or outer scopes are not accessible.
+**`bind` scope:** A `bind` statement may only reference a channel (`$name`) that is declared in the corresponding functional scope matched by the enclosing `deployment` block. Channels from inner or outer scopes are not accessible.
 
 **`deploy` scope:** A `deploy` statement inside a `deployment system S` or `deployment component C` applies to `S` or `C` respectively. When the bundle packs a system via `packs system`, the `deploy` statement must appear inside the `deployment` block for that system.
 
-**Conflict rule:** Binding the same channel more than once, or deploying the same component or system more than once within the same variant and environment combination, is a validation error. This applies across all files and across inline and external declarations.
+**Conflict rule:** Binding the same channel more than once, or deploying the same component or system more than once within the same variant and environment combination, is a validation error. This applies across all `.darchml` files in the build.
 
-**Functional name resolution:** A `deployment system X` or `deployment component X` block resolves `X` from the global functional namespace. If no `system X` or `component X` exists in the build, it is a validation error.
+**Functional name resolution:** A top-level `deployment` block resolves its `entity_path` (`ns::System`) against the functional namespaces declared by `load functional at` statements in the same file. Nested `deployment` blocks resolve their plain name as a direct child of the enclosing functional scope — `deployment system Fulfillment` inside `deployment system sys::ECommerce` resolves `Fulfillment` as a sub-system of `ECommerce`. If no matching entity exists at any level, it is a validation error.
 
 ---
 
@@ -684,14 +631,12 @@ deployment<on_premise>[prod] component OrderService {
 
 ### Imports in Deployment Files
 
-Deployment schema definitions and instance declarations are top-level declarations and follow the same multi-file rules as the functional layer.
-
-`from ... import` brings deployment-layer definitions — schemas, instances, compute declarations, bundle declarations — from another file into scope:
+Deployment schema definitions and instance declarations are top-level declarations. `from ... import` brings deployment-layer definitions — schemas, instances, compute declarations, bundle declarations — from another `.darchml` file into scope:
 
 ```
-from deployment/infra   import CloudCompute, VersionedArtifact
-from deployment/stores  import PlatformACR, ProdVault
-from deployment/bundles import OrderBundle, FulfillmentBundle
+from infra   import CloudCompute, VersionedArtifact
+from stores  import PlatformACR, ProdVault
+from bundles import OrderBundle, FulfillmentBundle
 
 compute AzureBatch extends CloudCompute {
     account: String
@@ -699,19 +644,70 @@ compute AzureBatch extends CloudCompute {
 }
 ```
 
-### Functional Entities in Deployment Files
-
-Deployment files do **not** need to import the functional files they annotate. Functional entities (`system`, `component`, `user`) are resolved by name from the global functional namespace assembled across all `.archml` files in the build. A `deployment system ECommerce` block resolves `ECommerce` automatically; importing its source file is neither required nor meaningful.
-
-If a `deployment` block names a functional entity that does not exist in the build, it is a validation error.
+Import paths omit the `.darchml` extension and are resolved using the repository's virtual filesystem mapping (see the functional architecture reference for repository configuration). Cross-repository imports use the `@repo-name` prefix:
 
 ```
-# arch/deployment/prod.archml
-# — no import of systems/ecommerce needed —
+from @shared/deployment/infra import CloudCompute
+```
 
-from deployment/infra   import AKSCluster, PlatformPrincipal
-from deployment/stores  import PlatformACR, ProdVault
-from deployment/bundles import OrderBundle, FulfillmentBundle
+A specific symbol may be aliased on import to avoid name collisions:
+
+```
+from infra import AKSCluster as ProdCluster
+```
+
+### Loading Functional Architectures
+
+A `.darchml` file loads one or more functional architectures with `load functional at`. The `as` clause is required and gives the loaded namespace a local name used to qualify all references to functional entities:
+
+```
+load functional at arch/systems       as sys
+load functional at arch/components    as comp
+load functional at @payments/arch     as pay
+```
+
+The path may point to a single `.farchml` file (without extension), a flat directory (all `.farchml` files in that directory), or a glob pattern for nested directories:
+
+```
+load functional at arch/systems/ecommerce  as ecom     # single file
+load functional at arch/systems            as sys      # flat directory
+load functional at arch/**                 as all      # nested directories (glob)
+```
+
+Cross-repository loads use the `@repo-name` prefix, resolved through the workspace configuration:
+
+```
+load functional at @payments/arch as pay
+```
+
+Duplicate entity names at the root of a loaded namespace are a validation error. When two loaded namespaces would expose the same root-level name, use the `as` alias on `load` to disambiguate through the namespace prefix.
+
+### Referencing Functional Entities
+
+Within a `.darchml` file, functional entities are referenced using the local namespace name and `::` as the path separator:
+
+```
+load functional at arch/systems as sys
+
+deployment system sys::ECommerce {
+    deployment system Fulfillment {
+        deployment component OrderService {
+            deploy bundle OrderBundle on compute AKSCluster
+        }
+    }
+}
+```
+
+The full path from the namespace root to the target entity is always required. If the referenced entity does not exist in the loaded functional architecture, it is a validation error.
+
+```
+# arch/deployment/prod.darchml
+
+load functional at arch/systems as sys
+
+from infra   import AKSCluster, PlatformPrincipal
+from stores  import PlatformACR, ProdVault
+from bundles import OrderBundle, FulfillmentBundle
 
 store AzureKeyVault ProdVault {
     vault-url: Env:KEY_VAULT_URL
@@ -720,7 +716,7 @@ store AzureKeyVault ProdVault {
     artifact platform-sp-secret
 }
 
-deployment[prod] system ECommerce {
+deployment[prod] system sys::ECommerce {
 
     bind $payment via gRPC {
         package: payments.v1
@@ -743,36 +739,66 @@ deployment[prod] system ECommerce {
 
 ## Keyword Reference
 
-| Keyword          | Purpose                                                                                        |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| `protocol`       | Defines a transport binding schema, or extends an existing one.                                |
-| `identity`       | Defines an authentication credential schema or declares a named instance.                      |
-| `store`          | Defines an artifact repository schema, or declares a named instance.                           |
-| `compute`        | Defines a compute platform schema, or declares a named instance.                               |
-| `bundle`         | Defines a deployable artifact schema, or declares a named instance.                            |
-| `extends`        | Inherits all fields from a parent schema (`identity Foo extends Bar { ... }`).                 |
-| `requires`       | Field type constraint: the value must be a declared instance of the named category.            |
-| `artifact`       | Declares a named artifact provided by a store instance; `artifact *` makes the store open.     |
-| `packs`          | Declares which functional component or system a bundle instance contains.                      |
-| `bind`           | Binds a channel to a protocol instantiation (`bind $ch via Protocol { ... }`).                 |
-| `bind config`    | Resolves a functional `config` dependency to a store instance (`bind config X to store S`).    |
-| `deploy`         | Assigns a bundle to a compute instance for a functional entity (`deploy bundle X on compute Y`). |
-| `deployment`     | External deployment block mirroring functional nesting (`deployment system Name { ... }`).     |
-| `via`            | Names the protocol in a `bind` statement.                                                      |
-| `on`             | Names the compute instance in a `deploy` statement.                                            |
-| `<variant>`      | Variant annotation on a declaration (architectural/structural dimension).                      |
-| `[env]`          | Environment annotation on a deployment declaration (`dev`, `qa`, `prod`, etc.).                |
-| `StoreName:name` | Resolves the named artifact from the referenced store instance.                                |
+| Keyword               | Purpose                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| `load functional at`  | Loads a functional architecture into a named namespace (`load functional at path as name`).    |
+| `as`                  | Required alias on `load functional at`; optional alias on `from ... import`.                   |
+| `from`                | Source path in a deployment import (`from path import Name`).                                  |
+| `import`              | Deployment symbols to bring into scope; always paired with `from`.                             |
+| `protocol`            | Defines a transport binding schema, or extends an existing one.                                |
+| `identity`            | Defines an authentication credential schema or declares a named instance.                      |
+| `store`               | Defines an artifact repository schema, or declares a named instance.                           |
+| `compute`             | Defines a compute platform schema, or declares a named instance.                               |
+| `bundle`              | Defines a deployable artifact schema, or declares a named instance.                            |
+| `extends`             | Inherits all fields from a parent schema (`identity Foo extends Bar { ... }`).                 |
+| `requires`            | Field type constraint: the value must be a declared instance of the named category.            |
+| `artifact`            | Declares a named artifact provided by a store instance; `artifact *` makes the store open.     |
+| `packs`               | Declares which functional component or system a bundle instance contains.                      |
+| `bind`                | Binds a channel to a protocol instantiation (`bind $ch via Protocol { ... }`).                 |
+| `bind config`         | Resolves a functional `config` dependency to a store instance (`bind config X to store S`).    |
+| `deploy`              | Assigns a bundle to a compute instance for a functional entity (`deploy bundle X on compute Y`). |
+| `deployment`          | Deployment block addressing a functional entity (`deployment system ns::Name { ... }`).        |
+| `via`                 | Names the protocol in a `bind` statement.                                                      |
+| `on`                  | Names the compute instance in a `deploy` statement.                                            |
+| `ns::A::B`            | Path to a functional entity within a loaded namespace, using `::` as separator.                |
+| `<variant>`           | Variant annotation on a declaration (architectural/structural dimension).                      |
+| `[env]`               | Environment annotation on a deployment declaration (`dev`, `qa`, `prod`, etc.).                |
+| `StoreName:name`      | Resolves the named artifact from the referenced store instance.                                |
 
 ---
 
 ## Formal Grammar
 
-The grammar below extends the functional architecture grammar. Non-terminals defined in the functional grammar (`IDENT`, `variant_ann`, `description`, `attribute`, `field_type`, `block_member`) are reused without redefinition.
+The grammar covers `.darchml` files in full. Non-terminals shared with the functional grammar (`IDENT`, `variant_ann`, `description`, `attribute`, `field_type`) are reused without redefinition.
 
 Comments and whitespace are stripped by the lexer and do not appear in the grammar.
 
 ```ebnf
+(* ── Top level ──────────────────────────────────────────────── *)
+
+dfile       ::= { dstatement }
+
+dstatement  ::= load_stmt
+              | import_stmt
+              | deploy_decl
+              | deployment_block
+
+(* ── Functional architecture load ───────────────────────────── *)
+
+load_stmt   ::= 'load' 'functional' 'at' load_path 'as' IDENT
+load_path   ::= [ '@' IDENT '/' ] IDENT { '/' IDENT } [ '/' '**' ]
+
+(* ── Deployment imports ─────────────────────────────────────── *)
+
+import_stmt ::= 'from' import_path 'import' import_list
+import_path ::= [ '@' IDENT '/' ] IDENT { '/' IDENT }
+import_list ::= import_item { ',' import_item }
+import_item ::= IDENT [ 'as' IDENT ]
+
+(* ── Functional entity path ─────────────────────────────────── *)
+
+entity_path ::= IDENT '::' IDENT { '::' IDENT }   (* namespace::Entity::Sub... *)
+
 (* ── Top-level deployment declarations ─────────────────────── *)
 
 deploy_decl     ::= deploy_category [ variant_ann ] [ env_ann ] IDENT deploy_decl_rest
@@ -790,8 +816,8 @@ schema_body ::= [ description ]
 
 schema_field ::= IDENT ':' schema_type
 
-schema_type  ::= field_type                       (* reuses functional type system *)
-               | 'requires' deploy_category [ IDENT ]   (* optional schema name for typed constraint *)
+schema_type  ::= field_type                                    (* reuses functional type system *)
+               | 'requires' deploy_category [ IDENT ]          (* typed instance constraint *)
 
 (* ── Instance declarations ──────────────────────────────────── *)
 
@@ -825,29 +851,25 @@ bind_config_stmt ::= 'bind' [ variant_ann ] [ env_ann ] 'config' IDENT 'to' 'sto
 
 deploy_stmt      ::= 'deploy' [ variant_ann ] [ env_ann ] 'bundle' IDENT 'on' 'compute' IDENT
 
-(* ── External deployment blocks ─────────────────────────────── *)
+(* ── Deployment blocks ───────────────────────────────────────── *)
 
-deployment_block ::= 'deployment' [ variant_ann ] [ env_ann ] ( 'system' | 'component' ) IDENT
-                     '{' deployment_body '}'
+(* Top-level deployment blocks use a fully qualified entity path.             *)
+(* Nested deployment blocks use a plain name resolved relative to the parent. *)
 
-deployment_body  ::= { deployment_member }
+deployment_block  ::= 'deployment' [ variant_ann ] [ env_ann ] ( 'system' | 'component' ) entity_path
+                      '{' deployment_body '}'
+
+deployment_body   ::= { deployment_member }
 
 deployment_member ::= bind_stmt
                     | bind_config_stmt
                     | deploy_stmt
-                    | deployment_block
+                    | nested_deployment_block
+
+nested_deployment_block ::= 'deployment' [ variant_ann ] [ env_ann ] ( 'system' | 'component' ) IDENT
+                             '{' deployment_body '}'
 
 (* ── Environment annotation ─────────────────────────────────── *)
 
 env_ann ::= '[' IDENT { ',' IDENT } ']'
-
-(* ── Extension to functional block_member ───────────────────── *)
-
-(* The following productions extend block_member from the functional grammar:  *)
-(*   block_member ::= ... | bind_stmt | bind_config_stmt | deploy_stmt         *)
-
-(* ── Extension to functional file statement ─────────────────── *)
-
-(* The following productions extend statement from the functional grammar:     *)
-(*   statement ::= ... | deploy_decl | deployment_block | bind_stmt | bind_config_stmt | deploy_stmt *)
 ```

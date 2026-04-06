@@ -1,12 +1,14 @@
 # ArchML Language Reference
 
-ArchML is a text-based DSL for defining software architecture alongside code. Architecture files use the `.archml` extension.
+ArchML is a text-based DSL for defining software architecture alongside code.
+Functional architecture files use the `.farchml` extension.
 
 ---
 
 ## File Structure
 
-A file contains one or more top-level declarations. Declarations can be nested to express containment.
+A file contains one or more top-level declarations.
+Declarations can be nested to express containment.
 
 ```
 # Line comments start with a hash sign.
@@ -29,7 +31,9 @@ component OrderService {
 }
 ```
 
-**Custom Attributes** attach metadata to any entity using the `@name: values` syntax. Values are comma-separated identifiers (no strings, no spaces within values). Attributes are user-defined; the tooling does not interpret them — they can express tags, ownership, or any other domain-specific classification.
+**Custom Attributes** attach metadata to any entity using the `@name: values` syntax.
+Values are comma-separated identifiers (no strings, no spaces within values).
+Attributes are user-defined; the tooling does not interpret them — they can express tags, ownership, or any other domain-specific classification.
 
 ```
 component OrderService {
@@ -41,7 +45,8 @@ component OrderService {
 }
 ```
 
-Multiple values on a single `@` line form a set. An entity may have any number of `@` attributes.
+Multiple values on a single `@` line form a set.
+An entity may have any number of `@` attributes.
 
 ---
 
@@ -69,7 +74,8 @@ Multiple values on a single `@` line form a set. An entity may have any number o
 
 ### Enumerations
 
-The `enum` keyword defines a constrained set of named values. Each value appears on its own line:
+The `enum` keyword defines a constrained set of named values.
+Each value appears on its own line:
 
 ```
 enum OrderStatus {
@@ -83,7 +89,8 @@ enum OrderStatus {
 
 ### Custom Types
 
-The `type` keyword defines a reusable data structure. Fields use `name: Type` syntax, one per line:
+The `type` keyword defines a reusable data structure.
+Fields use `name: Type` syntax, one per line:
 
 ```
 type OrderItem {
@@ -101,7 +108,9 @@ Custom types, enums, and interfaces can all be used as field types.
 
 ### Interface
 
-An interface defines a contract — a named set of typed fields exchanged between architectural elements. Interfaces are declared at the top level or inside components and systems. Fields use `name: Type` syntax, one per line:
+An interface defines a contract — a named set of typed fields exchanged between architectural elements.
+Interfaces are declared at the top level or inside components and systems.
+Fields use `name: Type` syntax, one per line:
 
 ```
 interface OrderRequest {
@@ -114,11 +123,14 @@ interface OrderRequest {
 }
 ```
 
-`interface` defines contracts used on ports. `type` defines building blocks composed into fields. The distinction is semantic: interfaces appear on ports; types compose into fields.
+`interface` defines contracts used on ports.
+`type` defines building blocks composed into fields.
+The distinction is semantic: interfaces appear on ports; types compose into fields.
 
 ### Component
 
-A component is a module with a clear responsibility. Components declare the interfaces they consume (`requires`) and produce (`provides`) as **ports**.
+A component is a module with a clear responsibility.
+Components declare the interfaces they consume (`requires`) and produce (`provides`) as **ports**.
 
 ```
 component OrderService {
@@ -128,7 +140,9 @@ component OrderService {
 }
 ```
 
-Components can nest sub-components. `connect` statements wire sub-components together. Every port of every sub-component must either be wired by a `connect` or promoted to the enclosing boundary with `expose`:
+Components can nest sub-components.
+`connect` statements wire sub-components together.
+Every port of every sub-component must either be wired by a `connect` or promoted to the enclosing boundary with `expose`:
 
 ```
 component OrderService {
@@ -152,11 +166,14 @@ component OrderService {
 }
 ```
 
-A port that is neither wired nor exposed is a validation error. Components may not contain systems.
+A port that is neither wired nor exposed is a validation error.
+Components may not contain systems.
 
 ### System
 
-A system groups components (or sub-systems) that work toward a shared goal. Systems wire their members using `connect` and `expose`. Systems may nest other systems for large-scale decomposition:
+A system groups components (or sub-systems) that work toward a shared goal.
+Systems wire their members using `connect` and `expose`.
+Systems may nest other systems for large-scale decomposition:
 
 ```
 system Enterprise {
@@ -175,7 +192,8 @@ system Enterprise {
 
 ### User
 
-A user represents a human actor — a role or persona that interacts with the system. Users are leaf nodes; they cannot contain sub-entities.
+A user represents a human actor — a role or persona that interacts with the system.
+Users are leaf nodes; they cannot contain sub-entities.
 
 ```
 user Customer {
@@ -194,20 +212,24 @@ Users participate in `connect` statements like any other entity.
 
 ### Ports: `requires` and `provides`
 
-Every `requires` and `provides` declaration defines a **port** — a named connection point on the entity. The port name defaults to the interface name; use `as` to assign an explicit name:
+Every `requires` and `provides` declaration defines a **port** — a named connection point on the entity.
+The port name defaults to the interface name; use `as` to assign an explicit name:
 
 ```
 requires <Interface> [as <port_name>]
 provides <Interface> [as <port_name>]
 ```
 
-`requires` declarations appear before `provides`. Port names must be unique within their entity.
+`requires` declarations appear before `provides`.
+Port names must be unique within their entity.
 
 ### Channels and `connect`
 
-A **channel** is a named conduit between ports. Channels are introduced implicitly by `connect` statements — there is no separate channel declaration. Channel names use the `$` prefix to distinguish them from ports.
+A **channel** is a named conduit between ports.
+Channels are introduced implicitly by `connect` statements — there is no separate channel declaration.
+Channel names use the `$` prefix to distinguish them from ports.
 
-`connect` statements can appear inside `component` or `system` bodies, or at the top level of an `.archml` file to wire top-level entities.
+`connect` statements can appear inside `component` or `system` bodies, or at the top level of a `.farchml` file to wire top-level entities.
 
 ```
 // Full chain: introduces $channel and wires both ports
@@ -218,9 +240,7 @@ connect <src_port> -> $<channel>
 connect $<channel> -> <dst_port>
 ```
 
-`<src_port>` and `<dst_port>` are either:
-
-- `Entity.port_name` — explicit port on a named child entity
+`<src_port>` and `<dst_port>` are either: `Entity.port_name` — explicit port on a named child entity
 
 The arrow direction follows data flow: a `provides` port (producer) is always on the left; a `requires` port (consumer) is always on the right.
 
@@ -228,23 +248,30 @@ A channel introduced by `connect` is local to the scope where it appears — it 
 
 ### Port Exposure: `expose`
 
-`expose` promotes a sub-entity's port to the enclosing boundary. A port that is neither wired by `connect` nor promoted by `expose` is a validation error.
+`expose` promotes a sub-entity's port to the enclosing boundary.
+A port that is neither wired by `connect` nor promoted by `expose` is a validation error.
 
 ```
 expose Entity.port_name [as new_name]
 ```
 
-The port name must always be specified (e.g., `Entity.port_name`); implicit port inference is not supported. The optional `as` clause renames the port at the boundary. `expose` composes across levels — a system can expose a port that was already exposed by an inner component.
+The port name must always be specified (e.g., `Entity.port_name`); implicit port inference is not supported.
+The optional `as` clause renames the port at the boundary.
+`expose` composes across levels — a system can expose a port that was already exposed by an inner component.
 
 ### Configuration Dependencies: `config`
 
-A `config` declaration names an external configuration dependency on a component or system. It expresses that the entity requires externally-provided configuration of a known type, without committing to how or where that configuration is supplied. The deployment layer resolves it to a concrete store via `bind config` (see [Deployment Architecture](deployment_architecture.md)).
+A `config` declaration names an external configuration dependency on a component or system.
+It expresses that the entity requires externally-provided configuration of a known type, without committing to how or where that configuration is supplied.
+The deployment layer resolves it to a concrete store.
 
 ```
 config <TypeName> [as <config_name>]
 ```
 
-`<TypeName>` refers to a `type` declaration and defines the expected shape of the configuration. The configuration dependency name defaults to `<TypeName>`; use `as` to assign an explicit name. Configuration dependency names must be unique within their entity.
+`<TypeName>` refers to a `type` declaration and defines the expected shape of the configuration.
+The configuration dependency name defaults to `<TypeName>`; use `as` to assign an explicit name.
+Configuration dependency names must be unique within their entity.
 
 ```
 type DbConfig {
@@ -269,7 +296,8 @@ component Worker {
 }
 ```
 
-`config` declarations are distinct from ports: they cannot appear in `connect` or `expose` statements and do not participate in the functional data flow graph. They are purely binding targets for the deployment layer.
+`config` declarations are distinct from ports: they cannot appear in `connect` or `expose` statements and do not participate in the functional data flow graph.
+They are purely binding targets for the deployment layer.
 
 ---
 
@@ -312,7 +340,9 @@ system<cloud> ECommerce {
 }
 ```
 
-`AuditLogger` is present when both `cloud` and `hybrid` are active. `OrderService` is present in any `cloud` configuration. Baseline entities have no annotation and are present in all configurations.
+`AuditLogger` is present when both `cloud` and `hybrid` are active.
+`OrderService` is present in any `cloud` configuration.
+Baseline entities have no annotation and are present in all configurations.
 
 ### Validation per Variant
 
@@ -322,7 +352,8 @@ All consistency checks (port coverage, dangling references, unused interfaces) a
 
 ## External Systems
 
-The `external` modifier marks systems, components, or users that are outside the development boundary. External entities appear in diagrams with distinct styling and cannot be decomposed (they are opaque):
+The `external` modifier marks systems, components, or users that are outside the development boundary.
+External entities appear in diagrams with distinct styling and cannot be decomposed (they are opaque):
 
 ```
 external system StripeAPI {
@@ -341,7 +372,8 @@ external user Admin {
 
 ## Multi-File Composition
 
-Large architectures are split across files. Top-level declarations (`component`, `system`, `user`, `interface`, `type`, `enum`) can appear in any `.archml` file — they do not need to be nested inside a system.
+Large architectures are split across files.
+Top-level declarations (`component`, `system`, `user`, `interface`, `type`, `enum`) can appear in any `.farchml` file — they do not need to be nested inside a system.
 
 ### Imports
 
@@ -352,11 +384,12 @@ from dir/subdir/file import Entity
 from dir/subdir/file import Entity1, Entity2
 ```
 
-The path omits the `.archml` extension and is resolved using the repository's virtual filesystem mapping (see [Repository Configuration](#repository-configuration)).
+The path omits the `.farchml` extension and is resolved using the repository's virtual filesystem mapping (see [Repository Configuration](#repository-configuration)).
 
 ### `use`
 
-The `use` keyword places an already-imported entity into a system or component body without redefining it. Always includes the entity type:
+The `use` keyword places an already-imported entity into a system or component body without redefining it.
+Always includes the entity type:
 
 ```
 use component OrderService
@@ -375,7 +408,8 @@ from @payments/services/payment import PaymentService
 from @inventory/services/stock  import StockManager
 ```
 
-`@repo-name` refers to a named repository declared in the workspace configuration. When the `@` prefix is omitted, the current repository is assumed.
+`@repo-name` refers to a named repository declared in the workspace configuration.
+When the `@` prefix is omitted, the current repository is assumed.
 
 ---
 
@@ -392,7 +426,10 @@ roots:
   types:       src/architecture/types
 ```
 
-An import path is resolved by matching its first segment against declared root names. For example, `interfaces/order` resolves to `src/architecture/interfaces/order.archml`. A path whose first segment matches no declared root is a resolution error. Roots can map to individual files as well as directories.
+An import path is resolved by matching its first segment against declared root names.
+For example, `interfaces/order` resolves to `src/architecture/interfaces/order.farchml`.
+A path whose first segment matches no declared root is a resolution error.
+Roots can map to individual files as well as directories.
 
 ---
 
@@ -413,7 +450,8 @@ source-imports:
     ref: v2.3.0
 ```
 
-The `name` under `source-imports` matches the `@repo-name` prefix in import paths. `ref` pins the import to a specific branch, tag, or commit.
+The `name` under `source-imports` matches the `@repo-name` prefix in import paths.
+`ref` pins the import to a specific branch, tag, or commit.
 
 ---
 
@@ -446,7 +484,10 @@ The `name` under `source-imports` matches the `@repo-name` prefix in import path
 
 ## Formal Grammar
 
-The grammar is written in EBNF. Terminal strings appear in `'single quotes'`. Brackets `[ ]` denote optional elements, braces `{ }` denote zero-or-more repetition, and parentheses `( )` denote grouping. The `|` operator denotes alternation.
+The grammar is written in EBNF.
+Terminal strings appear in `'single quotes'`.
+Brackets `[ ]` denote optional elements, braces `{ }` denote zero-or-more repetition, and parentheses `( )` denote grouping.
+The `|` operator denotes alternation.
 
 Comments (lines starting with `#`) and whitespace are stripped by the lexer and do not appear in the grammar.
 
