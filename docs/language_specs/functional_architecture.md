@@ -589,7 +589,6 @@ type_expr   ::= primitive_type
 
 primitive_type ::= 'String' | 'Int' | 'Float' | 'Bool'
                  | 'Bytes'  | 'Timestamp' | 'Datetime'
- via `bind config` (see [Deployment Architecture](deployment_architecture.md))
 (* ── Variants ───────────────────────────────────────── *)
 
 variant_ann ::= '<' IDENT { ',' IDENT } '>'

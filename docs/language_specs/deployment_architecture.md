@@ -1,8 +1,11 @@
 # ArchML Deployment Architecture
 
-ArchML's deployment layer annotates the functional architecture with deployment intent. It describes how functional entities are packaged, where they run, how their channels are transported, and which credentials and artifact stores are involved. Deployment declarations never alter the functional architecture — they are purely additive.
+ArchML's deployment layer annotates the functional architecture with deployment intent.
+It describes how functional entities are packaged, where they run, how their channels are transported, and which credentials and artifact stores are involved.
+Deployment declarations never alter the functional architecture — they are purely additive.
 
-Deployment declarations live in **separate `.darchml` files** using `deployment` blocks. Functional and deployment architectures are strictly separated — `.farchml` files contain no deployment declarations and `.darchml` files contain no functional entity definitions.
+Deployment declarations live in **separate `.darchml` files** using `deployment` blocks.
+Functional and deployment architectures are strictly separated — `.farchml` files contain no deployment declarations and `.darchml` files contain no functional entity definitions.
 
 ---
 
@@ -12,7 +15,8 @@ All deployment entities follow a unified two-form pattern that mirrors the funct
 
 ### Schema Definitions
 
-A schema definition introduces a named kind with a set of typed fields. It uses a single name after the category keyword:
+A schema definition introduces a named kind with a set of typed fields. 
+It uses a single name after the category keyword:
 
 ```
 <category> <SchemaName> [extends <ParentSchema>] {
@@ -57,7 +61,8 @@ bundle ContainerImage {
 
 ### Instance Declarations
 
-An instance declaration creates a named instance of a schema. It uses two names — the schema name followed by the instance name:
+An instance declaration creates a named instance of a schema.
+It uses two names — the schema name followed by the instance name:
 
 ```
 <category> <SchemaName> <InstanceName> {
@@ -116,11 +121,15 @@ Schema fields use the same primitive and container types as the functional layer
 | `requires bundle`             | Field must be satisfied by any declared `bundle` instance                         |
 | `requires bundle <Schema>`    | Field must be satisfied by an instance of the named `bundle` schema               |
 
-A `requires <category>` field in a schema definition declares a dependency: the instance must provide the name of a declared instance of that category. The optional `<Schema>` name narrows the constraint to instances of a specific schema — the tooling validates both that the instance exists and that it was declared with the named schema. Schema inheritance is respected: an instance of a child schema satisfies a `requires` constraint for any of its ancestor schemas.
+A `requires <category>` field in a schema definition declares a dependency: the instance must provide the name of a declared instance of that category.
+The optional `<Schema>` name narrows the constraint to instances of a specific schema — the tooling validates both that the instance exists and that it was declared with the named schema.
+Schema inheritance is respected: an instance of a child schema satisfies a `requires` constraint for any of its ancestor schemas.
 
 ### Schema Inheritance
 
-Any schema definition may extend a parent schema using `extends`. The child inherits all fields from the parent and may add new ones. Overriding an inherited field is a validation error. Inheritance cycles are a validation error.
+Any schema definition may extend a parent schema using `extends`.
+The child inherits all fields from the parent and may add new ones. Overriding an inherited field is a validation error.
+Inheritance cycles are a validation error.
 
 ```
 compute CloudCompute {
@@ -150,7 +159,8 @@ compute AzureBatch OrderPool {
 }
 ```
 
-`extends` works across files. The parent schema must be imported before use (see [Multi-File Composition](#multi-file-composition)).
+`extends` works across files.
+The parent schema must be imported before use (see [Multi-File Composition](#multi-file-composition)).
 
 ---
 
@@ -158,7 +168,8 @@ compute AzureBatch OrderPool {
 
 ### `protocol`
 
-A `protocol` schema defines a transport binding — the set of fields that describe how a channel is carried over a specific mechanism. Protocol schemas have no instance form; they are always instantiated inline inside `bind` statements.
+A `protocol` schema defines a transport binding — the set of fields that describe how a channel is carried over a specific mechanism.
+Protocol schemas have no instance form; they are always instantiated inline inside `bind` statements.
 
 ```
 protocol SlackWebhook {
@@ -168,7 +179,8 @@ protocol SlackWebhook {
 }
 ```
 
-The standard library provides commonly used protocols. They are protected and cannot be redefined, but user schemas may extend them:
+The standard library provides commonly used protocols.
+They are protected and cannot be redefined, but user schemas may extend them:
 
 ```
 protocol InternalHTTP extends HTTP {
@@ -178,7 +190,8 @@ protocol InternalHTTP extends HTTP {
 
 ### `identity`
 
-An `identity` schema describes an authentication credential. Instances hold the configuration needed to authenticate as a specific principal.
+An `identity` schema describes an authentication credential.
+Instances hold the configuration needed to authenticate as a specific principal.
 
 ```
 identity AzureServicePrincipal {
@@ -208,7 +221,8 @@ identity PersonalAccessToken DatabricksToken {
 
 ### `store`
 
-A `store` schema describes a repository for artifacts of any kind — credentials, secrets, configuration values, container images, packages, or any other named item. A store instance declares its available artifacts using `artifact` statements.
+A `store` schema describes a repository for artifacts of any kind — credentials, secrets, configuration values, container images, packages, or any other named item.
+A store instance declares its available artifacts using `artifact` statements.
 
 ```
 store ContainerRegistry {
@@ -224,7 +238,9 @@ store AzureKeyVault {
 
 #### Artifact Declarations
 
-A store instance declares its available artifacts using `artifact` statements. Each `artifact` names a value the store provides. Stores that serve as artifact repositories without individually named references (e.g., a container registry where the bundle schema holds the image name) may declare no artifacts.
+A store instance declares its available artifacts using `artifact` statements.
+Each `artifact` names a value the store provides.
+Stores that serve as artifact repositories without individually named references (e.g., a container registry where the bundle schema holds the image name) may declare no artifacts.
 
 ```
 store AzureKeyVault ProdVault {
@@ -252,9 +268,11 @@ store EnvSecretStore Env {
 }
 ```
 
-A store instance that declares at least one `artifact` (or `artifact *`) may be referenced using the `StoreName:artifact` value syntax (see [Store Artifact References](#store-artifact-references)). Referencing a store with no artifact declarations in that syntax is a validation error.
+A store instance that declares at least one `artifact` (or `artifact *`) may be referenced using the `StoreName:artifact` value syntax (see [Store Artifact References](#store-artifact-references)).
+Referencing a store with no artifact declarations in that syntax is a validation error.
 
-The standard library provides `EnvSecretStore` — an open store that resolves values from the process environment. Its default instance `Env` accepts any artifact name without declaration.
+The standard library provides `EnvSecretStore` — an open store that resolves values from the process environment.
+Its default instance `Env` accepts any artifact name without declaration.
 
 ### `compute`
 
@@ -290,7 +308,8 @@ compute Kubernetes AKSCluster {
 
 ### `bundle`
 
-A `bundle` schema describes a deployable artifact. Instances pack one or more functional components or systems into a single artifact and reference the store from which the artifact is fetched.
+A `bundle` schema describes a deployable artifact.
+Instances pack one or more functional components or systems into a single artifact and reference the store from which the artifact is fetched.
 
 ```
 bundle ContainerImage {
@@ -308,7 +327,8 @@ bundle PythonPackage {
 
 #### `packs` Statements
 
-Bundle instances use `packs` to declare which functional components or systems they contain. The same component or system may appear in multiple bundle instances — this is useful for per-environment bundles that pack the same component differently. The validation rule is per-resolved-variant: within any single variant and environment combination, a component or system must be packed by at most one deployed bundle.
+Bundle instances use `packs` to declare which functional components or systems they contain.
+Within any single variant and environment combination, a component or system must be packed by at most one deployed bundle.
 
 ```
 # Packing individual components
@@ -329,13 +349,62 @@ bundle ContainerImage FulfillmentBundle {
 }
 ```
 
-When a bundle packs a system, all current and future components added to that system are automatically included. `packs component` and `packs system` may be mixed within one bundle instance.
+When a bundle packs a system, all current and future components added to that system are automatically included.
+`packs component` and `packs system` may be mixed within one bundle instance.
+
+#### `deploy on compute`
+
+A bundle instance declares where it runs using `deploy on compute`.
+This is the only place where compute assignment appears — there is no separate `deploy` statement in `deployment` blocks.
+
+```
+deploy on compute <ComputeName>
+```
+
+```
+bundle ContainerImage OrderBundle {
+    name:  order-service
+    tag:   2.1.0
+    store: PlatformACR
+    packs component OrderService
+    packs component NotificationSidecar
+    deploy on compute AKSCluster
+}
+```
+
+**Environment-specific bundles** are declared by giving multiple bundle instances the same name with different `[env]` annotations.
+Each environment gets its own image tag, store, and compute target without duplicating the functional packing logic:
+
+```
+bundle[prod] ContainerImage OrderBundle {
+    name:  order-service
+    tag:   2.1.0
+    store: PlatformACR
+    packs component OrderService
+    packs component NotificationSidecar
+    deploy on compute AKSCluster
+}
+
+bundle[dev] ContainerImage OrderBundle {
+    name:  order-service
+    tag:   latest
+    store: DevACR
+    packs component OrderService
+    packs component NotificationSidecar
+    deploy on compute LocalDocker
+}
+```
+
+Within any single variant and environment combination, a component or system must be deployed by at most one bundle instance.
+Declaring the same (name, env) combination more than once is a validation error.
 
 ---
 
 ## Store Artifact References
 
-A field value of the form `StoreName:name` resolves the named artifact from the referenced store instance. The store must declare that artifact (either explicitly or via `artifact *`). The tooling validates both the store name and the artifact name statically.
+A field value of the form `StoreName:name` resolves the named artifact from the referenced store instance.
+The store must declare that artifact (either explicitly or via `artifact *`).
+The tooling validates both the store name and the artifact name statically.
 
 ```
 identity AzureServicePrincipal PlatformPrincipal {
@@ -351,17 +420,21 @@ identity AzureServicePrincipal PlatformPrincipal {
 - `StoreName` must declare the referenced artifact explicitly, or declare `artifact *`.
 - Referencing a store with no artifact declarations in this syntax is a validation error.
 
-Plain literal values and store artifact references may be used interchangeably for `String` fields. The choice is the author's; the tooling does not restrict which fields may use store artifact references.
+Plain literal values and store artifact references may be used interchangeably for `String` fields.
+The choice is the author's; the tooling does not restrict which fields may use store artifact references.
 
 ---
 
 ## Deployment Statements
 
-Two statements attach deployment intent to functional entities: `bind` and `deploy`. Both may appear inline inside `system` or `component` bodies, or inside external `deployment` blocks.
+Two statements attach deployment intent to functional entities: `bind` and `bind config`.
+Both may only appear inside `deployment` blocks in `.darchml` files — never inline inside `.farchml` entity bodies.
 
 ### `bind`
 
-`bind` attaches a protocol instantiation to a channel. The channel carries the interface — the tooling infers the interface from the functional architecture. The protocol fields are validated against the referenced protocol schema.
+`bind` attaches a protocol instantiation to a channel.
+The channel carries the interface — the tooling infers the interface from the functional architecture.
+The protocol fields are validated against the referenced protocol schema.
 
 ```
 bind [$<channel>] via <Protocol> {
@@ -370,14 +443,13 @@ bind [$<channel>] via <Protocol> {
 }
 ```
 
-A `bind` statement may only reference channels declared at the **same scope** in the functional architecture. A channel declared inside a sub-system or sub-component is not visible in the enclosing scope's `bind` statements. Binding the same channel more than once — in any combination of inline and external declarations — is a validation error.
+A `bind` statement may only reference channels declared at the **same scope** in the functional architecture.
+A channel declared inside a sub-system or sub-component is not visible in the enclosing scope's `bind` statements.
+Binding the same channel more than once across declarations is a validation error.
 
 ```
-system ECommerce {
-    connect OrderService.PaymentRequest -> $payment -> PaymentService.PaymentRequest
-    connect OrderService.OrderReady    -> $notify  -> NotificationService.OrderReady
-
-    # $payment and $notify are declared at this scope — legal to bind here
+deployment system sys::ECommerce {
+    # $payment and $notify are declared at this scope in the functional architecture
     bind $payment via gRPC {
         package: payments.v1
         service: PaymentService
@@ -394,19 +466,21 @@ system ECommerce {
 
 ### `bind config`
 
-`bind config` resolves a named configuration dependency — declared with `config` in the functional layer — to a concrete store instance. The store provides the configuration values at runtime.
+`bind config` resolves a named configuration dependency — declared with `config` in the functional layer — to a concrete store instance.
+The store provides the configuration values at runtime.
 
 ```
 bind config <config_name> to store [<SchemaType>] <InstanceName>
 ```
 
-`<config_name>` must match a `config` declaration on the functional entity being annotated. The optional `<SchemaType>` constrains the store to a specific schema (using the schema-typed reference described in [Field Types in Schema Definitions](#field-types-in-schema-definitions)). Omitting it accepts any store instance.
+`<config_name>` must match a `config` declaration on the functional entity being annotated.
+The optional `<SchemaType>` constrains the store to a specific schema (using the schema-typed reference described in [Field Types in Schema Definitions](#field-types-in-schema-definitions)).
+Omitting it accepts any store instance.
 
 ```
 deployment component Consumer {
     bind config DbConfig to store AzureKeyVault ProdVault
     bind config FeatureFlags to store AzureStorage AppConfigStore
-    deploy bundle ConsumerBundle on compute AKSCluster
 }
 ```
 
@@ -422,36 +496,8 @@ deployment[dev] component Consumer {
 }
 ```
 
-`bind config` may also appear inline inside a functional entity body, after all functional statements:
-
-```
-component Consumer {
-    requires DataMessage
-    config DbConfig
-
-    bind config DbConfig to store AzureKeyVault ProdVault
-}
-```
-
-A `bind config` statement may only reference a `config` name declared on the same entity. Binding the same config name more than once within the same variant and environment combination is a validation error.
-
-### `deploy`
-
-`deploy` assigns a bundle instance to a compute instance for a functional component or system. When placed inside a functional entity body or a `deployment` block scoped to that entity, it declares how that entity is executed.
-
-```
-deploy bundle <BundleName> on compute <ComputeName>
-```
-
-When a bundle packs an entire system (via `packs system`), the `deploy` statement is placed inside the `deployment` block for that system. It deploys all components within the system together.
-
-```
-deployment system Fulfillment {
-    deploy bundle FulfillmentBundle on compute AKSCluster
-}
-```
-
-Deploying the same component or system more than once within the same variant and environment — in any combination of inline and external declarations — is a validation error.
+A `bind config` statement may only reference a `config` name declared on the same entity.
+Binding the same config name more than once within the same variant and environment combination is a validation error.
 
 ---
 
@@ -464,9 +510,12 @@ deployment system <ns::System> [env_ann] [variant_ann] { <deployment_body> }
 deployment component <ns::System::Component> [env_ann] [variant_ann] { <deployment_body> }
 ```
 
-A top-level `deployment` block is addressed by a fully qualified entity path (`namespace::Entity`). Nested `deployment` blocks inside a body use a plain name, resolved as a direct child of the enclosing functional scope. Nesting must match the functional hierarchy — a `deployment system Fulfillment` nested inside `deployment system ECommerce` is only valid if `Fulfillment` is a sub-system of `ECommerce` in the loaded functional architecture.
+A top-level `deployment` block is addressed by a fully qualified entity path (`namespace::Entity`).
+Nested `deployment` blocks inside a body use a plain name, resolved as a direct child of the enclosing functional scope.
+Nesting must match the functional hierarchy — a `deployment system Fulfillment` nested inside `deployment system ECommerce` is only valid if `Fulfillment` is a sub-system of `ECommerce` in the loaded functional architecture.
 
-Functional entities are brought into scope with `load functional at` (see [Loading Functional Architectures](#loading-functional-architectures)). The top-level entity path is resolved against the loaded functional namespaces; if no matching entity exists, it is a validation error.
+Functional entities are brought into scope with `load functional at` (see [Loading Functional Architectures](#loading-functional-architectures)). 
+The top-level entity path is resolved against the loaded functional namespaces; if no matching entity exists, it is a validation error.
 
 ```
 # arch/deployment/prod.darchml
@@ -507,19 +556,25 @@ Any conflict across deployment files (same channel bound twice, same entity depl
 
 ## Scoping Rules
 
-**`bind` scope:** A `bind` statement may only reference a channel (`$name`) that is declared in the corresponding functional scope matched by the enclosing `deployment` block. Channels from inner or outer scopes are not accessible.
+**`bind` scope:** A `bind` statement may only reference a channel (`$name`) that is declared in the corresponding functional scope matched by the enclosing `deployment` block.
+Channels from inner or outer scopes are not accessible.
 
-**`deploy` scope:** A `deploy` statement inside a `deployment system S` or `deployment component C` applies to `S` or `C` respectively. When the bundle packs a system via `packs system`, the `deploy` statement must appear inside the `deployment` block for that system.
+**`deploy` scope:** A `deploy` statement inside a `deployment system S` or `deployment component C` applies to `S` or `C` respectively.
+When the bundle packs a system via `packs system`, the `deploy` statement must appear inside the `deployment` block for that system.
 
-**Conflict rule:** Binding the same channel more than once, or deploying the same component or system more than once within the same variant and environment combination, is a validation error. This applies across all `.darchml` files in the build.
+**Conflict rule:** Binding the same channel more than once, or deploying the same component or system more than once within the same variant and environment combination, is a validation error.
+This applies across all `.darchml` files in the build.
 
-**Functional name resolution:** A top-level `deployment` block resolves its `entity_path` (`ns::System`) against the functional namespaces declared by `load functional at` statements in the same file. Nested `deployment` blocks resolve their plain name as a direct child of the enclosing functional scope — `deployment system Fulfillment` inside `deployment system sys::ECommerce` resolves `Fulfillment` as a sub-system of `ECommerce`. If no matching entity exists at any level, it is a validation error.
+**Functional name resolution:** A top-level `deployment` block resolves its `entity_path` (`ns::System`) against the functional namespaces declared by `load functional at` statements in the same file.
+Nested `deployment` blocks resolve their plain name as a direct child of the enclosing functional scope — `deployment system Fulfillment` inside `deployment system sys::ECommerce` resolves `Fulfillment` as a sub-system of `ECommerce`.
+If no matching entity exists at any level, it is a validation error.
 
 ---
 
 ## Standard Library
 
-The standard library ships a set of pre-defined protocol, store, and compute schemas. Standard library definitions are **protected** — they cannot be redefined. User schemas may extend them.
+The standard library ships a set of pre-defined protocol, identity, store, and compute schemas.
+Standard library definitions are **protected** — they cannot be redefined. User schemas may extend them.
 
 ### Protocols
 
@@ -532,19 +587,34 @@ The standard library ships a set of pre-defined protocol, store, and compute sch
 | `DatabaseTable`  | `connection: String`, `schema: String`, `table: String` |
 | `DatabricksTable`| `workspace: String`, `catalog: String`, `schema: String`, `table: String` |
 
+### Identities
+
+| Schema                          | Fields                                                  | Notes                              |
+| ------------------------------- | ------------------------------------------------------- | ---------------------------------- |
+| `AzureServicePrincipal`         | `tenant: String`, `client-id: String`, `secret: String` | Entra ID service principal         |
+| `AzureManagedIdentity`          | `client-id: Optional<String>`                           | System- or user-assigned; `client-id` absent for system-assigned |
+| `DatabricksPersonalAccessToken` | `token: String`                                         | Databricks PAT                     |
+
 ### Stores
 
-| Schema           | Fields       | Notes                                     |
-| ---------------- | ------------ | ----------------------------------------- |
-| `EnvSecretStore` | *(none)*     | Open (`artifact *`); reads from process environment |
+| Schema                  | Fields                                                              | Notes                                                    |
+| ----------------------- | ------------------------------------------------------------------- | -------------------------------------------------------- |
+| `EnvSecretStore`        | *(none)*                                                            | Open (`artifact *`); reads from process environment      |
+| `AzureKeyVault`         | `vault-url: String`, `auth: requires identity AzureServicePrincipal` | Azure Key Vault; artifacts are secret names             |
+| `AzureContainerRegistry`| `url: String`, `auth: requires identity`                            | ACR; no named artifacts — bundle schema holds image name |
+| `AzureBlobStorage`      | `account: String`, `container: String`, `auth: requires identity`   | Azure Blob Storage container                             |
+| `DatabricksVolume`      | `workspace: String`, `catalog: String`, `schema: String`, `volume: String`, `auth: requires identity DatabricksPersonalAccessToken` | Unity Catalog volume |
 
 The standard library provides one `EnvSecretStore` instance named `Env`. It requires no `auth` and its `artifact *` declaration means any `Env:NAME` reference is valid without explicit declaration.
 
 ### Compute
 
-| Schema    | Fields    | Notes                          |
-| --------- | --------- | ------------------------------ |
-| `Process` | *(none)*  | Local process; no container    |
+| Schema                | Fields                                                               | Notes                                    |
+| --------------------- | -------------------------------------------------------------------- | ---------------------------------------- |
+| `Process`             | *(none)*                                                             | Local process; no container              |
+| `AzureBatch`          | `account: String`, `pool: String`, `auth: requires identity AzureServicePrincipal` | Azure Batch pool          |
+| `AzureContainerApps`  | `resource-group: String`, `environment: String`, `auth: requires identity AzureServicePrincipal` | Azure Container Apps environment |
+| `DatabricksJob`       | `workspace: String`, `cluster-id: String`, `auth: requires identity DatabricksPersonalAccessToken` | Databricks job cluster |
 
 ---
 
@@ -555,7 +625,8 @@ The deployment layer supports two orthogonal annotation dimensions:
 - **`<variant>`** — architectural or structural alternatives (e.g., `cloud`, `on_premise`). Inherited from the functional layer; see the functional architecture reference for full semantics.
 - **`[env]`** — deployment environment (e.g., `dev`, `qa`, `prod`). Deployment-layer only; has no meaning in functional declarations.
 
-Both annotations are optional and independent. They may be combined on the same declaration:
+Both annotations are optional and independent.
+They may be combined on the same declaration:
 
 ```
 deployment<cloud>[prod] system ECommerce { ... }
@@ -585,24 +656,34 @@ identity[dev] AzureServicePrincipal DevPrincipal {
     secret:    Env:DEV_CLIENT_SECRET
 }
 
-deployment[prod] system ECommerce {
+bundle[prod] ContainerImage OrderBundle {
+    name:  order-service
+    tag:   2.1.0
+    store: PlatformACR
+    packs component OrderService
+    deploy on compute AKSCluster
+}
+
+bundle[dev] ContainerImage OrderBundle {
+    name:  order-service
+    tag:   latest
+    store: DevACR
+    packs component OrderService
+    deploy on compute LocalDocker
+}
+
+deployment[prod] system sys::ECommerce {
     bind $payment via gRPC {
         package: payments.v1
         service: PaymentService
         method:  ProcessPayment
     }
-    deployment component OrderService {
-        deploy bundle OrderBundle on compute AKSCluster
-    }
 }
 
-deployment[dev] system ECommerce {
+deployment[dev] system sys::ECommerce {
     bind $payment via HTTP {
         method: POST
         path:   /dev/payment
-    }
-    deployment component OrderService {
-        deploy bundle OrderBundle on compute LocalDocker
     }
 }
 ```
@@ -613,15 +694,25 @@ Declarations with no environment annotation are **baseline** — active in every
 
 ### Combining Variants and Environments
 
-`<variant>` and `[env]` are evaluated independently. A declaration annotated `<cloud>[prod]` is active when the architectural variant is `cloud` and the environment is `prod`. Each dimension is selected separately at build time; there is no implicit cross-product.
+`<variant>` and `[env]` are evaluated independently.
+A declaration annotated `<cloud>[prod]` is active when the architectural variant is `cloud` and the environment is `prod`.
+Each dimension is selected separately at build time; there is no implicit cross-product.
 
 ```
-deployment<cloud>[prod] component OrderService {
-    deploy bundle OrderBundle on compute AKSCluster
+bundle<cloud>[prod] ContainerImage OrderBundle {
+    name:  order-service
+    tag:   2.1.0
+    store: PlatformACR
+    packs component OrderService
+    deploy on compute AKSCluster
 }
 
-deployment<on_premise>[prod] component OrderService {
-    deploy bundle OrderBundle on compute OnPremK8s
+bundle<on_premise>[prod] ContainerImage OrderBundle {
+    name:  order-service
+    tag:   2.1.0
+    store: OnPremRegistry
+    packs component OrderService
+    deploy on compute OnPremK8s
 }
 ```
 
@@ -631,7 +722,8 @@ deployment<on_premise>[prod] component OrderService {
 
 ### Imports in Deployment Files
 
-Deployment schema definitions and instance declarations are top-level declarations. `from ... import` brings deployment-layer definitions — schemas, instances, compute declarations, bundle declarations — from another `.darchml` file into scope:
+Deployment schema definitions and instance declarations are top-level declarations.
+`from ... import` brings deployment-layer definitions — schemas, instances, compute declarations, bundle declarations — from another `.darchml` file into scope:
 
 ```
 from infra   import CloudCompute, VersionedArtifact
@@ -644,7 +736,8 @@ compute AzureBatch extends CloudCompute {
 }
 ```
 
-Import paths omit the `.darchml` extension and are resolved using the repository's virtual filesystem mapping (see the functional architecture reference for repository configuration). Cross-repository imports use the `@repo-name` prefix:
+Import paths omit the `.darchml` extension and are resolved using the repository's virtual filesystem mapping (see the functional architecture reference for repository configuration).
+Cross-repository imports use the `@repo-name` prefix:
 
 ```
 from @shared/deployment/infra import CloudCompute
@@ -658,7 +751,8 @@ from infra import AKSCluster as ProdCluster
 
 ### Loading Functional Architectures
 
-A `.darchml` file loads one or more functional architectures with `load functional at`. The `as` clause is required and gives the loaded namespace a local name used to qualify all references to functional entities:
+A `.darchml` file loads one or more functional architectures with `load functional at`.
+The `as` clause is required and gives the loaded namespace a local name used to qualify all references to functional entities:
 
 ```
 load functional at arch/systems       as sys
@@ -680,7 +774,62 @@ Cross-repository loads use the `@repo-name` prefix, resolved through the workspa
 load functional at @payments/arch as pay
 ```
 
-Duplicate entity names at the root of a loaded namespace are a validation error. When two loaded namespaces would expose the same root-level name, use the `as` alias on `load` to disambiguate through the namespace prefix.
+Duplicate entity names at the root of a loaded namespace are a validation error.
+When two loaded namespaces would expose the same root-level name, use the `as` alias on `load` to disambiguate through the namespace prefix.
+
+### Bundle File Organization
+
+Bundle instances are top-level declarations and may appear in any `.darchml` file.
+Because bundles reference functional entities (via `packs`) and compute targets (via `deploy on compute`), they sit at the intersection of the functional and infrastructure layers.
+A bundle that packs components from a single system may live in that system's deployment file.
+A bundle that packs multiple systems has no natural home system file — placing it in one system's file creates an implicit dependency on an unrelated system's deployment file.
+
+The recommended pattern is a **dedicated bundles file**, separate from the `deployment` blocks that contain `bind` and `bind config`.
+The bundles file loads the functional architecture and declares all bundle instances; environment-specific deployment files import from it:
+
+```
+# arch/deployment/bundles.darchml
+
+load functional at arch/systems as sys
+
+from infra import AKSCluster, PlatformACR, DevACR, LocalDocker
+
+bundle[prod] ContainerImage PlatformBundle {
+    name:  platform
+    tag:   3.0.0
+    store: PlatformACR
+    packs system sys::OrderSystem
+    packs system sys::FulfillmentSystem
+    deploy on compute AKSCluster
+}
+
+bundle[dev] ContainerImage PlatformBundle {
+    name:  platform
+    tag:   latest
+    store: DevACR
+    packs system sys::OrderSystem
+    packs system sys::FulfillmentSystem
+    deploy on compute LocalDocker
+}
+```
+
+```
+# arch/deployment/prod.darchml
+
+load functional at arch/systems as sys
+
+from bundles import PlatformBundle
+
+deployment[prod] system sys::OrderSystem {
+    bind $payment via gRPC {
+        package: payments.v1
+        service: PaymentService
+        method:  ProcessPayment
+    }
+}
+```
+
+Keeping bundle declarations in a separate file also makes it easy to import individual bundles into cross-repository deployment files without pulling in unrelated `deployment` block declarations.
 
 ### Referencing Functional Entities
 
@@ -691,14 +840,16 @@ load functional at arch/systems as sys
 
 deployment system sys::ECommerce {
     deployment system Fulfillment {
-        deployment component OrderService {
-            deploy bundle OrderBundle on compute AKSCluster
+        bind $shipment via HTTP {
+            method: POST
+            path:   /api/v1/shipments
         }
     }
 }
 ```
 
-The full path from the namespace root to the target entity is always required. If the referenced entity does not exist in the loaded functional architecture, it is a validation error.
+The full path from the namespace root to the target entity is always required.
+If the referenced entity does not exist in the loaded functional architecture, it is a validation error.
 
 ```
 # arch/deployment/prod.darchml
@@ -754,12 +905,12 @@ deployment[prod] system sys::ECommerce {
 | `requires`            | Field type constraint: the value must be a declared instance of the named category.            |
 | `artifact`            | Declares a named artifact provided by a store instance; `artifact *` makes the store open.     |
 | `packs`               | Declares which functional component or system a bundle instance contains.                      |
+| `deploy on compute`   | Assigns a bundle instance to a compute target (`deploy on compute Name`); appears inside bundle instances. |
 | `bind`                | Binds a channel to a protocol instantiation (`bind $ch via Protocol { ... }`).                 |
 | `bind config`         | Resolves a functional `config` dependency to a store instance (`bind config X to store S`).    |
-| `deploy`              | Assigns a bundle to a compute instance for a functional entity (`deploy bundle X on compute Y`). |
 | `deployment`          | Deployment block addressing a functional entity (`deployment system ns::Name { ... }`).        |
 | `via`                 | Names the protocol in a `bind` statement.                                                      |
-| `on`                  | Names the compute instance in a `deploy` statement.                                            |
+| `on`                  | Names the compute target in a `deploy on compute` statement.                                   |
 | `ns::A::B`            | Path to a functional entity within a loaded namespace, using `::` as separator.                |
 | `<variant>`           | Variant annotation on a declaration (architectural/structural dimension).                      |
 | `[env]`               | Environment annotation on a deployment declaration (`dev`, `qa`, `prod`, etc.).                |
@@ -828,6 +979,7 @@ instance_body ::= [ description ]
 instance_member ::= instance_field
                   | artifact_stmt       (* valid in store instances only *)
                   | packs_stmt          (* valid in bundle instances only *)
+                  | deploy_on_stmt      (* valid in bundle instances only *)
 
 instance_field ::= IDENT ':' field_value
 
@@ -839,17 +991,17 @@ field_value    ::= IDENT ':' IDENT    (* store artifact reference: StoreName:nam
 
 artifact_stmt ::= 'artifact' ( IDENT | '*' )
 
-(* ── Bundle packs declarations ──────────────────────────────── *)
+(* ── Bundle packs and deploy declarations ───────────────────── *)
 
-packs_stmt ::= 'packs' ( 'component' | 'system' ) IDENT
+packs_stmt      ::= 'packs' ( 'component' | 'system' ) IDENT
+
+deploy_on_stmt  ::= 'deploy' [ variant_ann ] [ env_ann ] 'on' 'compute' IDENT
 
 (* ── Deployment statements ──────────────────────────────────── *)
 
 bind_stmt        ::= 'bind' [ variant_ann ] [ env_ann ] '$' IDENT 'via' IDENT '{' { instance_field } '}'
 
 bind_config_stmt ::= 'bind' [ variant_ann ] [ env_ann ] 'config' IDENT 'to' 'store' [ IDENT ] IDENT
-
-deploy_stmt      ::= 'deploy' [ variant_ann ] [ env_ann ] 'bundle' IDENT 'on' 'compute' IDENT
 
 (* ── Deployment blocks ───────────────────────────────────────── *)
 
@@ -863,7 +1015,6 @@ deployment_body   ::= { deployment_member }
 
 deployment_member ::= bind_stmt
                     | bind_config_stmt
-                    | deploy_stmt
                     | nested_deployment_block
 
 nested_deployment_block ::= 'deployment' [ variant_ann ] [ env_ann ] ( 'system' | 'component' ) IDENT
