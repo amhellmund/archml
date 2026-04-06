@@ -147,16 +147,33 @@ class _SemanticAnalyzer:
         errors: list[SemanticError] = []
 
         # Build the sets of names available in this file's scope.
-        local_type_names: set[str] = (
-            {e.name for e in self._file.enums}
-            | {t.name for t in self._file.types}
-            | {i.name for i in self._file.interfaces}
-        )
+        local_field_type_names: set[str] = {e.name for e in self._file.enums} | {t.name for t in self._file.types}
         local_interface_defs: dict[str, InterfaceDef] = {i.name: i for i in self._file.interfaces}
-        imported_names: set[str] = {name for imp in self._file.imports for name in imp.entities}
+
+        # Imported names use the local alias when present.
+        imported_names: set[str] = {imp.aliases.get(name, name) for imp in self._file.imports for name in imp.entities}
+
+        # For field type checks: only types and enums are valid (not interfaces).
+        # When resolved imports are available, filter to only type/enum imports.
+        # Without resolution we are permissive — the kind is not yet known.
+        if self._resolved is not None:
+            imported_field_type_names: set[str] = set()
+            for imp in self._file.imports:
+                path = imp.source_path
+                if path in self._resolved:
+                    resolved_file = self._resolved[path]
+                    resolved_type_enum_names = {e.name for e in resolved_file.enums} | {
+                        t.name for t in resolved_file.types
+                    }
+                    for entity_name in imp.entities:
+                        if entity_name in resolved_type_enum_names:
+                            imported_field_type_names.add(imp.aliases.get(entity_name, entity_name))
+        else:
+            imported_field_type_names = imported_names
 
         # Combined sets used for reference resolution.
-        all_type_names = local_type_names | imported_names
+        all_field_type_names = local_field_type_names | imported_field_type_names
+        all_type_names = local_field_type_names | {i.name for i in self._file.interfaces} | imported_names
         all_interface_plain_names = {i.name for i in self._file.interfaces} | imported_names
 
         # 0. Check that all description fields are valid markdown.
@@ -179,7 +196,9 @@ class _SemanticAnalyzer:
         for type_def in self._file.types:
             errors.extend(_check_field_names(f"type '{type_def.name}'", type_def.fields, self._filename))
             errors.extend(
-                _check_type_refs_in_fields(f"type '{type_def.name}'", type_def.fields, all_type_names, self._filename)
+                _check_type_refs_in_fields(
+                    f"type '{type_def.name}'", type_def.fields, all_field_type_names, self._filename
+                )
             )
 
         # 4. Check internals of each interface definition.
@@ -189,7 +208,7 @@ class _SemanticAnalyzer:
                 _check_type_refs_in_fields(
                     f"interface '{iface_def.name}'",
                     iface_def.fields,
-                    all_type_names,
+                    all_field_type_names,
                     self._filename,
                 )
             )
@@ -559,22 +578,23 @@ def _assign_system_qualified_names(system: System, prefix: str | None) -> None:
 
 
 def _check_duplicate_imports(arch_file: ArchFile, filename: str | None = None) -> list[SemanticError]:
-    """Check that no entity name is imported from more than one source path.
+    """Check that no local name is introduced more than once by import statements.
 
-    An entity name that appears in multiple ``from ... import`` statements
-    (whether from the same source path or different ones) is reported as an
-    error, because it would create an ambiguous binding in the current file's
-    scope.
+    The local name for an imported entity is its alias when an ``as`` clause is
+    present, otherwise the original entity name.  A local name that appears in
+    multiple ``from ... import`` statements is reported as an error because it
+    would create an ambiguous binding in the current file's scope.
     """
-    seen: dict[str, str] = {}  # entity name -> first source path
+    seen: dict[str, str] = {}  # local name -> first source path
     errors: list[SemanticError] = []
     for imp in arch_file.imports:
         for name in imp.entities:
-            if name in seen:
+            local_name = imp.aliases.get(name, name)
+            if local_name in seen:
                 errors.append(
                     SemanticError(
                         message=(
-                            f"Duplicate import name '{name}': already imported from '{seen[name]}'"
+                            f"Duplicate import name '{local_name}': already imported from '{seen[local_name]}'"
                             f", cannot also import from '{imp.source_path}'"
                         ),
                         filename=filename,
@@ -582,7 +602,7 @@ def _check_duplicate_imports(arch_file: ArchFile, filename: str | None = None) -
                     )
                 )
             else:
-                seen[name] = imp.source_path
+                seen[local_name] = imp.source_path
     return errors
 
 

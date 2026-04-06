@@ -13,6 +13,7 @@ from archml.model.entities import (
     InterfaceDef,
     InterfaceRef,
     System,
+    TypeDef,
 )
 from archml.model.types import FieldDef, ListTypeRef, NamedTypeRef
 
@@ -212,7 +213,8 @@ interface Response {
 """)
 
     def test_interface_used_as_type_ref_in_field(self) -> None:
-        _assert_clean("""
+        _assert_error(
+            """
 interface Config {
     host: String
     port: Int
@@ -221,7 +223,9 @@ interface Config {
 type ServiceSpec {
     config: Config
 }
-""")
+""",
+            "Undefined type 'Config'",
+        )
 
 
 # ###############
@@ -463,11 +467,14 @@ type Item { name: String }
 type Order { item: Item }
 """)
 
-    def test_interface_used_as_field_type_ok(self) -> None:
-        _assert_clean("""
+    def test_interface_cannot_be_used_as_field_type(self) -> None:
+        _assert_error(
+            """
 interface Config { host: String }
 type Spec { config: Config }
-""")
+""",
+            "Undefined type 'Config'",
+        )
 
     def test_undefined_type_in_list(self) -> None:
         _assert_error(
@@ -1022,6 +1029,82 @@ component Bar {
         messages = _messages(errors)
         assert any("Duplicate import name 'Foo'" in m for m in messages)
         assert any("refers to unknown interface 'UnknownInterface'" in m for m in messages)
+
+    def test_alias_avoids_duplicate_import_error(self) -> None:
+        # Importing the same original name under different local aliases is fine
+        # as long as local names are unique.
+        _assert_clean("""
+from path/a import Foo as FooA
+from path/b import Foo as FooB
+""")
+
+    def test_alias_collision_still_reported_as_duplicate(self) -> None:
+        # Two different originals aliased to the same local name clash.
+        errors = _analyze("""
+from path/a import Foo as Bar
+from path/b import Baz as Bar
+""")
+        assert any("Duplicate import name 'Bar'" in e.message for e in errors)
+
+
+# ###############
+# Import Aliases
+# ###############
+
+
+class TestImportAliases:
+    """Tests for 'from ... import Symbol as local_name' syntax."""
+
+    def test_alias_is_used_as_local_name(self) -> None:
+        # Entity is referenced by its alias, not its original name.
+        _assert_clean("""
+from types/shapes import Circle as Shape
+
+interface Drawing {
+    shape: Shape
+}
+""")
+
+    def test_original_name_not_in_scope_after_alias(self) -> None:
+        # After aliasing, the original name is not in scope.
+        _assert_error(
+            """
+from types/shapes import Circle as Shape
+
+interface Drawing {
+    shape: Circle
+}
+""",
+            "Undefined type 'Circle'",
+        )
+
+    def test_alias_local_name_recognized_as_interface(self) -> None:
+        # An aliased interface import is recognized in requires/provides.
+        _assert_clean("""
+from ifaces/payment import PaymentRequest as PayReq
+
+component Processor {
+    requires PayReq
+}
+""")
+
+    def test_interface_as_field_type_rejected_with_resolved_imports(self) -> None:
+        """An imported interface name may not be used as a field type once imports are resolved."""
+        from archml.model.entities import ImportDeclaration
+
+        # Simulate a resolved import where 'Config' is an interface, not a type.
+        resolved_file = ArchFile(interfaces=[InterfaceDef(name="Config", fields=[])])
+        arch_file = ArchFile(
+            imports=[ImportDeclaration(source_path="ifaces/config", entities=["Config"])],
+            types=[
+                TypeDef(
+                    name="ServiceSpec",
+                    fields=[FieldDef(name="cfg", type=NamedTypeRef(name="Config"))],
+                )
+            ],
+        )
+        errors = analyze(arch_file, resolved_imports={"ifaces/config": resolved_file})
+        assert any("Undefined type 'Config'" in e.message for e in errors)
 
 
 # ###############

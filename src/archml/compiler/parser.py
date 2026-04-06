@@ -256,12 +256,12 @@ class _Parser:
     # ------------------------------------------------------------------
 
     def _parse_import(self) -> ImportDeclaration:
-        """Parse: from <path> import <entity1> [, <entity2>]*"""
+        """Parse: from <path> import <entity> [as <alias>] [, ...]"""
         from_tok = self._expect(TokenType.FROM)
         path = self._parse_import_path()
         self._expect(TokenType.IMPORT)
-        entities = self._parse_identifier_list()
-        return ImportDeclaration(source_path=path, entities=entities, line=from_tok.line)
+        entities, aliases = self._parse_import_item_list()
+        return ImportDeclaration(source_path=path, entities=entities, aliases=aliases, line=from_tok.line)
 
     def _parse_import_path(self) -> str:
         """Parse an import path such as 'interfaces/order' or '@repo/path/to/file'."""
@@ -281,16 +281,29 @@ class _Parser:
             parts.append(seg.value)
         return "/".join(parts)
 
-    def _parse_identifier_list(self) -> list[str]:
-        """Parse a comma-separated list of identifiers."""
-        names: list[str] = []
-        first = self._expect_name()
-        names.append(first.value)
+    def _parse_import_item_list(self) -> tuple[list[str], dict[str, str]]:
+        """Parse a comma-separated list of import items, each optionally aliased.
+
+        Each item has the form ``IDENT ['as' IDENT]``.  Returns a tuple of
+        ``(entities, aliases)`` where *entities* lists the original names and
+        *aliases* maps each aliased original name to its local alias.
+        """
+        entities: list[str] = []
+        aliases: dict[str, str] = {}
+
+        def _parse_one() -> None:
+            name_tok = self._expect_name()
+            entities.append(name_tok.value)
+            if self._check(TokenType.AS):
+                self._advance()  # consume 'as'
+                alias_tok = self._expect_name()
+                aliases[name_tok.value] = alias_tok.value
+
+        _parse_one()
         while self._check(TokenType.COMMA):
             self._advance()  # consume ,
-            name = self._expect_name()
-            names.append(name.value)
-        return names
+            _parse_one()
+        return entities, aliases
 
     # ------------------------------------------------------------------
     # Enum declarations

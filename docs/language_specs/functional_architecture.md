@@ -100,7 +100,8 @@ type OrderItem {
 }
 ```
 
-Custom types, enums, and interfaces can all be used as field types.
+Custom types and enums can be used as field types.
+Interfaces define port contracts and cannot appear as field types inside `type` or `interface` bodies.
 
 ---
 
@@ -384,7 +385,16 @@ from dir/subdir/file import Entity
 from dir/subdir/file import Entity1, Entity2
 ```
 
-The path omits the `.farchml` extension and is resolved using the repository's virtual filesystem mapping (see [Repository Configuration](#repository-configuration)).
+An optional `as` clause assigns a local alias, avoiding name conflicts across files:
+
+```
+from dir/subdir/file import Entity as LocalName
+from dir/subdir/file import Entity1 as E1, Entity2
+```
+
+After aliasing, only the local alias is in scope — the original name is not visible.
+
+The path omits the `.farchml` extension. The first path segment is a mnemonic name declared in the workspace configuration (see [Workspace Configuration](#workspace-configuration)).
 
 ### `use`
 
@@ -413,45 +423,57 @@ When the `@` prefix is omitted, the current repository is assumed.
 
 ---
 
-## Repository Configuration
-
-Each repository declares a virtual filesystem mapping in `archml.yaml` at the repository root. The mapping assigns short names to paths relative to the repository root:
-
-```yaml
-# archml.yaml
-roots:
-  interfaces: src/architecture/interfaces
-  components:  src/architecture/components
-  systems:     src/architecture/systems
-  types:       src/architecture/types
-```
-
-An import path is resolved by matching its first segment against declared root names.
-For example, `interfaces/order` resolves to `src/architecture/interfaces/order.farchml`.
-A path whose first segment matches no declared root is a resolution error.
-Roots can map to individual files as well as directories.
-
----
-
 ## Workspace Configuration
 
-Cross-repository imports require `archml-workspace.yaml` at the workspace root:
+Every repository is also a workspace. A single `.archml-workspace.yaml` file at the repository root serves as both the per-repository configuration and the multi-repository workspace configuration.
+
+Each entry in `source-imports` declares a **mnemonic** — a short name that maps to a directory path within the repository.
+Import paths are resolved by matching their first segment against the declared mnemonic names.
 
 ```yaml
-# archml-workspace.yaml
-name: my-workspace
+# .archml-workspace.yaml
+name: myapp
 build-directory: .archml-build
 source-imports:
-  - name: payments
-    git: https://github.com/example/payments-service
-    ref: main
-  - name: inventory
-    git: https://github.com/example/inventory-service
-    ref: v2.3.0
+  - name: interfaces
+    local-path: src/architecture/interfaces
+  - name: services
+    local-path: src/architecture/services
+  - name: types
+    local-path: src/architecture/types
 ```
 
-The `name` under `source-imports` matches the `@repo-name` prefix in import paths.
-`ref` pins the import to a specific branch, tag, or commit.
+With this configuration, `from interfaces/order import OrderRequest` resolves to
+`src/architecture/interfaces/order.farchml`.
+A path whose first segment matches no declared mnemonic is a resolution error.
+
+`archml init` creates a minimal workspace file with a single `source-imports` entry pointing to the repository root:
+
+```yaml
+name: myapp
+build-directory: .archml-build
+source-imports:
+  - name: myapp
+    local-path: .
+```
+
+Cross-repository imports reference a remote repository by the `@repo-name` prefix.
+Remote repositories are declared in `source-imports` with a `git-repository` URL and a `revision`:
+
+```yaml
+source-imports:
+  - name: interfaces
+    local-path: src/architecture/interfaces
+  - name: payments
+    git-repository: https://github.com/example/payments-service
+    revision: main
+  - name: inventory
+    git-repository: https://github.com/example/inventory-service
+    revision: v2.3.0
+```
+
+The `name` under `source-imports` matches the `@repo-name` prefix in cross-repository import paths.
+`revision` pins the import to a specific branch, tag, or commit; it is resolved to a commit SHA and stored in the lockfile.
 
 ---
 
@@ -504,9 +526,9 @@ statement   ::= import_stmt
 
 (* ── Imports and use ───────────────────────────────── *)
 
-import_stmt ::= 'from' import_path 'import' name_list
-import_path ::= [ '@' IDENT '/' ] IDENT { '/' IDENT }
-name_list   ::= IDENT { ',' IDENT }
+import_stmt  ::= 'from' import_path 'import' import_item { ',' import_item }
+import_path  ::= [ '@' IDENT '/' ] IDENT { '/' IDENT }
+import_item  ::= IDENT [ 'as' IDENT ]
 
 use_stmt    ::= 'use' entity_kind IDENT
 entity_kind ::= 'component' | 'system' | 'user'
@@ -567,7 +589,7 @@ type_expr   ::= primitive_type
 
 primitive_type ::= 'String' | 'Int' | 'Float' | 'Bool'
                  | 'Bytes'  | 'Timestamp' | 'Datetime'
-
+ via `bind config` (see [Deployment Architecture](deployment_architecture.md))
 (* ── Variants ───────────────────────────────────────── *)
 
 variant_ann ::= '<' IDENT { ',' IDENT } '>'

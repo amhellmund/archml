@@ -163,10 +163,17 @@ class System(ContainerEntity):
 
 
 class ImportDeclaration(BaseModel):
-    """An import statement that brings named entities from another file into scope."""
+    """An import statement that brings named entities from another file into scope.
+
+    ``entities`` lists the original names as they appear in the source file.
+    ``aliases`` maps each original name to its local alias when an ``as`` clause
+    is present (e.g. ``from path import Foo as Bar`` → ``aliases={"Foo": "Bar"}``).
+    The local name for entity ``E`` is ``aliases.get(E, E)``.
+    """
 
     source_path: str
     entities: list[str] = _Field(default_factory=list)
+    aliases: dict[str, str] = _Field(default_factory=dict)
     line: int = 0
 
 

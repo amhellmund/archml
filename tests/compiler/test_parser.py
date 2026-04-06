@@ -116,6 +116,28 @@ from components/order_service import OrderService
         result = _parse("from types import OrderItem, OrderStatus")
         assert result.imports[0].entities == ["OrderItem", "OrderStatus"]
 
+    def test_import_single_alias(self) -> None:
+        result = _parse("from types import OrderItem as Item")
+        imp = result.imports[0]
+        assert imp.entities == ["OrderItem"]
+        assert imp.aliases == {"OrderItem": "Item"}
+
+    def test_import_alias_mixed_with_plain(self) -> None:
+        result = _parse("from types import OrderItem as Item, OrderStatus")
+        imp = result.imports[0]
+        assert imp.entities == ["OrderItem", "OrderStatus"]
+        assert imp.aliases == {"OrderItem": "Item"}
+
+    def test_import_multiple_aliases(self) -> None:
+        result = _parse("from types import Foo as A, Bar as B")
+        imp = result.imports[0]
+        assert imp.entities == ["Foo", "Bar"]
+        assert imp.aliases == {"Foo": "A", "Bar": "B"}
+
+    def test_import_no_alias_has_empty_aliases(self) -> None:
+        result = _parse("from types import OrderItem")
+        assert result.imports[0].aliases == {}
+
 
 # ###############
 # Enum Declarations
