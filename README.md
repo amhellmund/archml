@@ -1,12 +1,15 @@
 # ArchML
 
-ArchML is a text-based DSL for defining software architecture next to your code. Architecture files use the `.farchml` extension, live in the repository, are version-controlled like any other source file, and stay in sync with the system they describe.
+ArchML is a text-based DSL for defining software architecture next to your code.
+Architecture files use the `.farchml` extension, live in the repository, are version-controlled like any other source file, and stay in sync with the system they describe.
 
 The core idea: define your architecture once as a model, then derive multiple views from it — interactive web diagrams, consistency reports, and embedded Sphinx documentation — without maintaining separate diagrams per tool.
 
 ## Why ArchML?
 
-Architecture documentation drifts. Visual tools like Enterprise Architect or ArchiMate live outside the codebase, so diagrams rot while the code moves on. Lightweight alternatives like Mermaid embed diagrams in Markdown, but each diagram is standalone — there is no shared model, no cross-diagram consistency, and no drill-down navigation.
+Architecture documentation drifts.
+Visual tools like Enterprise Architect or ArchiMate live outside the codebase, so diagrams rot while the code moves on.
+Lightweight alternatives like Mermaid embed diagrams in Markdown, but each diagram is standalone — there is no shared model, no cross-diagram consistency, and no drill-down navigation.
 
 ArchML sits between these extremes:
 
@@ -20,7 +23,8 @@ Three architecture domains are covered: **functional** (systems, components, int
 
 ## Quick Example
 
-A small e-commerce backend expressed in ArchML. The example shows the core principles: shared interfaces, a composite component with internal wiring, a user actor, and custom metadata attributes.
+A small e-commerce backend expressed in ArchML.
+The example shows the core principles: shared interfaces, a composite component with internal wiring, a user actor, and custom metadata attributes.
 
 ```
 # types.farchml — shared data contracts
@@ -67,8 +71,8 @@ system ECommerce {
 
     # Human actor — same port model as components
     user Customer {
-        provides OrderRequest
         requires OrderConfirmation
+        provides OrderRequest
     }
 
     # Composite component: internal structure is hidden behind exposed ports
@@ -119,9 +123,14 @@ system ECommerce {
 - **Internal wiring** — `connect` introduces a named channel (`$validation`) between sub-component ports. The channel is local to the enclosing scope.
 - **Exposure** — `expose` promotes a sub-component's port to the enclosing boundary. Every sub-component port must be either wired or exposed — the tooling reports a validation error otherwise.
 - **User actors** — `user` is a leaf node with the same port model as components.
-- **Custom attributes** — `@team: platform` and `@tags: critical, pci-scope` attach user-defined metadata. Values are comma-separated identifiers; the tooling does not interpret them.
+- **Custom attributes** — `@team: platform` and `@tags: critical, pci-scope` attach user-defined metadata.
+- Values are comma-separated identifiers; the tooling does not interpret them.
 
-Large architectures split across files with `from ... import`. `use component X` places an imported component inside a system without redefining it. Remote repositories are referenced with `@repo-name` prefixes for multi-repo workspaces. Variants (`<cloud, on_premise>`) model multiple configurations within a single file. `config DbConfig` declares an external configuration dependency resolved by the deployment layer.
+Large architectures split across files with `from ... import`.
+`use component X` places an imported component inside a system without redefining it.
+Remote repositories are referenced with `@repo-name` prefixes for multi-repo workspaces.
+Variants (`<cloud, on_premise>`) model multiple configurations within a single file.
+`config DbConfig` declares an external configuration dependency resolved by the deployment layer.
 
 ## Language at a Glance
 
@@ -164,7 +173,8 @@ uv add archml
 
 ### `archml init <name> <directory>`
 
-Initialize a new ArchML workspace. Creates `.archml-workspace.yaml` in the given directory with `<name>` as the workspace identity.
+Initialize a new ArchML workspace.
+Creates `.archml-workspace.yaml` in the given directory with `<name>` as the workspace identity.
 
 ```bash
 archml init my-service .
@@ -174,7 +184,9 @@ archml init my-service .
 
 ### `archml check [-C <directory>]`
 
-Parse and validate all `.farchml` files in the workspace. Reports dangling references, unwired ports, disconnected entities, and type definition cycles. Exits with a non-zero status if any errors are found.
+Parse and validate all `.farchml` files in the workspace.
+Reports dangling references, unwired ports, disconnected entities, and type definition cycles.
+Exits with a non-zero status if any errors are found.
 
 ```bash
 archml check
@@ -185,11 +197,13 @@ archml check -C /path/to/workspace
 
 ### `archml visualize <entity> <output> [-C <directory>]`
 
-Render a box diagram for a system or component and write it to a file. The entity path uses `::` as a separator for nested elements. Use `all` as the entity to render every top-level entity in a single diagram.
+Render a box diagram for a system or component and write it to a file.
+The entity path uses `::` as a separator for nested elements.
+Use `all` as the entity to render every top-level entity in a single diagram.
 
 ```bash
 archml visualize ECommerce diagram.svg
-archml visualize ECommerce::OrderService order_service.png
+archml visualize ECommerce::OrderService order_service.svg
 archml visualize all landscape.svg --depth 1
 archml visualize ECommerce diagram.svg --variant cloud
 ```
@@ -198,7 +212,8 @@ archml visualize ECommerce diagram.svg --variant cloud
 
 ### `archml export [-C <directory>] [-o <file>]`
 
-Generates a self-contained HTML file with the interactive architecture viewer. Supports drill-down navigation across all entities in the workspace.
+Generates a self-contained HTML file with the interactive architecture viewer.
+Supports drill-down navigation across all entities in the workspace.
 
 ```bash
 archml export
@@ -210,7 +225,8 @@ archml export -C /path/to/workspace -o viewer.html
 
 ### `archml update-remote [-C <directory>]`
 
-Resolve branch or tag references in the workspace configuration to their latest commit SHAs and write them to the lockfile (`.farchml-lockfile.yaml`). Run this to update pinned revisions.
+Resolve branch or tag references in the workspace configuration to their latest commit SHAs and write them to the lockfile (`.farchml-lockfile.yaml`).
+Run this to update pinned revisions.
 
 ```bash
 archml update-remote
@@ -220,17 +236,14 @@ archml update-remote
 
 ### `archml sync-remote [-C <directory>]`
 
-Download remote git repositories to the local sync directory at the commits pinned in the lockfile. Run `update-remote` first if the lockfile does not exist yet.
+Download remote git repositories to the local sync directory at the commits pinned in the lockfile.
+Run `update-remote` first if the lockfile does not exist yet.
 
 ```bash
 archml sync-remote
 ```
 
 ---
-
-## Project Status
-
-ArchML is in early development. The functional architecture domain is implemented: systems, components, users, interfaces, ports, channels, variants, `config` dependencies, external entities, and multi-file/multi-repo composition. Behavioral and deployment domains are planned.
 
 ## License
 
