@@ -1,0 +1,161 @@
+# Copyright Andi Hellmund
+# SPDX-License-Identifier: Apache-2.0
+
+# ── Example: Three-System Linear Pipeline ──────────────────────────────────
+#
+# A data producer (external) writes JSON batches to Azure Blob Storage.
+# A central batch processor (internal) reads them, scores them for anomalies,
+# and writes results back to blob storage.
+# A data consumer (external) reads the processed results for analytics.
+#
+# Two channels connect the three systems:
+#   $input_feed   — DataProducer  → BatchProcessor  (raw sensor batches)
+#   $output_feed  — BatchProcessor → DataConsumer   (processed records)
+#
+# Channel transport and identity wiring are defined in the companion
+# deployment file azure_blob_pipeline.darchml.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public Interface
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Enumerations ──────────────────────────────────────────────────────────────
+
+enum DataQuality {
+    """Classification of a raw sensor reading at ingestion time."""
+    Raw
+    Validated
+    Rejected
+}
+
+# ── Types ─────────────────────────────────────────────────────────────────────
+
+type SensorRecord {
+    """A single timestamped measurement from one IoT device."""
+    device_id:   String
+    timestamp:   Timestamp
+    temperature: Float
+    humidity:    Float
+    quality:     DataQuality
+}
+
+type ProcessedRecord {
+    """Scored and validated version of a sensor reading."""
+    device_id:    String
+    timestamp:    Timestamp
+    temperature:  Float
+    humidity:     Float
+    anomaly:      Bool
+    score:        Float
+}
+
+
+# ── Interfaces ────────────────────────────────────────────────────────────────
+
+interface InputMessage {
+    """Raw sensor batch submitted by the data producer as a JSON file."""
+    batch_id:    String
+    produced_at: Timestamp
+    records:     List<SensorRecord>
+}
+
+interface OutputMessage {
+    """Processed, anomaly-scored batch written by the batch processor."""
+    batch_id:      String
+    processed_at:  Timestamp
+    records:       List<ProcessedRecord>
+    anomaly_count: Int
+}
+
+# ── External systems ──────────────────────────────────────────────────────────
+
+external system DataProducer {
+    """
+    External IoT gateway that collects raw sensor readings from devices
+    and writes them to Azure Blob Storage as JSON batches.
+    The internal team does not own or deploy this system.
+    """
+    provides InputMessage
+}
+
+external system DataConsumerA {
+    """
+    Primary analytics platform that reads processed records from
+    Azure Blob Storage for dashboarding and alerting.
+    The internal team does not own or deploy this system.
+    """
+    requires OutputMessage
+}
+
+external system DataConsumerB {
+    """
+    Secondary analytics platform that reads the same processed records
+    for long-term reporting and archival.  Operates under a separate
+    managed identity from DataConsumerA — demonstrating per-consumer
+    access control on a shared output channel.
+    The internal team does not own or deploy this system.
+    """
+    requires OutputMessage
+}
+
+# ── Internal system ───────────────────────────────────────────────────────────
+
+system BatchProcessor {
+    """
+    Central processing system.  Reads raw sensor batches from the input
+    blob container, validates records, detects anomalies, and writes
+    scored results to the output blob container.
+
+    Deployed as a Docker container on Azure Batch; see the companion
+    deployment file for compute, registry, and identity configuration.
+    """
+
+    component Ingester {
+        """
+        Reads and deserialises raw JSON batches from blob storage.
+        Filters out records whose quality field is Rejected.
+        """
+        requires InputMessage
+        provides InputMessage as validated_batch
+    }
+
+    component AnomalyDetector {
+        """
+        Applies a statistical model to validated sensor readings.
+        Computes an anomaly score per record and sets the anomaly flag
+        when the score exceeds a configured threshold.
+        """
+        requires InputMessage as validated_batch
+        provides OutputMessage
+    }
+
+    connect Ingester.validated_batch -> $validation_pipe -> AnomalyDetector.validated_batch
+
+    expose Ingester.InputMessage
+    expose AnomalyDetector.OutputMessage
+}
+
+# ── Pipeline assembly ─────────────────────────────────────────────────────────
+
+system Pipeline {
+    """
+    Top-level linear pipeline: DataProducer writes raw sensor batches →
+    BatchProcessor ingests and scores them → two independent consumers
+    (DataConsumerA and DataConsumerB) read the results.
+
+    Both inter-system channels ($input_feed and $output_feed) are bound
+    to Azure Blob Storage JSON files in the companion deployment file.
+    Each participant accesses its channel endpoint under its own managed
+    identity, declared via access statements in the deployment file.
+    """
+
+    use system DataProducer
+    use system BatchProcessor
+    use system DataConsumerA
+    use system DataConsumerB
+
+    connect DataProducer.InputMessage    -> $input_feed  -> BatchProcessor.InputMessage
+    connect BatchProcessor.OutputMessage -> $output_feed
+    connect $output_feed                               -> DataConsumerA.OutputMessage
+    connect $output_feed                               -> DataConsumerB.OutputMessage
+}

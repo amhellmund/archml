@@ -405,6 +405,13 @@ body {
   text-decoration: underline;
 }
 
+.archml-md-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
 
 .archml-md-pre {
   background: #f1f5f9;

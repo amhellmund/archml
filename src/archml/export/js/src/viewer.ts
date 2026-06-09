@@ -887,11 +887,11 @@ function filterEntitiesByVariant(
 
 /**
  * Convert a Markdown string to safe HTML. Handles headings (#–###), fenced
- * code blocks (``` or ~~~), paragraphs, bold, italic, inline code, and
- * https/http links. Processes line-by-line so headings don't need blank-line
- * separation. All user content is HTML-escaped before expansion.
+ * code blocks (``` or ~~~), paragraphs, bold, italic, inline code, images,
+ * and https/http links. Processes line-by-line so headings don't need
+ * blank-line separation. All user content is HTML-escaped before expansion.
  */
-function renderMarkdown(md: string): string {
+export function renderMarkdown(md: string): string {
   // Dedent: find the minimum indentation of non-blank lines and strip it.
   const rawLines = md.split("\n");
   const minIndent = rawLines
@@ -989,6 +989,16 @@ function _renderInline(text: string): string {
   // 4. Italic: *text* (only single asterisks remaining after step 3)
   s = s.replace(/\*([^*]+)\*/g, (_, t) => `<em>${t}</em>`);
 
+  // 4b. Images: ![alt](src) — must run before links since the image syntax
+  // contains a link-like [alt](src). Relative paths (no scheme), http/https,
+  // and data:image URLs are allowed; any other scheme is dropped.
+  s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) => {
+    const rawUrl = url.trim();
+    if (!_isSafeImageUrl(rawUrl)) return "";
+    const safeUrl = rawUrl.replace(/"/g, "&quot;");
+    return `<img class="archml-md-img" src="${safeUrl}" alt="${alt}" />`;
+  });
+
   // 5. Links: [text](url) — only http/https URLs are allowed.
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
     const rawUrl = url.trim();
@@ -1000,4 +1010,17 @@ function _renderInline(text: string): string {
   s = s.replace(/\x00CODE(\d+)\x00/g, (_, idx) => codeSpans[parseInt(idx, 10)]);
 
   return s;
+}
+
+/**
+ * Return true if *url* is safe to use as an image source. Allows relative
+ * paths (no URL scheme), http/https URLs, and data:image URLs; rejects every
+ * other scheme (e.g. javascript:).
+ */
+function _isSafeImageUrl(url: string): boolean {
+  const scheme = url.match(/^([a-z][a-z0-9+.-]*):/i);
+  if (!scheme) return true; // relative path
+  const proto = scheme[1].toLowerCase();
+  if (proto === "http" || proto === "https") return true;
+  return /^data:image\//i.test(url);
 }

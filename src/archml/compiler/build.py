@@ -118,6 +118,28 @@ def compile_files(
     return _compile_in_waves(results, build_dir)
 
 
+def file_key(source_file: Path, source_import_map: dict[SourceImportKey, Path]) -> str:
+    """Return the canonical key for *source_file*.
+
+    This is the same key used to index the ``compiled`` mapping returned by
+    :func:`compile_files` (e.g. ``"myapp/types"`` or ``"@payments/lib/types"``).
+    Useful for correlating a source file's filesystem location with its entry
+    in the compiled workspace.
+
+    Args:
+        source_file: Absolute path to a ``.farchml`` source file.
+        source_import_map: Mapping from :class:`SourceImportKey` pairs to
+            absolute base paths (as passed to :func:`compile_files`).
+
+    Returns:
+        The canonical path key (extension stripped).
+
+    Raises:
+        CompilerError: If *source_file* is not under any configured base path.
+    """
+    return _rel_key(source_file, source_import_map)
+
+
 # ################
 # Implementation
 # ################

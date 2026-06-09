@@ -211,3 +211,28 @@ def test_uses_name_when_qualified_name_empty() -> None:
     data = _parse(build_viewer_payload(_files(Fallback=sys)))
     qnames = [e["qualified_name"] for e in data["entities"]]
     assert "Fallback" in qnames
+
+
+# -------- image resolver --------
+
+
+def test_descriptions_verbatim_without_resolver() -> None:
+    """Without an image_resolver, descriptions are emitted unchanged."""
+    comp = Component(name="C", qualified_name="C", description="![x](./a.png)")
+    data = _parse(build_viewer_payload({"f": ArchFile(components=[comp])}))
+    assert data["files"]["f"]["components"][0]["description"] == "![x](./a.png)"
+
+
+def test_image_resolver_rewrites_all_descriptions() -> None:
+    """The image_resolver is applied to every entity description, at any depth."""
+    child = Component(name="Cart", qualified_name="S::Cart", description="child ![c](c.png)")
+    parent = System(name="S", qualified_name="S", description="parent ![p](p.png)", components=[child])
+    compiled = {"f": ArchFile(systems=[parent])}
+
+    def fake_resolver(file_key: str, description: str) -> str:
+        return f"[{file_key}]{description.upper()}"
+
+    data = _parse(build_viewer_payload(compiled, image_resolver=fake_resolver))
+    sys_data = data["files"]["f"]["systems"][0]
+    assert sys_data["description"] == "[f]PARENT ![P](P.PNG)"
+    assert sys_data["components"][0]["description"] == "[f]CHILD ![C](C.PNG)"

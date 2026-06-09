@@ -42,8 +42,7 @@ identity AzureServicePrincipal {
 }
 
 store ContainerRegistry {
-    url:  String
-    auth: requires identity
+    url: String
 }
 
 compute AzureBatch {
@@ -80,8 +79,7 @@ identity AzureServicePrincipal PlatformPrincipal {
 }
 
 store ContainerRegistry PlatformACR {
-    url:  platform.azurecr.io
-    auth: PlatformPrincipal
+    url: platform.azurecr.io
 }
 
 compute AzureBatch OrderPool {
@@ -97,6 +95,9 @@ bundle ContainerImage OrderBundle {
     packs component OrderService
     packs component NotificationSidecar
 }
+
+# Access to stores is declared separately via access statements
+access OrderPool to PlatformACR using PlatformPrincipal
 ```
 
 The grammar is unambiguous: one name before `{` (or `extends`) is a schema definition; two names before `{` is an instance declaration.
@@ -223,16 +224,15 @@ identity PersonalAccessToken DatabricksToken {
 
 A `store` schema describes a repository for artifacts of any kind — credentials, secrets, configuration values, container images, packages, or any other named item.
 A store instance declares its available artifacts using `artifact` statements.
+Access to a store instance — and which identity is used — is expressed with `access` statements (see [Access Bindings](#access-bindings)), not with a field on the store schema itself.
 
 ```
 store ContainerRegistry {
-    url:  String
-    auth: requires identity
+    url: String
 }
 
 store AzureKeyVault {
     vault-url: String
-    auth:      requires identity
 }
 ```
 
@@ -245,7 +245,6 @@ Stores that serve as artifact repositories without individually named references
 ```
 store AzureKeyVault ProdVault {
     vault-url: Env:KEY_VAULT_URL
-    auth:      BootstrapPrincipal
 
     artifact platform-sp-secret
     artifact databricks-pat
@@ -253,10 +252,12 @@ store AzureKeyVault ProdVault {
 }
 
 store ContainerRegistry PlatformACR {
-    url:  platform.azurecr.io
-    auth: PlatformPrincipal
+    url: platform.azurecr.io
     # no artifact declarations — bundle schema holds the image name
 }
+
+access OrderPool  to ProdVault   using BootstrapPrincipal
+access OrderPool  to PlatformACR using PlatformPrincipal
 ```
 
 A store instance may also use `artifact *` to declare itself **open** — any `StoreName:name` reference is valid without an explicit declaration:
@@ -479,8 +480,8 @@ Omitting it accepts any store instance.
 
 ```
 deployment component Consumer {
-    bind config DbConfig to store AzureKeyVault ProdVault
-    bind config FeatureFlags to store AzureStorage AppConfigStore
+    bind config DbConfig     to store AzureKeyVault ProdVault
+    bind config FeatureFlags to store AzureStorage  AppConfigStore
 }
 ```
 
@@ -496,8 +497,70 @@ deployment[dev] component Consumer {
 }
 ```
 
+When the bound store requires an explicit identity, an `access` statement documents which principal reads from it at runtime.
+`access` statements are declarative and always optional — stores may be configured for open access at the infrastructure level without any language-level enforcement:
+
+```
+deployment[prod] component Consumer {
+    bind config DbConfig to store AzureKeyVault ProdVault
+}
+
+access[prod] Consumer to ProdVault using AppPrincipal
+```
+
 A `bind config` statement may only reference a `config` name declared on the same entity.
 Binding the same config name more than once within the same variant and environment combination is a validation error.
+
+---
+
+## Access Bindings
+
+An `access` statement declares that a named entity accesses a channel or store instance using a specific identity.
+It is the single mechanism for expressing all principal-to-resource relationships in the deployment layer.
+
+```
+access <Entity> to $<channel>   using <IdentityInstance>   (* channel access *)
+access <Entity> to <StoreName>  using <IdentityInstance>   (* store access   *)
+```
+
+The `$` sigil distinguishes a channel reference from a store instance name, consistent with `connect` and `bind`.
+
+### Channel Access
+
+For a channel declared in the functional architecture, each participating system or component that touches the channel must have a corresponding `access` statement.
+The access direction (read vs. write permission) is **inferred from the functional architecture**: a system whose port is on the `provides` side of the channel writes; a system whose port is on the `requires` side reads.
+This means a single channel with one provider and multiple consumers requires one `access` statement per participant, each with their own identity, without any ambiguity about direction.
+
+```
+# $output_feed: BatchProcessor provides, DataConsumerA and DataConsumerB require
+access BatchProcessor  to $output_feed using StorageIdentity       # inferred: writes
+access DataConsumerA   to $output_feed using ConsumerAIdentity     # inferred: reads
+access DataConsumerB   to $output_feed using ConsumerBIdentity     # inferred: reads
+```
+
+`access` statements for channels must appear inside the `deployment` block that matches the functional scope containing the channel — the same scoping rule as `bind`.
+
+### Store Access
+
+For a store instance, `access` statements declare which entities may access it and with which identity.
+There is no inferred direction for store access — the identity must carry the appropriate permissions externally (e.g., via Azure RBAC role assignments).
+Multiple `access` statements on the same store instance are valid and model distinct principals with distinct identities, such as separate pull and push credentials on a container registry.
+
+```
+access BatchPool     to BatchProcessorRegistry using AcrPullIdentity
+access CiCdPipeline  to BatchProcessorRegistry using AcrPushIdentity
+```
+
+`access` statements for stores may appear at the top level of a `.darchml` file or inside a `deployment` block.
+
+### Variant and Environment Annotations
+
+`access` statements accept the same optional `<variant>` and `[env]` annotations as other deployment statements:
+
+```
+access[prod] BatchProcessor to $output_feed using ProdStorageIdentity
+access[dev]  BatchProcessor to $output_feed using DevStorageIdentity
+```
 
 ---
 
@@ -559,6 +622,10 @@ Any conflict across deployment files (same channel bound twice, same entity depl
 **`bind` scope:** A `bind` statement may only reference a channel (`$name`) that is declared in the corresponding functional scope matched by the enclosing `deployment` block.
 Channels from inner or outer scopes are not accessible.
 
+**`access` scope (channels):** An `access ... to $channel` statement obeys the same scoping rule as `bind` — it must appear inside the `deployment` block whose functional scope contains the channel.
+
+**`access` scope (stores):** An `access ... to StoreName` statement may appear at the top level of a `.darchml` file or inside any `deployment` block.
+
 **`deploy` scope:** A `deploy` statement inside a `deployment system S` or `deployment component C` applies to `S` or `C` respectively.
 When the bundle packs a system via `packs system`, the `deploy` statement must appear inside the `deployment` block for that system.
 
@@ -600,12 +667,13 @@ Standard library definitions are **protected** — they cannot be redefined. Use
 | Schema                  | Fields                                                              | Notes                                                    |
 | ----------------------- | ------------------------------------------------------------------- | -------------------------------------------------------- |
 | `EnvSecretStore`        | *(none)*                                                            | Open (`artifact *`); reads from process environment      |
-| `AzureKeyVault`         | `vault-url: String`, `auth: requires identity AzureServicePrincipal` | Azure Key Vault; artifacts are secret names             |
-| `AzureContainerRegistry`| `url: String`, `auth: requires identity`                            | ACR; no named artifacts — bundle schema holds image name |
-| `AzureBlobStorage`      | `account: String`, `container: String`, `auth: requires identity`   | Azure Blob Storage container                             |
-| `DatabricksVolume`      | `workspace: String`, `catalog: String`, `schema: String`, `volume: String`, `auth: requires identity DatabricksPersonalAccessToken` | Unity Catalog volume |
+| `AzureKeyVault`         | `vault-url: String`                                                 | Azure Key Vault; artifacts are secret names              |
+| `AzureContainerRegistry`| `url: String`                                                       | ACR; no named artifacts — bundle schema holds image name |
+| `AzureBlobStorage`      | `account: String`, `container: String`                              | Azure Blob Storage container                             |
+| `DatabricksVolume`      | `workspace: String`, `catalog: String`, `schema: String`, `volume: String` | Unity Catalog volume                              |
 
-The standard library provides one `EnvSecretStore` instance named `Env`. It requires no `auth` and its `artifact *` declaration means any `Env:NAME` reference is valid without explicit declaration.
+Access to all store instances is declared via `access` statements (see [Access Bindings](#access-bindings)).
+The standard library provides one `EnvSecretStore` instance named `Env`. Its `artifact *` declaration means any `Env:NAME` reference is valid without explicit declaration; no `access` statement is required.
 
 ### Compute
 
@@ -862,10 +930,11 @@ from bundles import OrderBundle, FulfillmentBundle
 
 store AzureKeyVault ProdVault {
     vault-url: Env:KEY_VAULT_URL
-    auth:      BootstrapPrincipal
 
     artifact platform-sp-secret
 }
+
+access OrderService to ProdVault using BootstrapPrincipal
 
 deployment[prod] system sys::ECommerce {
 
@@ -908,6 +977,8 @@ deployment[prod] system sys::ECommerce {
 | `deploy on compute`   | Assigns a bundle instance to a compute target (`deploy on compute Name`); appears inside bundle instances. |
 | `bind`                | Binds a channel to a protocol instantiation (`bind $ch via Protocol { ... }`).                 |
 | `bind config`         | Resolves a functional `config` dependency to a store instance (`bind config X to store S`).    |
+| `access`              | Declares that an entity accesses a channel or store using a named identity (`access E to $ch using I` or `access E to Store using I`). |
+| `using`               | Names the identity instance in an `access` statement.                                          |
 | `deployment`          | Deployment block addressing a functional entity (`deployment system ns::Name { ... }`).        |
 | `via`                 | Names the protocol in a `bind` statement.                                                      |
 | `on`                  | Names the compute target in a `deploy on compute` statement.                                   |
@@ -933,6 +1004,7 @@ dstatement  ::= load_stmt
               | import_stmt
               | deploy_decl
               | deployment_block
+              | access_stmt
 
 (* ── Functional architecture load ───────────────────────────── *)
 
@@ -1003,6 +1075,10 @@ bind_stmt        ::= 'bind' [ variant_ann ] [ env_ann ] '$' IDENT 'via' IDENT '{
 
 bind_config_stmt ::= 'bind' [ variant_ann ] [ env_ann ] 'config' IDENT 'to' 'store' [ IDENT ] IDENT
 
+(* Channel access: '$' IDENT  — direction inferred from functional architecture *)
+(* Store access:   IDENT      — no direction; identity must carry required permissions *)
+access_stmt      ::= 'access' [ variant_ann ] [ env_ann ] IDENT 'to' ( '$' IDENT | IDENT ) 'using' IDENT
+
 (* ── Deployment blocks ───────────────────────────────────────── *)
 
 (* Top-level deployment blocks use a fully qualified entity path.             *)
@@ -1015,6 +1091,7 @@ deployment_body   ::= { deployment_member }
 
 deployment_member ::= bind_stmt
                     | bind_config_stmt
+                    | access_stmt
                     | nested_deployment_block
 
 nested_deployment_block ::= 'deployment' [ variant_ann ] [ env_ann ] ( 'system' | 'component' ) IDENT

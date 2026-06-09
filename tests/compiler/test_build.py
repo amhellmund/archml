@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from archml.compiler.artifact import ARTIFACT_SUFFIX, read_artifact
-from archml.compiler.build import CompilerError, compile_files
+from archml.compiler.build import CompilerError, compile_files, file_key
 
 # ###############
 # Test data directory
@@ -735,6 +735,30 @@ class TestReturnValue:
 
         result = compile_files([src / "app.farchml"], build, {("", "app"): src, ("", "ext"): lib})
         assert "ext/iface" in result
+
+
+# ###############
+# file_key helper
+# ###############
+
+
+class TestFileKey:
+    def test_matches_compiled_key(self, tmp_path: Path) -> None:
+        """file_key returns the same key compile_files uses to index a file."""
+        src = tmp_path / "src"
+        build = tmp_path / "build"
+        source = src / "subdir" / "myfile.farchml"
+        _write(source, "component C {}")
+
+        result = compile_files([source], build, {("", "app"): src})
+
+        assert file_key(source, {("", "app"): src}) == "app/subdir/myfile"
+        assert file_key(source, {("", "app"): src}) in result
+
+    def test_raises_when_outside_base_paths(self, tmp_path: Path) -> None:
+        """file_key raises CompilerError for a file under no configured base path."""
+        with pytest.raises(CompilerError):
+            file_key(tmp_path / "stray.farchml", {("", "app"): tmp_path / "src"})
 
 
 # ###############

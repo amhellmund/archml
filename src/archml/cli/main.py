@@ -8,7 +8,7 @@ import re
 import sys
 from pathlib import Path
 
-from archml.compiler.build import CompilerError, SourceImportKey, compile_files
+from archml.compiler.build import CompilerError, SourceImportKey, compile_files, file_key
 from archml.validation.checks import validate
 from archml.workspace.config import WorkspaceConfigError, load_workspace_config
 
@@ -374,7 +374,10 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
 
 def _cmd_export(args: argparse.Namespace) -> int:
     """Handle the export subcommand."""
+    import shutil
+
     from archml.export import build_viewer_payload
+    from archml.export.assets import ImageAssetResolver
     from archml.workspace.config import LocalPathImport
 
     template_path = _template_path()
@@ -424,15 +427,33 @@ def _cmd_export(args: argparse.Namespace) -> int:
         _print_errors(str(exc).splitlines())
         return 1
 
-    payload_json = build_viewer_payload(compiled)
+    output_path = Path(args.output)
+    assets_dirname = output_path.stem + "_assets"
+    assets_dir = output_path.parent / assets_dirname
+    # The assets dir is regenerated on every export; remove a stale one so
+    # images deleted from descriptions don't linger as orphans.
+    if assets_dir.exists():
+        shutil.rmtree(assets_dir)
+
+    source_dirs = {file_key(f, source_import_map): f.parent for f in archml_files}
+    resolver = ImageAssetResolver(
+        source_dirs=source_dirs,
+        workspace_root=directory,
+        assets_dir=assets_dir,
+        url_prefix=assets_dirname,
+    )
+    payload_json = build_viewer_payload(compiled, image_resolver=resolver.rewrite)
 
     template = template_path.read_text(encoding="utf-8")
     data_tag = f'<script id="archml-data" type="application/json">{payload_json}</script>'
     html = template.replace("<!-- ARCHML_DATA_PLACEHOLDER -->", data_tag)
 
-    output_path = Path(args.output)
     output_path.write_text(html, encoding="utf-8")
     print(f"Architecture viewer written to '{output_path}'.")
+    if resolver.copied_count:
+        print(f"Copied {resolver.copied_count} image(s) to '{assets_dir}'.")
+    for warning in resolver.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
     return 0
 
 

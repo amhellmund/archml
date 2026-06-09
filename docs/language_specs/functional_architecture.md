@@ -31,6 +31,13 @@ component OrderService {
 }
 ```
 
+Descriptions may embed images with the standard Markdown syntax `![alt](src)`. Image
+paths are resolved relative to the `.farchml` file that contains the description; a
+leading `/` anchors the path at the workspace root, while `http(s)://` and `data:`
+URLs are used as-is. When the architecture is exported to the standalone HTML viewer
+(`archml export`), referenced local images are copied into an assets directory next to
+the output file, so the viewer must be shared together with that assets directory.
+
 **Custom Attributes** attach metadata to any entity using the `@name: values` syntax.
 Values are comma-separated identifiers (no strings, no spaces within values).
 Attributes are user-defined; the tooling does not interpret them — they can express tags, ownership, or any other domain-specific classification.

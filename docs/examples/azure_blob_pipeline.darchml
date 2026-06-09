@@ -1,0 +1,198 @@
+# Copyright Andi Hellmund
+# SPDX-License-Identifier: Apache-2.0
+
+# ── Deployment: Three-System Linear Pipeline ───────────────────────────────
+#
+# Deployment architecture for the pipeline defined in
+# azure_blob_pipeline.farchml.
+#
+# Key decisions
+# ─────────────
+# 1. Both inter-system channels ($input_feed, $output_feed) are carried over
+#    Azure Blob Storage JSON files using the custom AzureBlobJsonFile protocol.
+#
+# 2. Each participant accesses its channel endpoint under its own managed
+#    identity, expressed via access statements.  The direction (read vs. write)
+#    is inferred from the functional architecture — no need to repeat it here:
+#
+#      DataProducer  → $input_feed   (provides → writer)  using DataProducerIdentity
+#      BatchProcessor → $input_feed  (requires → reader)  using StorageIdentity
+#      BatchProcessor → $output_feed (provides → writer)  using StorageIdentity
+#      DataConsumerA → $output_feed  (requires → reader)  using DataConsumerAIdentity
+#      DataConsumerB → $output_feed  (requires → reader)  using DataConsumerBIdentity
+#
+# 3. Container registry access uses a dedicated AcrPullIdentity, separate from
+#    the StorageIdentity used for data channels, following least privilege.
+#
+# 4. The Azure Batch account management plane is authenticated via a service
+#    principal (BatchAccountPrincipal), as required by the AzureBatch schema.
+
+load functional at azure_blob_pipeline as arch
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public Interface
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Custom transport protocol ─────────────────────────────────────────────────
+
+protocol AzureBlobJsonFile {
+    """
+    Transport binding for a JSON-formatted file in an Azure Blob Storage
+    container.  The blob-path field may be a fixed name or a strftime-style
+    template (e.g. records/%Y/%m/%d/batch.json) for time-partitioned writes.
+    Authentication is not part of the protocol — it is expressed per-participant
+    via access statements.
+    """
+    account:   String
+    container: String
+    blob-path: String
+}
+
+# ── Identities ────────────────────────────────────────────────────────────────
+
+identity AzureManagedIdentity DataProducerIdentity {
+    """
+    User-assigned managed identity of the external DataProducer.
+    Must hold Storage Blob Data Contributor on the input container.
+    The client-id is provided by the external team and referenced here
+    so that the RBAC grant can be expressed in the access statement below.
+    """
+    client-id: Env:DATA_PRODUCER_CLIENT_ID
+}
+
+identity AzureManagedIdentity DataConsumerAIdentity {
+    """
+    User-assigned managed identity of external DataConsumerA (primary analytics).
+    Must hold Storage Blob Data Reader on the output container.
+    """
+    client-id: Env:DATA_CONSUMER_A_CLIENT_ID
+}
+
+identity AzureManagedIdentity DataConsumerBIdentity {
+    """
+    User-assigned managed identity of external DataConsumerB (secondary reporting).
+    Must hold Storage Blob Data Reader on the output container.
+    Intentionally distinct from DataConsumerAIdentity — separate RBAC assignment.
+    """
+    client-id: Env:DATA_CONSUMER_B_CLIENT_ID
+}
+
+identity AzureManagedIdentity AcrPullIdentity {
+    """
+    User-assigned managed identity with AcrPull role on BatchProcessorRegistry.
+    Attached to Azure Batch pool nodes so that Docker can authenticate to ACR
+    without a stored secret.  Does NOT have any Storage Blob permissions.
+    """
+    client-id: Env:ACR_PULL_CLIENT_ID
+}
+
+identity AzureManagedIdentity StorageIdentity {
+    """
+    User-assigned managed identity for BatchProcessor's blob storage access.
+    Holds Storage Blob Data Reader on the input container (input-batches)
+    and Storage Blob Data Contributor on the output container (output-records).
+    Intentionally separate from AcrPullIdentity.
+    """
+    client-id: Env:STORAGE_CLIENT_ID
+}
+
+identity AzureServicePrincipal BatchAccountPrincipal {
+    """
+    Service principal used to authenticate the Azure Batch management plane
+    (job submission, pool resize).  Required by the AzureBatch compute schema.
+    """
+    tenant:    Env:AZURE_TENANT_ID
+    client-id: Env:BATCH_SP_CLIENT_ID
+    secret:    PipelineVault:batch-sp-secret
+}
+
+# ── Secrets store ─────────────────────────────────────────────────────────────
+
+store AzureKeyVault PipelineVault {
+    """Azure Key Vault that holds long-lived secrets for the pipeline."""
+    vault-url: Env:KEY_VAULT_URL
+
+    artifact batch-sp-secret
+}
+
+# ── Container registry ────────────────────────────────────────────────────────
+
+store AzureContainerRegistry BatchProcessorRegistry {
+    """
+    Azure Container Registry that hosts the BatchProcessor Docker image.
+    Pull access is granted exclusively through AcrPullIdentity.
+    """
+    url: Env:ACR_LOGIN_SERVER
+}
+
+# ── Compute ───────────────────────────────────────────────────────────────────
+
+compute AzureBatch BatchPool {
+    """
+    Azure Batch pool on which the BatchProcessor container runs.
+    Pool nodes carry AcrPullIdentity and StorageIdentity as user-assigned
+    managed identities (configured out-of-band on the pool).
+    The management plane is authenticated via BatchAccountPrincipal.
+    """
+    account: Env:AZURE_BATCH_ACCOUNT
+    pool:    processor-pool
+    auth:    BatchAccountPrincipal
+}
+
+# ── Bundle ────────────────────────────────────────────────────────────────────
+
+bundle ContainerImage ProcessorBundle {
+    """
+    Docker image that packages the entire BatchProcessor system.
+    Pulled from BatchProcessorRegistry (access declared below).
+    Deployed on BatchPool.
+    """
+    name:  batch-processor
+    tag:   Env:PROCESSOR_IMAGE_TAG
+    store: BatchProcessorRegistry
+    packs system BatchProcessor
+    deploy on compute BatchPool
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Implementation
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Store access ──────────────────────────────────────────────────────────────
+
+# BatchPool pulls the processor image from the container registry.
+access BatchPool to BatchProcessorRegistry using AcrPullIdentity
+
+# BatchPool (management plane) reads secrets from the key vault.
+access BatchPool to PipelineVault using BatchAccountPrincipal
+
+# ── Channel bindings and access ───────────────────────────────────────────────
+
+deployment system arch::Pipeline {
+    """
+    Binds both pipeline channels to Azure Blob Storage JSON files and
+    declares per-participant access.  Read vs. write direction is inferred
+    from the functional architecture for each access statement.
+    """
+
+    bind $input_feed via AzureBlobJsonFile {
+        account:   Env:STORAGE_ACCOUNT_NAME
+        container: input-batches
+        blob-path: batches/%Y/%m/%d/input.json
+    }
+
+    bind $output_feed via AzureBlobJsonFile {
+        account:   Env:STORAGE_ACCOUNT_NAME
+        container: output-records
+        blob-path: records/%Y/%m/%d/output.json
+    }
+
+    # $input_feed participants
+    access DataProducer   to $input_feed using DataProducerIdentity   # provides → writer
+    access BatchProcessor to $input_feed using StorageIdentity        # requires → reader
+
+    # $output_feed participants
+    access BatchProcessor to $output_feed using StorageIdentity       # provides → writer
+    access DataConsumerA  to $output_feed using DataConsumerAIdentity # requires → reader
+    access DataConsumerB  to $output_feed using DataConsumerBIdentity # requires → reader
+}
