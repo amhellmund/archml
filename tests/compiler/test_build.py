@@ -876,3 +876,71 @@ class TestParallelCompilation:
         mtimes_after_second = [_artifact(build, f"app/f{i}").stat().st_mtime for i in range(n)]
 
         assert mtimes_after_first == mtimes_after_second
+
+
+# ###############
+# Alias map (locally chosen import names)
+# ###############
+
+
+class TestAliasMap:
+    def test_alias_translates_to_canonical_identity(self, tmp_path: Path) -> None:
+        """A local alias in an @import resolves to the canonical repository identity."""
+        src = tmp_path / "src"
+        remote_lib = tmp_path / "remote" / "lib"
+        build = tmp_path / "build"
+
+        _write(remote_lib / "types.farchml", "interface X { v: Int }")
+        _write(src / "app.farchml", "from @pay/lib/types import X\ncomponent C { requires X }")
+
+        result = compile_files(
+            [src / "app.farchml"],
+            build,
+            {("app", "app"): src, ("@payments", "lib"): remote_lib},
+            alias_map={("app", "pay"): "@payments"},
+        )
+
+        # The dependency is keyed by the canonical identity, not the local alias.
+        assert "@payments/lib/types" in result
+        assert "@pay/lib/types" not in result
+
+    def test_distinct_aliases_unify_to_one_node(self, tmp_path: Path) -> None:
+        """Two importers aliasing the same remote differently share a single compiled node."""
+        src_a = tmp_path / "a"
+        src_b = tmp_path / "b"
+        remote_lib = tmp_path / "remote" / "lib"
+        build = tmp_path / "build"
+
+        _write(remote_lib / "types.farchml", "interface X { v: Int }")
+        _write(src_a / "a.farchml", "from @pa/lib/types import X\ncomponent CA { requires X }")
+        _write(src_b / "b.farchml", "from @pb/lib/types import X\ncomponent CB { requires X }")
+
+        result = compile_files(
+            [src_a / "a.farchml", src_b / "b.farchml"],
+            build,
+            {("ra", "a"): src_a, ("rb", "b"): src_b, ("@payments", "lib"): remote_lib},
+            alias_map={("ra", "pa"): "@payments", ("rb", "pb"): "@payments"},
+        )
+
+        assert "a/a" in result and "b/b" in result
+        # Both aliases collapse to the same canonical key — compiled exactly once.
+        remote_keys = [k for k in result if k.startswith("@")]
+        assert remote_keys == ["@payments/lib/types"]
+
+    def test_missing_alias_falls_back_to_literal_identity(self, tmp_path: Path) -> None:
+        """Without an alias entry, '@token' is treated as the canonical identity directly."""
+        src = tmp_path / "src"
+        remote_lib = tmp_path / "remote" / "lib"
+        build = tmp_path / "build"
+
+        _write(remote_lib / "types.farchml", "interface X { v: Int }")
+        _write(src / "app.farchml", "from @payments/lib/types import X\ncomponent C { requires X }")
+
+        # No alias_map: behaviour is identical to the historical direct reference.
+        result = compile_files(
+            [src / "app.farchml"],
+            build,
+            {("app", "app"): src, ("@payments", "lib"): remote_lib},
+        )
+
+        assert "@payments/lib/types" in result

@@ -56,6 +56,42 @@ def test_load_config_with_git_import(tmp_path):
     assert imp.name == "external"
     assert imp.git_repository == "https://github.com/example/repo"
     assert imp.revision == "main"
+    assert imp.path == "."  # defaults to the repository root
+
+
+def test_load_config_with_git_import_path(tmp_path):
+    """A git import may target a workspace at a repo-relative path."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "name: myworkspace\nbuild-directory: out\n"
+        "source-imports:\n"
+        "  - name: pay\n"
+        "    git-repository: https://github.com/example/monorepo\n"
+        "    revision: v1.0\n"
+        "    path: services/payments\n",
+        encoding="utf-8",
+    )
+
+    imp = load_workspace_config(cfg_file).source_imports[0]
+    assert isinstance(imp, GitPathImport)
+    assert imp.path == "services/payments"
+
+
+def test_error_duplicate_import_name_across_local_and_git(tmp_path):
+    """The same import name on a local and a git import is rejected."""
+    cfg_file = tmp_path / ".archml-workspace.yaml"
+    cfg_file.write_text(
+        "name: myworkspace\nbuild-directory: out\n"
+        "source-imports:\n"
+        "  - name: dup\n    local-path: .\n"
+        "  - name: dup\n"
+        "    git-repository: https://github.com/example/repo\n"
+        "    revision: main\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceConfigError, match="Duplicate source import name"):
+        load_workspace_config(cfg_file)
 
 
 def test_load_config_with_mixed_imports(tmp_path):

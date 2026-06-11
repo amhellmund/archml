@@ -4,12 +4,14 @@
 """Tests for the ArchML CLI entry point."""
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from archml.cli.main import main
+from tests.conftest import GitRepo
 
 # ###############
 # Public Interface
@@ -114,6 +116,11 @@ def test_init_succeeds_if_dir_exists_without_yaml(tmp_path: Path, monkeypatch: p
 # -------- check tests --------
 
 _MINIMAL_WORKSPACE = "name: src\nbuild-directory: .farchml-build\nsource-imports:\n  - name: src\n    local-path: .\n"
+
+
+def _remote_ws(name: str) -> str:
+    """Return a minimal remote workspace .archml-workspace.yaml with the given name."""
+    return f"name: {name}\nbuild-directory: build\nsource-imports:\n  - name: lib\n    local-path: lib\n"
 
 
 def test_check_with_no_archml_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -580,10 +587,10 @@ def test_sync_remote_fails_without_lockfile(tmp_path: Path, monkeypatch: pytest.
     assert exc_info.value.code == 1
 
 
-def test_sync_remote_fails_if_repo_not_in_lockfile(
+def test_sync_remote_fails_if_lockfile_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """sync-remote exits 1 when a configured repo is missing from the lockfile."""
+    """sync-remote exits 1 when the lockfile has no resolved repositories."""
     (tmp_path / ".archml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
@@ -597,7 +604,7 @@ def test_sync_remote_fails_if_repo_not_in_lockfile(
         main()
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
-    assert "not in the lockfile" in captured.err
+    assert "no resolved repositories" in captured.err
 
 
 def test_sync_remote_skips_repo_already_at_pinned_commit(
@@ -791,89 +798,95 @@ def test_update_remote_no_git_imports(tmp_path: Path, monkeypatch: pytest.Monkey
     assert exc_info.value.code == 0
 
 
-def test_update_remote_creates_lockfile_from_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """update-remote creates a lockfile by resolving branch revisions."""
-    resolved_commit = "c" * 40
+def test_update_remote_creates_lockfile_from_resolved_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_git_repo: Callable[[str], GitRepo]
+) -> None:
+    """update-remote resolves a tag to a commit and records the workspace identity."""
+    repo = make_git_repo("pay")
+    sha = repo.commit(
+        {".archml-workspace.yaml": _remote_ws("payments")},
+        tag="v1",
+    )
     (tmp_path / ".archml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
-        "  - name: payments\n"
-        "    git-repository: https://example.com/payments\n"
-        "    revision: main\n"
+        "  - name: pay\n"
+        f"    git-repository: {repo.path}\n"
+        "    revision: v1\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
-    with (
-        patch("archml.workspace.git_ops.resolve_commit", return_value=resolved_commit),
-        pytest.raises(SystemExit) as exc_info,
-    ):
+    with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
-    lockfile_path = tmp_path / ".farchml-lockfile.yaml"
-    assert lockfile_path.exists()
 
     from archml.workspace.lockfile import load_lockfile
 
-    lockfile = load_lockfile(lockfile_path)
+    lockfile = load_lockfile(tmp_path / ".farchml-lockfile.yaml")
     assert len(lockfile.locked_revisions) == 1
-    assert lockfile.locked_revisions[0].name == "payments"
-    assert lockfile.locked_revisions[0].commit == resolved_commit
-    assert lockfile.locked_revisions[0].revision == "main"
+    entry = lockfile.locked_revisions[0]
+    assert entry.name == "payments"  # identity comes from the imported workspace's own name
+    assert entry.commit == sha
+    assert entry.revision == "v1"
+    assert entry.path == "."
 
 
-def test_update_remote_pins_commit_hash_without_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """update-remote does not call git for revisions that are already commit hashes."""
+def test_update_remote_pins_commit_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_git_repo: Callable[[str], GitRepo]
+) -> None:
+    """update-remote accepts a full commit hash as the revision."""
+    repo = make_git_repo("lib")
+    sha = repo.commit({".archml-workspace.yaml": _remote_ws("lib")})
     (tmp_path / ".archml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: lib\n"
-        "    git-repository: https://example.com/lib\n"
-        f"    revision: {_COMMIT_40}\n"
+        f"    git-repository: {repo.path}\n"
+        f"    revision: {sha}\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
-    with (
-        patch("archml.workspace.git_ops.resolve_commit") as mock_resolve,
-        pytest.raises(SystemExit) as exc_info,
-    ):
+    with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
-    mock_resolve.assert_not_called()
 
     from archml.workspace.lockfile import load_lockfile
 
     lockfile = load_lockfile(tmp_path / ".farchml-lockfile.yaml")
-    assert lockfile.locked_revisions[0].commit == _COMMIT_40
+    assert lockfile.locked_revisions[0].commit == sha
 
 
-def test_update_remote_updates_existing_lockfile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """update-remote updates an existing lockfile with new commits."""
-    old_commit = "0" * 40
-    new_commit = "1" * 40
+def test_update_remote_overwrites_existing_lockfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_git_repo: Callable[[str], GitRepo]
+) -> None:
+    """update-remote replaces a stale lockfile with the freshly resolved closure."""
+    repo = make_git_repo("pay")
+    sha = repo.commit(
+        {".archml-workspace.yaml": _remote_ws("payments")},
+        tag="v1",
+    )
     (tmp_path / ".archml-workspace.yaml").write_text(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
-        "  - name: payments\n"
-        "    git-repository: https://example.com/payments\n"
-        "    revision: main\n"
+        "  - name: pay\n"
+        f"    git-repository: {repo.path}\n"
+        "    revision: v1\n"
     )
     (tmp_path / ".farchml-lockfile.yaml").write_text(
-        f"locked-revisions:\n"
-        f"  - name: payments\n"
-        f"    git-repository: https://example.com/payments\n"
-        f"    revision: main\n"
-        f"    commit: '{old_commit}'\n"
+        "locked-revisions:\n"
+        "  - name: payments\n"
+        f"    git-repository: {repo.path}\n"
+        "    revision: v1\n"
+        f"    commit: '{'0' * 40}'\n"
+        "    path: .\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
-    with (
-        patch("archml.workspace.git_ops.resolve_commit", return_value=new_commit),
-        pytest.raises(SystemExit) as exc_info,
-    ):
+    with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
 
     from archml.workspace.lockfile import load_lockfile
 
     lockfile = load_lockfile(tmp_path / ".farchml-lockfile.yaml")
-    assert lockfile.locked_revisions[0].commit == new_commit
+    assert lockfile.locked_revisions[0].commit == sha
 
 
 def test_update_remote_exits_1_on_resolution_failure(
@@ -917,12 +930,21 @@ def test_check_command_uses_synced_remote_repos(
         "name: myworkspace\nbuild-directory: build\n"
         "source-imports:\n"
         "  - name: src\n    local-path: .\n"
-        "  - name: payments\n"
+        "  - name: pay\n"
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
+    (tmp_path / ".farchml-lockfile.yaml").write_text(
+        "locked-revisions:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+        f"    commit: '{_COMMIT_40}'\n"
+        "    path: .\n"
+    )
+    # Import using the locally chosen alias 'pay', which maps to identity 'payments'.
     (tmp_path / "app.farchml").write_text(
-        "from @payments/api/types import PaymentAPI\ncomponent C { requires PaymentAPI }\n"
+        "from @pay/api/types import PaymentAPI\ncomponent C { requires PaymentAPI }\n"
     )
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
     with pytest.raises(SystemExit) as exc_info:
@@ -954,6 +976,14 @@ def test_check_command_loads_remote_repo_mnemonics(
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
+    (tmp_path / ".farchml-lockfile.yaml").write_text(
+        "locked-revisions:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+        f"    commit: '{_COMMIT_40}'\n"
+        "    path: .\n"
+    )
     # Import using the remote mnemonic: @payments/lib/types
     (tmp_path / "app.farchml").write_text(
         "from @payments/lib/types import PaymentType\ncomponent C { requires PaymentType }\n"
@@ -983,6 +1013,14 @@ def test_check_command_warns_on_invalid_remote_workspace_yaml(
         "    git-repository: https://example.com/payments\n"
         "    revision: main\n"
     )
+    (tmp_path / ".farchml-lockfile.yaml").write_text(
+        "locked-revisions:\n"
+        "  - name: payments\n"
+        "    git-repository: https://example.com/payments\n"
+        "    revision: main\n"
+        f"    commit: '{_COMMIT_40}'\n"
+        "    path: .\n"
+    )
     # Local file with no imports from @payments — compilation succeeds despite bad remote config.
     (tmp_path / "app.farchml").write_text("interface I { v: Int }\ncomponent C { provides I }\n")
     monkeypatch.setattr(sys, "argv", ["archml", "check", "--workspace", str(tmp_path)])
@@ -993,3 +1031,132 @@ def test_check_command_warns_on_invalid_remote_workspace_yaml(
     captured = capsys.readouterr()
     assert "Warning" in captured.out
     assert "No issues found." in captured.out
+
+
+# -------- remote workflow integration --------
+
+
+def test_remote_workflow_end_to_end(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    make_git_repo: Callable[[str], GitRepo],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """update-remote -> sync-remote -> check resolves a remote import via a local alias."""
+    upstream = make_git_repo("lib")
+    upstream.commit(
+        {
+            ".archml-workspace.yaml": (
+                "name: lib\nbuild-directory: build\nsource-imports:\n  - name: core\n    local-path: core\n"
+            ),
+            "core/types.farchml": "interface Token { v: Int }\n",
+        },
+        tag="v1",
+    )
+
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "name: app\nbuild-directory: .farchml-build\n"
+        "source-imports:\n"
+        "  - name: src\n    local-path: .\n"
+        "  - name: up\n"
+        f"    git-repository: {upstream.path}\n"
+        "    revision: v1\n"
+    )
+    # 'up' is a local alias; the canonical identity is the imported workspace name 'lib'.
+    (tmp_path / "app.farchml").write_text("from @up/core/types import Token\ncomponent C { requires Token }\n")
+
+    for command in ("update-remote", "sync-remote", "check"):
+        monkeypatch.setattr(sys, "argv", ["archml", command, "--workspace", str(tmp_path)])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0, f"{command} failed"
+
+    assert "No issues found." in capsys.readouterr().out
+
+    from archml.workspace.lockfile import load_lockfile
+
+    lockfile = load_lockfile(tmp_path / ".farchml-lockfile.yaml")
+    assert [e.name for e in lockfile.locked_revisions] == ["lib"]
+
+
+def test_remote_workflow_transitive_closure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    make_git_repo: Callable[[str], GitRepo],
+) -> None:
+    """update-remote records transitively reachable workspaces in the lockfile closure."""
+    leaf = make_git_repo("leaf")
+    leaf_sha = leaf.commit(
+        {
+            ".archml-workspace.yaml": (
+                "name: leaf\nbuild-directory: build\nsource-imports:\n  - name: core\n    local-path: core\n"
+            )
+        }
+    )
+    mid = make_git_repo("mid")
+    mid.commit(
+        {
+            ".archml-workspace.yaml": (
+                "name: mid\nbuild-directory: build\n"
+                "source-imports:\n"
+                "  - name: core\n    local-path: core\n"
+                "  - name: lf\n"
+                f"    git-repository: {leaf.path}\n"
+                f"    revision: {leaf_sha}\n"
+            )
+        },
+        tag="v1",
+    )
+
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "name: app\nbuild-directory: .farchml-build\n"
+        "source-imports:\n"
+        "  - name: src\n    local-path: .\n"
+        "  - name: md\n"
+        f"    git-repository: {mid.path}\n"
+        "    revision: v1\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+    from archml.workspace.lockfile import load_lockfile
+
+    lockfile = load_lockfile(tmp_path / ".farchml-lockfile.yaml")
+    assert {e.name for e in lockfile.locked_revisions} == {"mid", "leaf"}
+
+
+def test_update_remote_reports_conflict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    make_git_repo: Callable[[str], GitRepo],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """update-remote exits 1 when the same repo workspace is required at two commits."""
+    repo = make_git_repo("lib")
+    repo.commit(
+        {
+            ".archml-workspace.yaml": (
+                "name: lib\nbuild-directory: build\nsource-imports:\n  - name: core\n    local-path: core\n"
+            )
+        },
+        tag="v1",
+    )
+    repo.commit({"extra.txt": "x"}, tag="v2")
+
+    (tmp_path / ".archml-workspace.yaml").write_text(
+        "name: app\nbuild-directory: .farchml-build\n"
+        "source-imports:\n"
+        "  - name: a\n"
+        f"    git-repository: {repo.path}\n"
+        "    revision: v1\n"
+        "  - name: b\n"
+        f"    git-repository: {repo.path}\n"
+        "    revision: v2\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["archml", "update-remote", "--workspace", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    assert "conflict" in capsys.readouterr().err.lower()

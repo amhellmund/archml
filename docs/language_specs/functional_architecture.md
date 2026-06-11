@@ -418,15 +418,21 @@ The entity's exposed ports become available as `Entity.port_name` targets in `co
 
 ### Cross-Repository Imports
 
-To import from another repository, prefix the path with `@repo-name`:
+To import from another workspace, prefix the path with `@alias`:
 
 ```
 from @payments/services/payment import PaymentService
 from @inventory/services/stock  import StockManager
 ```
 
-`@repo-name` refers to a named repository declared in the workspace configuration.
+`@alias` is a **locally chosen name** declared in the workspace configuration that
+refers to an imported remote workspace.
 When the `@` prefix is omitted, the current repository is assumed.
+
+The alias is local to the importing workspace; the imported workspace's own `name:`
+is its **canonical identity**. Two workspaces that import the same remote (even under
+different aliases) therefore refer to the same architecture, and its entities are
+unified into a single model node.
 
 ---
 
@@ -464,8 +470,9 @@ source-imports:
     local-path: .
 ```
 
-Cross-repository imports reference a remote repository by the `@repo-name` prefix.
-Remote repositories are declared in `source-imports` with a `git-repository` URL and a `revision`:
+Cross-repository imports reference a remote workspace by the `@alias` prefix.
+Remote workspaces are declared in `source-imports` with a `git-repository` URL, a
+`revision`, and an optional repo-relative `path`:
 
 ```yaml
 source-imports:
@@ -475,12 +482,35 @@ source-imports:
     git-repository: https://github.com/example/payments-service
     revision: main
   - name: inventory
-    git-repository: https://github.com/example/inventory-service
+    git-repository: https://github.com/example/platform-monorepo
     revision: v2.3.0
+    path: services/inventory
 ```
 
-The `name` under `source-imports` matches the `@repo-name` prefix in cross-repository import paths.
-`revision` pins the import to a specific branch, tag, or commit; it is resolved to a commit SHA and stored in the lockfile.
+- `name` is the **local alias** used as the `@alias` prefix in import paths. It must be
+  unique within the workspace but is otherwise chosen freely by the importer.
+- `revision` pins the import to a branch, tag, or commit; it is resolved to a commit SHA
+  and stored in the lockfile.
+- `path` is the repository-relative path to the imported workspace directory (the
+  directory containing its own `.archml-workspace.yaml`). It defaults to the repository
+  root, so a single repository may host **multiple workspaces** at different paths, each
+  imported under its own alias.
+
+Each imported workspace's identity is its own `name:`. The resolved reference
+`(repository, commit, path)` is the unit used for conflict detection.
+
+#### Transitive resolution and conflicts
+
+Remote workspaces may themselves declare git imports. `archml update-remote` walks the
+**full transitive graph**, resolving and recording every reachable workspace in the
+lockfile (`.farchml-lockfile.yaml`). `archml sync-remote` then materialises that closure
+under the sync directory (one checkout per identity).
+
+Because each `(repository, path)` reference resolves to a single commit, the resolver
+rejects the **diamond problem**: if two packages in the graph require the same workspace
+at different commits, `update-remote` fails with a conflict error naming the conflicting
+requirers. (Two references to the same repository and commit via different sub-paths are
+allowed — they select different workspaces.)
 
 ---
 

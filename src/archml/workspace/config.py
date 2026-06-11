@@ -41,21 +41,30 @@ class LocalPathImport(BaseModel):
 
 
 class GitPathImport(BaseModel):
-    """A source import resolved from a git repository."""
+    """A source import resolved from a workspace inside a git repository.
+
+    *name* is a locally chosen mnemonic alias used in import statements
+    (``from @<name>/<mnemonic>/...``).  *path* is the repository-relative path
+    to the imported workspace directory (the directory containing its own
+    ``.archml-workspace.yaml``); it defaults to the repository root.  A single
+    repository may therefore host multiple workspaces, each imported under its
+    own alias by pointing at a different *path*.
+    """
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     name: str
     git_repository: str = Field(alias="git-repository")
     revision: str
+    path: str = "."
 
     @field_validator("name")
     @classmethod
     def validate_mnemonic_name(cls, v: str) -> str:
-        """Validate repo name: lowercase letter, then alphanumeric/dash/underscore."""
+        """Validate alias name: lowercase letter, then alphanumeric/dash/underscore."""
         if not _MNEMONIC_RE.match(v):
             raise ValueError(
-                f"Invalid repo name '{v}': must start with a lowercase letter "
+                f"Invalid import name '{v}': must start with a lowercase letter "
                 "followed by lowercase letters, digits, hyphens, or underscores (no slashes)"
             )
         return v

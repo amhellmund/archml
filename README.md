@@ -225,7 +225,8 @@ archml export -C /path/to/workspace -o viewer.html
 
 ### `archml update-remote [-C <directory>]`
 
-Resolve branch or tag references in the workspace configuration to their latest commit SHAs and write them to the lockfile (`.farchml-lockfile.yaml`).
+Resolve the full transitive graph of remote git imports, pinning each branch or tag reference to a commit SHA, and write the resulting closure to the lockfile (`.farchml-lockfile.yaml`).
+Fails with a conflict error if two packages require the same workspace `(repository, path)` at different commits.
 Run this to update pinned revisions.
 
 ```bash
@@ -236,7 +237,7 @@ archml update-remote
 
 ### `archml sync-remote [-C <directory>]`
 
-Download remote git repositories to the local sync directory at the commits pinned in the lockfile.
+Download every workspace in the resolved closure to the local sync directory at the commits pinned in the lockfile.
 Run `update-remote` first if the lockfile does not exist yet.
 
 ```bash

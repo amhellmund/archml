@@ -209,7 +209,15 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_check(args: argparse.Namespace) -> int:
     """Handle the check subcommand."""
-    from archml.workspace.config import GitPathImport, LocalPathImport, find_workspace_root
+    from archml.workspace.config import (
+        WORKSPACE_CONFIG_FILENAME,
+        GitPathImport,
+        LocalPathImport,
+        find_workspace_root,
+        load_workspace_config,
+    )
+    from archml.workspace.lockfile import LOCKFILE_NAME, LockfileError, load_lockfile
+    from archml.workspace.resolve import ResolvedRepo, build_alias_map
 
     directory = Path(args.workspace).resolve()
 
@@ -241,25 +249,56 @@ def _cmd_check(args: argparse.Namespace) -> int:
     sync_dir = directory / config.remote_sync_directory
 
     # Build the source import map: SourceImportKey(repo, mnemonic) -> absolute base path.
-    # Local mnemonics use config.name as repo; remote repos use "@name".
+    # Local mnemonics use config.name as repo; remote workspaces use "@<identity>"
+    # where the identity is the imported workspace's own name (from the lockfile
+    # closure produced by 'archml update-remote').
     source_import_map: dict[SourceImportKey, Path] = {}
 
     for imp in config.source_imports:
         if isinstance(imp, LocalPathImport):
             source_import_map[SourceImportKey(config.name, imp.name)] = (directory / imp.local_path).resolve()
-        elif isinstance(imp, GitPathImport):
-            repo_dir = (sync_dir / imp.name).resolve()
-            if repo_dir.exists():
-                remote_workspace_yaml = repo_dir / ".archml-workspace.yaml"
-                if remote_workspace_yaml.exists():
-                    try:
-                        remote_config = load_workspace_config(remote_workspace_yaml)
-                        for remote_imp in remote_config.source_imports:
-                            if isinstance(remote_imp, LocalPathImport):
-                                mnemonic_path = (repo_dir / remote_imp.local_path).resolve()
-                                source_import_map[SourceImportKey(f"@{imp.name}", remote_imp.name)] = mnemonic_path
-                    except WorkspaceConfigError as exc:
-                        print(f"Warning: could not load workspace config from remote '{imp.name}': {exc}")
+
+    has_git_imports = any(isinstance(imp, GitPathImport) for imp in config.source_imports)
+    closure: list[ResolvedRepo] = []
+    lockfile_path = directory / LOCKFILE_NAME
+    if lockfile_path.exists():
+        try:
+            lockfile = load_lockfile(lockfile_path)
+        except LockfileError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        for entry in lockfile.locked_revisions:
+            closure.append(
+                ResolvedRepo(
+                    identity=entry.name,
+                    git_repository=entry.git_repository,
+                    revision=entry.revision,
+                    commit=entry.commit,
+                    path=entry.path,
+                )
+            )
+    elif has_git_imports:
+        print(
+            "Warning: remote git imports are configured but no lockfile was found. "
+            "Run 'archml update-remote' and 'archml sync-remote' first."
+        )
+
+    for repo in closure:
+        workspace_dir = (sync_dir / repo.identity / repo.path).resolve()
+        remote_workspace_yaml = workspace_dir / WORKSPACE_CONFIG_FILENAME
+        if not remote_workspace_yaml.exists():
+            continue
+        try:
+            remote_config = load_workspace_config(remote_workspace_yaml)
+        except WorkspaceConfigError as exc:
+            print(f"Warning: could not load workspace config from remote '{repo.identity}': {exc}")
+            continue
+        for remote_imp in remote_config.source_imports:
+            if isinstance(remote_imp, LocalPathImport):
+                mnemonic_path = (workspace_dir / remote_imp.local_path).resolve()
+                source_import_map[SourceImportKey(f"@{repo.identity}", remote_imp.name)] = mnemonic_path
+
+    alias_map = build_alias_map(config, sync_dir, closure)
 
     # Scan only files under local mnemonic paths (repo == config.name, i.e. not remote).
     local_mnemonic_paths = {base_path for key, base_path in source_import_map.items() if key.repo == config.name}
@@ -277,7 +316,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     print(f"Checking {len(archml_files)} architecture file(s)...")
     try:
-        compiled = compile_files(archml_files, build_dir, source_import_map)
+        compiled = compile_files(archml_files, build_dir, source_import_map, alias_map)
     except CompilerError as exc:
         _print_errors(str(exc).splitlines())
         return 1
@@ -507,39 +546,38 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    locked_by_name = {entry.name: entry for entry in lockfile.locked_revisions}
+    if not lockfile.locked_revisions:
+        print(
+            "Error: lockfile has no resolved repositories. Run 'archml update-remote' first.",
+            file=sys.stderr,
+        )
+        return 1
+
     sync_dir = directory / config.remote_sync_directory
 
+    # Materialise every workspace in the resolved closure (keyed by its canonical
+    # identity), including transitive dependencies that are not direct imports.
     has_errors = False
-    for imp in git_imports:
-        if imp.name not in locked_by_name:
-            print(
-                f"Error: '{imp.name}' is not in the lockfile. Run 'archml update-remote' first.",
-                file=sys.stderr,
-            )
-            has_errors = True
-            continue
-
-        pinned_commit = locked_by_name[imp.name].commit
-        target_dir = sync_dir / imp.name
+    for entry in lockfile.locked_revisions:
+        target_dir = sync_dir / entry.name
 
         try:
             current = get_current_commit(target_dir)
         except GitError as exc:
-            print(f"Error: cannot check current state of '{imp.name}': {exc}", file=sys.stderr)
+            print(f"Error: cannot check current state of '{entry.name}': {exc}", file=sys.stderr)
             has_errors = True
             continue
 
-        if current == pinned_commit:
-            print(f"  {imp.name}: already at {pinned_commit[:8]}")
+        if current == entry.commit:
+            print(f"  {entry.name}: already at {entry.commit[:8]}")
             continue
 
-        print(f"  {imp.name}: syncing to {pinned_commit[:8]}...")
+        print(f"  {entry.name}: syncing to {entry.commit[:8]}...")
         try:
-            clone_at_commit(imp.git_repository, pinned_commit, target_dir)
-            print(f"  {imp.name}: done.")
+            clone_at_commit(entry.git_repository, entry.commit, target_dir)
+            print(f"  {entry.name}: done.")
         except GitError as exc:
-            print(f"Error: failed to sync '{imp.name}': {exc}", file=sys.stderr)
+            print(f"Error: failed to sync '{entry.name}': {exc}", file=sys.stderr)
             has_errors = True
 
     return 1 if has_errors else 0
@@ -548,15 +586,8 @@ def _cmd_sync_remote(args: argparse.Namespace) -> int:
 def _cmd_update_remote(args: argparse.Namespace) -> int:
     """Handle the update-remote subcommand."""
     from archml.workspace.config import GitPathImport, find_workspace_root
-    from archml.workspace.git_ops import GitError, is_commit_hash, resolve_commit
-    from archml.workspace.lockfile import (
-        LOCKFILE_NAME,
-        LockedRevision,
-        Lockfile,
-        LockfileError,
-        load_lockfile,
-        save_lockfile,
-    )
+    from archml.workspace.lockfile import LOCKFILE_NAME, Lockfile, LockfileError, save_lockfile
+    from archml.workspace.resolve import DependencyResolutionError, resolve_closure
 
     directory = Path(args.workspace).resolve()
 
@@ -588,51 +619,39 @@ def _cmd_update_remote(args: argparse.Namespace) -> int:
         print("No remote git repositories configured. Nothing to update.")
         return 0
 
-    lockfile_path = directory / LOCKFILE_NAME
-    if lockfile_path.exists():
-        try:
-            lockfile = load_lockfile(lockfile_path)
-        except LockfileError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 1
-    else:
-        lockfile = Lockfile()
+    sync_dir = directory / config.remote_sync_directory
 
-    locked_by_name = {entry.name: entry for entry in lockfile.locked_revisions}
-
-    has_errors = False
-    for imp in git_imports:
-        if is_commit_hash(imp.revision):
-            commit = imp.revision
-            print(f"  {imp.name}: pinned at {commit[:8]} (commit hash, no update needed)")
-        else:
-            print(f"  {imp.name}: resolving '{imp.revision}'...")
-            try:
-                commit = resolve_commit(imp.git_repository, imp.revision)
-                print(f"  {imp.name}: resolved to {commit[:8]}")
-            except GitError as exc:
-                print(f"Error: failed to resolve '{imp.name}': {exc}", file=sys.stderr)
-                has_errors = True
-                continue
-
-        locked_by_name[imp.name] = LockedRevision.model_validate(
-            {
-                "name": imp.name,
-                "git-repository": imp.git_repository,
-                "revision": imp.revision,
-                "commit": commit,
-            }
-        )
-
-    if has_errors:
+    print("Resolving remote dependency graph...")
+    try:
+        closure = resolve_closure(config, sync_dir)
+    except DependencyResolutionError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    lockfile.locked_revisions = list(locked_by_name.values())
+    lockfile = Lockfile.model_validate(
+        {
+            "locked-revisions": [
+                {
+                    "name": repo.identity,
+                    "git-repository": repo.git_repository,
+                    "revision": repo.revision,
+                    "commit": repo.commit,
+                    "path": repo.path,
+                }
+                for repo in closure.repos
+            ]
+        }
+    )
+
+    lockfile_path = directory / LOCKFILE_NAME
     try:
         save_lockfile(lockfile, lockfile_path)
     except LockfileError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Lockfile updated: {lockfile_path}")
+    for repo in closure.repos:
+        location = repo.git_repository + (f" (path '{repo.path}')" if repo.path != "." else "")
+        print(f"  {repo.identity}: {repo.commit[:8]} from {location} @ {repo.revision}")
+    print(f"Lockfile updated: {lockfile_path} ({len(closure.repos)} workspace(s) in closure)")
     return 0

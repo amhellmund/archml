@@ -20,7 +20,12 @@ class LockfileError(Exception):
 
 
 class LockedRevision(BaseModel):
-    """A pinned commit entry for a remote git repository."""
+    """A pinned entry for one resolved workspace in the transitive closure.
+
+    *name* is the canonical workspace identity (the ``name:`` declared by the
+    imported workspace), *path* is the repository-relative path to that
+    workspace, and *commit* is the resolved 40-character commit SHA.
+    """
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -28,6 +33,7 @@ class LockedRevision(BaseModel):
     git_repository: str = Field(alias="git-repository")
     revision: str
     commit: str
+    path: str = "."
 
 
 class Lockfile(BaseModel):

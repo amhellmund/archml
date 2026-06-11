@@ -70,6 +70,41 @@ def test_load_lockfile_with_single_entry(tmp_path):
     assert entry.commit == _COMMIT_A
 
 
+def test_locked_revision_path_defaults_to_root(tmp_path):
+    """An entry without an explicit path defaults to the repository root."""
+    lf = tmp_path / LOCKFILE_NAME
+    lf.write_text(
+        "locked-revisions:\n"
+        f"  - name: payments\n"
+        f"    git-repository: https://example.com/payments\n"
+        f"    revision: main\n"
+        f"    commit: {_COMMIT_A}\n",
+        encoding="utf-8",
+    )
+
+    assert load_lockfile(lf).locked_revisions[0].path == "."
+
+
+def test_save_and_reload_lockfile_preserves_path(tmp_path):
+    """The repo-relative workspace path round-trips through save/load."""
+    lf = tmp_path / LOCKFILE_NAME
+    lockfile = Lockfile(
+        locked_revisions=[
+            LockedRevision(
+                name="payments",
+                git_repository="https://example.com/monorepo",
+                revision="v1.0",
+                commit=_COMMIT_A,
+                path="services/payments",
+            )
+        ]
+    )
+
+    save_lockfile(lockfile, lf)
+    assert "path: services/payments" in lf.read_text(encoding="utf-8")
+    assert load_lockfile(lf).locked_revisions[0].path == "services/payments"
+
+
 def test_load_lockfile_with_multiple_entries(tmp_path):
     """A lockfile with multiple revision entries is parsed correctly."""
     lf = tmp_path / LOCKFILE_NAME

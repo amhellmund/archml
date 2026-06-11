@@ -79,6 +79,7 @@ def compile_files(
     files: list[Path],
     build_dir: Path,
     source_import_map: dict[SourceImportKey, Path],
+    alias_map: dict[tuple[str, str], str] | None = None,
 ) -> dict[str, ArchFile]:
     """Compile a list of .farchml source files in parallel.
 
@@ -104,6 +105,11 @@ def compile_files(
             Import paths of the form ``mnemonic/rel`` are resolved by
             looking up ``(source_repo, mnemonic)`` and appending *rel*.
             Remote imports ``@repo/mnemonic/rel`` use ``("@repo", mnemonic)``.
+        alias_map: Optional ``(source_repo, alias) -> "@identity"`` mapping that
+            translates the locally chosen alias in a remote import to the
+            canonical repository identity.  When omitted, the ``@token`` in an
+            import is treated as the canonical identity directly (the historical
+            behaviour), so purely local workspaces are unaffected.
 
     Returns:
         A mapping from canonical path keys (e.g. ``"myapp/types"`` or
@@ -114,7 +120,7 @@ def compile_files(
         CompilerError: On parse errors, missing imports, unsupported remote
             imports, semantic errors, or circular dependencies.
     """
-    results = _discover_all(files, build_dir, source_import_map)
+    results = _discover_all(files, build_dir, source_import_map, alias_map or {})
     return _compile_in_waves(results, build_dir)
 
 
@@ -158,8 +164,12 @@ class _ParseResult:
     arch_file: ArchFile
     """Parsed (or cache-loaded) model."""
 
-    dep_items: list[tuple[str, Path]] = field(default_factory=list)
-    """``(dep_key, dep_source_path)`` pairs for each declared import."""
+    dep_items: list[tuple[str, str, Path]] = field(default_factory=list)
+    """``(literal_import, canonical_key, dep_source_path)`` triples per import.
+
+    *literal_import* is the import string exactly as written in the source
+    (e.g. ``"@pay/lib/types"``); *canonical_key* is the alias-independent key
+    used in the compiled graph (e.g. ``"@payments/lib/types"``)."""
 
     is_cached: bool = False
     """True when *arch_file* was loaded from an existing up-to-date artifact."""
@@ -259,6 +269,7 @@ def _resolve_import_source(
     import_path: str,
     source_import_map: dict[SourceImportKey, Path],
     source_repo: str,
+    alias_map: dict[tuple[str, str], str],
 ) -> Path:
     """Resolve an import path to the absolute path of the ``.farchml`` source file.
 
@@ -284,7 +295,7 @@ def _resolve_import_source(
         slash1 = import_path.find("/", 1)
         if slash1 == -1:
             raise CompilerError(f"Invalid remote import '{import_path}': expected '@repo/mnemonic/path' format")
-        repo_id = import_path[:slash1]  # e.g. "@payments"
+        alias = import_path[1:slash1]  # e.g. "payments" (the local alias, without "@")
         rest = import_path[slash1 + 1 :]  # e.g. "lib/types" or "lib/shared/types"
         slash2 = rest.find("/")
         if slash2 == -1:
@@ -294,6 +305,10 @@ def _resolve_import_source(
             )
         mnemonic = rest[:slash2]  # e.g. "lib"
         path = rest[slash2 + 1 :]  # e.g. "types" or "shared/types"
+        # Translate the locally chosen alias to the canonical repository
+        # identity.  Falls back to the literal "@alias" when no alias is
+        # registered, preserving behaviour for direct canonical references.
+        repo_id = alias_map.get((source_repo, alias), f"@{alias}")
         key = SourceImportKey(repo_id, mnemonic)
         if key not in source_import_map:
             raise CompilerError(
@@ -322,6 +337,7 @@ def _parse_one(
     key: str,
     build_dir: Path,
     source_import_map: dict[SourceImportKey, Path],
+    alias_map: dict[tuple[str, str], str],
 ) -> _ParseResult:
     """Parse or load one .farchml file and compute its direct dependency paths.
 
@@ -338,18 +354,18 @@ def _parse_one(
 
     if _is_up_to_date(source_path, artifact):
         arch_file = read_artifact(artifact)
-        dep_items: list[tuple[str, Path]] = []
+        dep_items: list[tuple[str, str, Path]] = []
         deps_valid = True
         for imp in arch_file.imports:
             try:
-                dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo)
+                dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo, alias_map)
             except CompilerError:
                 deps_valid = False
                 break
             if not dep_source.exists():
                 deps_valid = False
                 break
-            dep_items.append((imp.source_path, dep_source))
+            dep_items.append((imp.source_path, _rel_key(dep_source, source_import_map), dep_source))
         if deps_valid:
             return _ParseResult(
                 key=key,
@@ -372,12 +388,12 @@ def _parse_one(
 
     dep_items = []
     for imp in arch_file.imports:
-        dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo)
+        dep_source = _resolve_import_source(imp.source_path, source_import_map, source_repo, alias_map)
         if not dep_source.exists():
             raise CompilerError(
                 f"Dependency '{imp.source_path}' of '{source_path}' not found (expected '{dep_source}')"
             )
-        dep_items.append((imp.source_path, dep_source))
+        dep_items.append((imp.source_path, _rel_key(dep_source, source_import_map), dep_source))
 
     return _ParseResult(
         key=key,
@@ -392,6 +408,7 @@ def _discover_all(
     files: list[Path],
     build_dir: Path,
     source_import_map: dict[SourceImportKey, Path],
+    alias_map: dict[tuple[str, str], str],
 ) -> dict[str, _ParseResult]:
     """Parse all source files and their transitive dependencies in parallel.
 
@@ -423,16 +440,16 @@ def _discover_all(
         future_map: dict[Future[_ParseResult], str] = {}
         with ThreadPoolExecutor() as executor:
             for src, k in batch:
-                fut = executor.submit(_parse_one, src, k, build_dir, source_import_map)
+                fut = executor.submit(_parse_one, src, k, build_dir, source_import_map, alias_map)
                 future_map[fut] = k
         # All futures are complete after the executor context exits.
         for fut, k in future_map.items():
             result = fut.result()  # re-raises any CompilerError from the thread
             results[k] = result
-            for dep_key, dep_path in result.dep_items:
-                if dep_key not in enqueued:
-                    enqueued.add(dep_key)
-                    to_process.append((dep_path, dep_key))
+            for _literal, canonical_key, dep_path in result.dep_items:
+                if canonical_key not in enqueued:
+                    enqueued.add(canonical_key)
+                    to_process.append((dep_path, canonical_key))
 
     return results
 
@@ -462,7 +479,7 @@ def _compile_one(
     if result.is_cached:
         return result.arch_file
 
-    resolved_imports = {dep_key: compiled_deps[dep_key] for dep_key, _ in result.dep_items}
+    resolved_imports = {literal: compiled_deps[canonical_key] for literal, canonical_key, _ in result.dep_items}
 
     errors = analyze(
         result.arch_file,
@@ -498,7 +515,9 @@ def _compile_in_waves(
     remaining = set(results.keys())
 
     while remaining:
-        wave = {key for key in remaining if all(dep_key in compiled for dep_key, _ in results[key].dep_items)}
+        wave = {
+            key for key in remaining if all(canonical_key in compiled for _, canonical_key, _ in results[key].dep_items)
+        }
 
         if not wave:
             cycle = ", ".join(sorted(remaining))
