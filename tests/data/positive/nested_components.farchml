@@ -40,6 +40,8 @@ component OrderService {
         provides OrderConfirmation
     }
 
+    channel validation: ValidationResult
+
     connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
 
     expose Validator.OrderRequest

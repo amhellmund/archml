@@ -9,6 +9,7 @@ Converts a token stream produced by the scanner into an ArchFile semantic model.
 from archml.compiler.scanner import Token, TokenType, tokenize
 from archml.model.entities import (
     ArchFile,
+    ChannelDef,
     Component,
     ConfigRef,
     ConnectDef,
@@ -221,6 +222,8 @@ class _Parser:
             result.types.append(self._parse_type_def())
         elif tok.type == TokenType.INTERFACE:
             result.interfaces.append(self._parse_interface(parent_variants=[]))
+        elif tok.type == TokenType.CHANNEL:
+            result.channels.append(self._parse_channel_def(parent_variants=[]))
         elif tok.type == TokenType.COMPONENT:
             result.components.append(self._parse_component(is_external=False, parent_variants=[]))
         elif tok.type == TokenType.SYSTEM:
@@ -229,6 +232,29 @@ class _Parser:
             result.users.append(self._parse_user(is_external=False, parent_variants=[]))
         elif tok.type == TokenType.CONNECT:
             result.connects.append(self._parse_connect())
+        elif tok.type == TokenType.TEMPLATE:
+            self._advance()  # consume 'template'
+            inner = self._current()
+            if inner.type == TokenType.EXTERNAL:
+                raise ParseError(
+                    "'external' cannot be combined with 'template'",
+                    inner.line,
+                    inner.column,
+                    self._filename,
+                )
+            if inner.type == TokenType.COMPONENT:
+                result.components.append(self._parse_component(is_external=False, parent_variants=[], is_template=True))
+            elif inner.type == TokenType.SYSTEM:
+                result.systems.append(self._parse_system(is_external=False, parent_variants=[], is_template=True))
+            elif inner.type == TokenType.USER:
+                result.users.append(self._parse_user(is_external=False, parent_variants=[], is_template=True))
+            else:
+                raise ParseError(
+                    f"Expected 'component', 'system', or 'user' after 'template', got {inner.value!r}",
+                    inner.line,
+                    inner.column,
+                    self._filename,
+                )
         elif tok.type == TokenType.EXTERNAL:
             self._advance()  # consume 'external'
             inner = self._current()
@@ -466,11 +492,46 @@ class _Parser:
         return iface
 
     # ------------------------------------------------------------------
+    # Channel declarations
+    # ------------------------------------------------------------------
+
+    def _parse_channel_def(self, parent_variants: list[str]) -> ChannelDef:
+        """Parse: channel[<v1,v2>] Name : InterfaceName [{ [\"\"\"docstring\"\"\"] [@attr: val, ...]* }]"""
+        self._expect(TokenType.CHANNEL)
+        own_variants = self._parse_variant_annotation()
+        name_tok = self._expect_name()
+        self._expect(TokenType.COLON)
+        iface_tok = self._expect_name()
+        channel = ChannelDef(
+            name=name_tok.value,
+            interface=iface_tok.value,
+            variants=_union_variants(parent_variants, own_variants),
+            line=name_tok.line,
+        )
+        if self._check(TokenType.LBRACE):
+            self._advance()  # consume '{'
+            if self._check(TokenType.TRIPLE_STRING):
+                channel.description = self._advance().value
+            while self._check(TokenType.AT):
+                attr_name, attr_values = self._parse_attribute()
+                channel.attributes[attr_name] = attr_values
+            if not self._check(TokenType.RBRACE):
+                tok = self._current()
+                raise ParseError(
+                    f"Unexpected token {tok.value!r} in channel body",
+                    tok.line,
+                    tok.column,
+                    self._filename,
+                )
+            self._expect(TokenType.RBRACE)
+        return channel
+
+    # ------------------------------------------------------------------
     # Component declarations
     # ------------------------------------------------------------------
 
-    def _parse_component(self, is_external: bool, parent_variants: list[str]) -> Component:
-        """Parse: [external] component[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] ... }"""
+    def _parse_component(self, is_external: bool, parent_variants: list[str], is_template: bool = False) -> Component:
+        """Parse: [template] [external] component[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] ... }"""
         self._expect(TokenType.COMPONENT)
         own_variants = self._parse_variant_annotation()
         name_tok = self._expect_name()
@@ -479,6 +540,7 @@ class _Parser:
         comp = Component(
             name=name_tok.value,
             is_external=is_external,
+            is_template=is_template,
             variants=effective_variants,
             line=name_tok.line,
         )
@@ -504,6 +566,8 @@ class _Parser:
                 comp.configs.append(self._parse_config_decl())
             elif self._check(TokenType.INTERFACE):
                 comp.interfaces.append(self._parse_interface(parent_variants=effective_variants))
+            elif self._check(TokenType.CHANNEL):
+                comp.channels.append(self._parse_channel_def(parent_variants=effective_variants))
             elif self._check(TokenType.COMPONENT):
                 comp.components.append(self._parse_component(is_external=False, parent_variants=effective_variants))
             elif self._check(TokenType.CONNECT):
@@ -551,8 +615,8 @@ class _Parser:
     # System declarations
     # ------------------------------------------------------------------
 
-    def _parse_system(self, is_external: bool, parent_variants: list[str]) -> System:
-        """Parse: [external] system[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] ... }"""
+    def _parse_system(self, is_external: bool, parent_variants: list[str], is_template: bool = False) -> System:
+        """Parse: [template] [external] system[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] ... }"""
         self._expect(TokenType.SYSTEM)
         own_variants = self._parse_variant_annotation()
         name_tok = self._expect_name()
@@ -561,6 +625,7 @@ class _Parser:
         system = System(
             name=name_tok.value,
             is_external=is_external,
+            is_template=is_template,
             variants=effective_variants,
             line=name_tok.line,
         )
@@ -586,6 +651,8 @@ class _Parser:
                 system.configs.append(self._parse_config_decl())
             elif self._check(TokenType.INTERFACE):
                 system.interfaces.append(self._parse_interface(parent_variants=effective_variants))
+            elif self._check(TokenType.CHANNEL):
+                system.channels.append(self._parse_channel_def(parent_variants=effective_variants))
             elif self._check(TokenType.COMPONENT):
                 system.components.append(self._parse_component(is_external=False, parent_variants=effective_variants))
             elif self._check(TokenType.SYSTEM):
@@ -647,7 +714,7 @@ class _Parser:
         elif kind.type == TokenType.USER:
             self._advance()
             name_tok = self._expect_name()
-            return UserDef(name=name_tok.value, variants=list(parent_variants), line=name_tok.line)
+            return UserDef(name=name_tok.value, is_stub=True, variants=list(parent_variants), line=name_tok.line)
         else:
             raise ParseError(
                 f"Expected 'component', 'system', or 'user' after 'use', got {kind.value!r}",
@@ -660,11 +727,12 @@ class _Parser:
     # User declarations
     # ------------------------------------------------------------------
 
-    def _parse_user(self, is_external: bool, parent_variants: list[str]) -> UserDef:
-        """Parse: [external] user[<v1, v2>] <Name> { [\"\"\"docstring\"\"\"] [@attr: val, ...]* (requires|provides)* }
+    def _parse_user(self, is_external: bool, parent_variants: list[str], is_template: bool = False) -> UserDef:
+        """Parse a user declaration with optional ``template``/``external`` modifiers.
 
-        Users are leaf nodes: they support an optional docstring, attributes,
-        variant annotation, requires, and provides, but no sub-entities or channels.
+        Grammar: ``[template] [external] user[<v1, v2>] <Name> { ... }`` where the
+        body holds an optional docstring, attributes, and ``requires``/``provides``.
+        Users are leaf nodes: they support no sub-entities or channels.
         """
         self._expect(TokenType.USER)
         own_variants = self._parse_variant_annotation()
@@ -673,6 +741,7 @@ class _Parser:
         user = UserDef(
             name=name_tok.value,
             is_external=is_external,
+            is_template=is_template,
             variants=_union_variants(parent_variants, own_variants),
             line=name_tok.line,
         )

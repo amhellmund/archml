@@ -1909,3 +1909,107 @@ def test_variant_filters_all_diagram() -> None:
     assert "SvcV1" in child_labels
     assert "SvcBase" in child_labels
     assert "SvcV2" not in child_labels
+
+
+# ###############
+# ChannelDef metadata in topology
+# ###############
+
+
+def test_channel_def_entity_path_used_in_viz_node() -> None:
+    """A file-level ChannelDef makes the channel VizNode carry entity_path and description."""
+    from archml.model.entities import ArchFile, ChannelDef
+
+    a = Component(name="A", provides=[_iref("Msg")])
+    b = Component(name="B", requires=[_iref("Msg")])
+    ch_def = ChannelDef(name="events", interface="Msg", qualified_name="svc::events")
+    af = ArchFile(
+        channels=[ch_def],
+        components=[a, b],
+        connects=[_connect("A", "Msg", "B", "Msg", channel="events")],
+    )
+    diag = build_viz_diagram_all({"f": af})
+    channel_nodes = [n for n in diag.root.children if isinstance(n, VizNode) and n.kind == "channel"]
+    assert len(channel_nodes) == 1
+    assert channel_nodes[0].entity_path == "svc::events"
+
+
+def test_channel_def_description_used_in_viz_node() -> None:
+    """The ChannelDef description is copied onto the channel VizNode."""
+    from archml.model.entities import ArchFile, ChannelDef
+
+    a = Component(name="A", provides=[_iref("Msg")])
+    b = Component(name="B", requires=[_iref("Msg")])
+    ch_def = ChannelDef(name="events", interface="Msg", qualified_name="svc::events")
+    ch_def.description = "Domain event bus"
+    af = ArchFile(
+        channels=[ch_def],
+        components=[a, b],
+        connects=[_connect("A", "Msg", "B", "Msg", channel="events")],
+    )
+    diag = build_viz_diagram_all({"f": af})
+    channel_nodes = [n for n in diag.root.children if isinstance(n, VizNode) and n.kind == "channel"]
+    assert len(channel_nodes) == 1
+    assert channel_nodes[0].description == "Domain event bus"
+
+
+# ###############
+# Templates in the landscape
+# ###############
+
+
+def test_template_excluded_from_landscape() -> None:
+    """A top-level template is never rendered as its own landscape box."""
+    template_sys = System(name="Blueprint", is_template=True, components=[Component(name="Inner")])
+    normal_sys = System(name="Live", components=[Component(name="Worker")])
+    af = _arch_file(systems=[template_sys, normal_sys])
+    diag = build_viz_diagram_all({"f": af})
+    labels = {c.label for c in diag.root.children}
+    assert "Live" in labels
+    assert "Blueprint" not in labels
+
+
+def test_template_component_excluded_from_landscape() -> None:
+    template_comp = Component(name="RetryBuffer", is_template=True, provides=[_iref("Msg")])
+    normal_comp = Component(name="Worker", provides=[_iref("Msg")])
+    af = _arch_file(components=[template_comp, normal_comp])
+    diag = build_viz_diagram_all({"f": af})
+    labels = {c.label for c in diag.root.children}
+    assert "Worker" in labels
+    assert "RetryBuffer" not in labels
+
+
+def test_instantiated_template_renders_internals() -> None:
+    """After linking, a used template renders its internals inside the host."""
+    from archml.compiler.link import link
+    from archml.compiler.parser import parse
+    from archml.compiler.semantic_analysis import analyze
+
+    source = """
+interface PaymentRequest { id: String }
+template system Pipeline {
+    component Gateway { provides PaymentRequest }
+    component Processor { requires PaymentRequest }
+    channel pay: PaymentRequest
+    connect Gateway.PaymentRequest -> $pay -> Processor.PaymentRequest
+}
+system Orders {
+    use system Pipeline
+}
+"""
+    arch_file = parse(source)
+    analyze(arch_file, file_key="app")
+    compiled = link({"app": arch_file}).model
+
+    diag = build_viz_diagram_all(compiled)
+    # The template is hidden; the host is shown.
+    top_labels = {c.label for c in diag.root.children}
+    assert "Orders" in top_labels
+    assert "Pipeline" not in top_labels
+    # The Orders boundary contains an expanded Pipeline instance with internals.
+    orders = next(c for c in diag.root.children if c.label == "Orders")
+    assert isinstance(orders, VizBoundary)
+    pipeline = next(c for c in orders.children if c.label == "Pipeline")
+    assert isinstance(pipeline, VizBoundary)
+    inner_labels = {c.label for c in pipeline.children}
+    assert {"Gateway", "Processor"}.issubset(inner_labels)

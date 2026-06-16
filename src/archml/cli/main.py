@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from archml.compiler.build import CompilerError, SourceImportKey, compile_files, file_key
+from archml.compiler.link import link
 from archml.validation.checks import validate
 from archml.workspace.config import WorkspaceConfigError, load_workspace_config
 
@@ -321,8 +322,15 @@ def _cmd_check(args: argparse.Namespace) -> int:
         _print_errors(str(exc).splitlines())
         return 1
 
+    link_result = link(compiled)
+    for warning in link_result.warnings:
+        print(f"Warning: {warning}")
+    if link_result.errors:
+        _print_errors(link_result.errors)
+        return 1
+
     all_errors: list[str] = []
-    for arch_file in compiled.values():
+    for arch_file in link_result.model.values():
         result = validate(arch_file)
         for warning in result.warnings:
             print(f"Warning: {warning.message}")
@@ -381,6 +389,12 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
     except CompilerError as exc:
         _print_errors(str(exc).splitlines())
         return 1
+
+    link_result = link(compiled)
+    if link_result.errors:
+        _print_errors(link_result.errors)
+        return 1
+    compiled = link_result.model
 
     output_path = Path(args.output)
 
@@ -465,6 +479,12 @@ def _cmd_export(args: argparse.Namespace) -> int:
     except CompilerError as exc:
         _print_errors(str(exc).splitlines())
         return 1
+
+    link_result = link(compiled)
+    if link_result.errors:
+        _print_errors(link_result.errors)
+        return 1
+    compiled = link_result.model
 
     output_path = Path(args.output)
     assets_dirname = output_path.stem + "_assets"

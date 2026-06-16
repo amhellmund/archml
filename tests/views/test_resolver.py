@@ -132,3 +132,37 @@ def test_resolve_empty_files_raises() -> None:
     """Raises EntityNotFoundError when arch_files is empty."""
     with pytest.raises(EntityNotFoundError):
         resolve_entity({}, "SystemA")
+
+
+# -------- templates and instances --------
+
+
+def test_resolve_template_by_name() -> None:
+    """A template is still a top-level entity that can be resolved explicitly."""
+    blueprint = System(name="Blueprint", is_template=True)
+    files = _make_files(Blueprint=blueprint)
+    result = resolve_entity(files, "Blueprint")
+    assert result is blueprint
+
+
+def test_resolve_instantiated_template_path() -> None:
+    """After linking, an instance is a real child resolvable by its host path."""
+    from archml.compiler.link import link
+    from archml.compiler.parser import parse
+    from archml.compiler.semantic_analysis import analyze
+
+    source = """
+interface API { endpoint: String }
+template component Worker { provides API }
+system Orders {
+    use component Worker
+}
+"""
+    arch_file = parse(source)
+    analyze(arch_file, file_key="app")
+    compiled = link({"app": arch_file}).model
+
+    instance = resolve_entity(compiled, "Orders::Worker")
+    assert instance.name == "Worker"
+    assert instance.is_stub is False
+    assert [p.name for p in instance.provides] == ["API"]

@@ -2359,3 +2359,103 @@ class TestReservedKeywordNames:
 
     def test_keyword_as_use_system_name(self) -> None:
         self._assert_reserved("system S { use system component }")
+
+
+# ###############
+# channel declarations
+# ###############
+
+
+class TestChannelDeclarations:
+    """Tests for channel Name: Interface declarations."""
+
+    def test_channel_at_top_level(self) -> None:
+        af = _parse("interface Msg {} channel events: Msg")
+        assert len(af.channels) == 1
+        ch = af.channels[0]
+        assert ch.name == "events"
+        assert ch.interface == "Msg"
+
+    def test_channel_in_system_body(self) -> None:
+        af = _parse("system S { channel payment: PaymentRequest }")
+        ch = af.systems[0].channels[0]
+        assert ch.name == "payment"
+        assert ch.interface == "PaymentRequest"
+
+    def test_channel_in_component_body(self) -> None:
+        af = _parse("component C { channel sig: Signal }")
+        ch = af.components[0].channels[0]
+        assert ch.name == "sig"
+        assert ch.interface == "Signal"
+
+    def test_channel_with_body_description(self) -> None:
+        src = '''channel events: Msg {\n    """Carries all domain events."""\n}'''
+        af = _parse(src)
+        ch = af.channels[0]
+        assert ch.description == "Carries all domain events."
+
+    def test_channel_with_attribute(self) -> None:
+        af = _parse("channel events: Msg { @owner: platform }")
+        ch = af.channels[0]
+        assert "owner" in ch.attributes
+        assert ch.attributes["owner"] == ["platform"]
+
+    def test_channel_with_variant_annotation(self) -> None:
+        af = _parse("channel<cloud> events: Msg")
+        ch = af.channels[0]
+        assert "cloud" in ch.variants
+
+    def test_multiple_channels_in_system(self) -> None:
+        af = _parse("system S { channel a: A  channel b: B }")
+        names = [ch.name for ch in af.systems[0].channels]
+        assert names == ["a", "b"]
+
+
+# ###############
+# template declarations
+# ###############
+
+
+class TestTemplateDeclarations:
+    """Tests for the `template` modifier on top-level entities."""
+
+    def test_template_system(self) -> None:
+        af = _parse("template system Pipeline { component A { provides X } }")
+        sys = af.systems[0]
+        assert sys.is_template is True
+        assert sys.is_external is False
+        assert sys.name == "Pipeline"
+
+    def test_template_component(self) -> None:
+        af = _parse("template component RetryBuffer { requires Msg  provides Msg }")
+        comp = af.components[0]
+        assert comp.is_template is True
+
+    def test_template_user(self) -> None:
+        af = _parse("template user ServiceAccount { provides AdminCommand }")
+        user = af.users[0]
+        assert user.is_template is True
+
+    def test_non_template_entity_defaults_false(self) -> None:
+        af = _parse("system Plain { component A { provides X } }")
+        assert af.systems[0].is_template is False
+
+    def test_external_template_is_rejected(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("external template system Pipeline {}")
+
+    def test_template_external_is_rejected(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("template external system Pipeline {}")
+
+    def test_template_in_body_is_rejected(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("system Outer { template system Inner {} }")
+
+    def test_template_followed_by_invalid_keyword(self) -> None:
+        with pytest.raises(ParseError):
+            _parse("template interface I {}")
+
+    def test_use_user_sets_is_stub(self) -> None:
+        af = _parse("system S { use user Customer }")
+        assert af.systems[0].users[0].is_stub is True

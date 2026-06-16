@@ -121,6 +121,8 @@ interface DataFeed {
 }
 
 system Pipeline {
+    channel feed: DataFeed
+
     component Producer {
         provides DataFeed
     }
@@ -140,6 +142,8 @@ interface Signal {
 }
 
 component Router {
+    channel sig: Signal
+
     component Input {
         provides Signal
     }
@@ -615,6 +619,7 @@ class TestConnectValidation:
         _assert_clean("""
 interface DataFeed { payload: String }
 system Pipeline {
+    channel feed: DataFeed
     component Producer { provides DataFeed }
     component Consumer { requires DataFeed }
     connect Producer.DataFeed -> $feed -> Consumer.DataFeed
@@ -625,6 +630,7 @@ system Pipeline {
         _assert_clean("""
 interface Signal { value: Int }
 component Processor {
+    channel sig: Signal
     component Source { provides Signal }
     component Sink { requires Signal }
     connect Source.Signal -> $sig -> Sink.Signal
@@ -892,11 +898,14 @@ class TestDirectModelConstruction:
         assert any("Duplicate enum name 'Status'" in e.message for e in errors)
 
     def test_connect_with_known_interface_model(self) -> None:
+        from archml.model.entities import ChannelDef
+
         arch_file = ArchFile(
             interfaces=[InterfaceDef(name="Signal")],
             systems=[
                 System(
                     name="Sys",
+                    channels=[ChannelDef(name="sig", interface="Signal")],
                     connects=[
                         ConnectDef(
                             src_entity="A",
@@ -1318,6 +1327,7 @@ user Customer {
         _assert_clean("""
 interface OrderRequest {}
 system S {
+    channel orders: OrderRequest
     user Customer { provides OrderRequest }
     component OrderService { requires OrderRequest }
     connect Customer.OrderRequest -> $orders -> OrderService.OrderRequest
@@ -1493,6 +1503,7 @@ class TestTopLevelConnect:
         """connect at file scope with full Entity.port notation is valid."""
         _assert_clean("""
 interface API { endpoint: String }
+channel bus: API
 system Frontend { provides API }
 system Backend { requires API }
 
@@ -1527,6 +1538,7 @@ connect Frontend.API -> $bus -> Ghost.API
         """Top-level connects can reference any top-level entity (system or component)."""
         _assert_clean("""
 interface Data { v: String }
+channel pipe: Data
 system Upstream { provides Data }
 component Sink { requires Data }
 
@@ -1566,7 +1578,11 @@ interface OrderRequest { }
 interface OrderConfirmation { }
 interface Simple { }
 
+channel req: OrderRequest
+channel conf: OrderConfirmation
+
 system Order {
+    channel ch: Simple
     component A { requires OrderRequest  provides Simple }
     component B { requires Simple  provides OrderConfirmation }
     connect A.Simple -> $ch -> B.Simple
@@ -1706,6 +1722,7 @@ connect Frontend -> $bus -> Backend
         _assert_clean("""
 interface DataFeed { payload: String }
 system Pipeline {
+    channel feed: DataFeed
     component Producer { provides DataFeed }
     component Consumer { requires DataFeed }
     connect Producer.DataFeed -> $feed -> Consumer.DataFeed
@@ -1728,6 +1745,7 @@ component A {
     interface AInternal {
         id: Int
     }
+    channel internal: AInternal
     component SubA1 {
         provides AInternal
     }
@@ -1806,6 +1824,7 @@ class TestLocalInterfaceInSystem:
         errors = _analyze("""
 system S {
     interface SInternal { val: Int }
+    channel internal: SInternal
     component Producer { provides SInternal }
     component Consumer { requires SInternal }
     connect Producer.SInternal -> $internal -> Consumer.SInternal
@@ -1852,6 +1871,7 @@ system S {
 system Outer {
     interface Shared { v: String }
     system Inner {
+        channel shared: Shared
         component X { provides Shared }
         component Y { requires Shared }
         connect X.Shared -> $shared -> Y.Shared
@@ -1868,6 +1888,7 @@ interface Simple { val: String }
 
 component A {
     interface AInternal { id: Int }
+    channel internal: AInternal
 
     component SubA1 {
         requires OrderRequest
@@ -2266,3 +2287,153 @@ class TestPortOrdering:
         )
         errors = _analyze(source)
         assert any("requires" in e.message and "provides" in e.message for e in errors)
+
+
+# ###############
+# Declared channels
+# ###############
+
+
+class TestChannelDeclarations:
+    """Semantic rules for channel Name: Interface declarations."""
+
+    def test_undeclared_channel_is_error(self) -> None:
+        _assert_error(
+            """
+interface Signal {}
+system S {
+    component A { provides Signal }
+    component B { requires Signal }
+    connect A.Signal -> $sig -> B.Signal
+}
+""",
+            "undeclared channel '$sig'",
+        )
+
+    def test_declared_channel_no_error(self) -> None:
+        _assert_clean("""
+interface Signal {}
+system S {
+    channel sig: Signal
+    component A { provides Signal }
+    component B { requires Signal }
+    connect A.Signal -> $sig -> B.Signal
+}
+""")
+
+    def test_duplicate_channel_name_is_error(self) -> None:
+        _assert_error(
+            """
+interface Msg {}
+channel events: Msg
+channel events: Msg
+""",
+            "Duplicate channel name 'events'",
+        )
+
+    def test_channel_with_unknown_interface_is_error(self) -> None:
+        _assert_error(
+            "channel events: MissingInterface",
+            "interface 'MissingInterface' is not defined",
+        )
+
+    def test_channel_qualified_name_at_top_level(self) -> None:
+        af = parse("interface I {} channel ch: I")
+        analyze(af, file_key="services/api")
+        assert af.channels[0].qualified_name == "services/api::ch"
+
+    def test_channel_qualified_name_no_file_key(self) -> None:
+        af = parse("interface I {} channel ch: I")
+        analyze(af)
+        assert af.channels[0].qualified_name == "ch"
+
+    def test_channel_imported_from_another_file(self) -> None:
+        source_file = parse("interface Msg {} channel events: Msg")
+        analyze(source_file, file_key="channels/events")
+        consumer = """
+from channels/events import events
+interface Msg {}
+system S {
+    component A { provides Msg }
+    component B { requires Msg }
+    connect A.Msg -> $events -> B.Msg
+}
+"""
+        errors = _analyze(
+            consumer,
+            resolved_imports={"channels/events": source_file},
+        )
+        assert errors == [], f"Unexpected errors: {[e.message for e in errors]}"
+
+    def test_channel_port_type_mismatch_is_error(self) -> None:
+        _assert_error(
+            """
+interface Signal {}
+interface Other {}
+system S {
+    channel sig: Signal
+    component A { provides Other }
+    component B { requires Signal }
+    connect A.Other -> $sig -> B.Signal
+}
+""",
+            "declares interface 'Signal' but source port",
+        )
+
+
+# ###############
+# Templates
+# ###############
+
+
+class TestTemplates:
+    """Semantic rules for `template` entities and their references."""
+
+    def test_top_level_connect_to_local_template_is_error(self) -> None:
+        _assert_error(
+            """
+interface API { endpoint: String }
+channel bus: API
+template system Blueprint { component A { provides API } }
+system Consumer { requires API }
+
+connect Blueprint.API -> $bus -> Consumer.API
+""",
+            "template 'Blueprint' cannot be referenced directly; instantiate it with 'use'",
+        )
+
+    def test_top_level_connect_to_imported_template_is_error(self) -> None:
+        source_file = parse(
+            "interface API { endpoint: String }\ntemplate system Blueprint { component A { provides API } }"
+        )
+        errors = _analyze(
+            """
+from templates/blueprint import Blueprint
+interface API { endpoint: String }
+channel bus: API
+system Consumer { requires API }
+
+connect Blueprint.API -> $bus -> Consumer.API
+""",
+            resolved_imports={"templates/blueprint": source_file},
+        )
+        assert any("cannot be referenced directly" in e.message for e in errors)
+
+    def test_use_of_template_is_clean(self) -> None:
+        _assert_clean("""
+interface API { endpoint: String }
+template component Worker { provides API }
+system Consumer {
+    use component Worker
+}
+""")
+
+    def test_non_template_top_level_connect_is_clean(self) -> None:
+        _assert_clean("""
+interface API { endpoint: String }
+channel bus: API
+system Producer { provides API }
+system Consumer { requires API }
+
+connect Producer.API -> $bus -> Consumer.API
+""")

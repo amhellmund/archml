@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from archml.model.entities import (
     ArchEntity,
     ArchFile,
+    ChannelDef,
     Component,
     ConfigRef,
     ConnectDef,
@@ -142,6 +143,8 @@ class _SemanticAnalyzer:
         self._file = arch_file
         self._resolved = resolved_imports
         self._filename = filename
+        self._channel_scope: dict[str, ChannelDef] = {}
+        self._template_names: set[str] = set()
 
     def analyze(self) -> list[SemanticError]:
         """Run all semantic checks and return collected errors."""
@@ -181,6 +184,44 @@ class _SemanticAnalyzer:
         # is not always known without resolution.
         all_type_def_names: set[str] = {t.name for t in self._file.types} | imported_names
 
+        # Channel scope: local declarations plus imported channels (with local aliases).
+        # Locally-declared channels include their full ChannelDef for type-compat checks.
+        # Imported channels are recorded by local alias; the ChannelDef is carried over
+        # from the resolved source when available.
+        self._channel_scope: dict[str, ChannelDef] = {ch.name: ch for ch in self._file.channels}
+        if self._resolved is not None:
+            for imp in self._file.imports:
+                path = imp.source_path
+                if path in self._resolved:
+                    resolved_channels = {ch.name: ch for ch in self._resolved[path].channels}
+                    for entity_name in imp.entities:
+                        if entity_name in resolved_channels:
+                            local_name = imp.aliases.get(entity_name, entity_name)
+                            self._channel_scope[local_name] = resolved_channels[entity_name]
+
+        # Template scope: in-scope names that resolve to a template definition
+        # (local top-level templates plus imported templates, under local alias).
+        # Used to reject direct references to a template in a top-level connect.
+        self._template_names: set[str] = {
+            e.name for e in (*self._file.components, *self._file.systems, *self._file.users) if e.is_template
+        }
+        if self._resolved is not None:
+            for imp in self._file.imports:
+                path = imp.source_path
+                if path in self._resolved:
+                    resolved_templates = {
+                        e.name
+                        for e in (
+                            *self._resolved[path].components,
+                            *self._resolved[path].systems,
+                            *self._resolved[path].users,
+                        )
+                        if e.is_template
+                    }
+                    for entity_name in imp.entities:
+                        if entity_name in resolved_templates:
+                            self._template_names.add(imp.aliases.get(entity_name, entity_name))
+
         # 0. Check that all description fields are valid markdown.
         errors.extend(_check_all_descriptions(self._file, self._filename))
 
@@ -207,6 +248,15 @@ class _SemanticAnalyzer:
             )
 
         # 4. Check internals of each interface definition.
+        for ch_def in self._file.channels:
+            if ch_def.interface not in all_interface_plain_names:
+                errors.append(
+                    SemanticError(
+                        message=f"channel '{ch_def.name}': interface '{ch_def.interface}' is not defined",
+                        filename=self._filename,
+                        line=ch_def.line,
+                    )
+                )
         for iface_def in self._file.interfaces:
             errors.extend(_check_field_names(f"interface '{iface_def.name}'", iface_def.fields, self._filename))
             errors.extend(
@@ -264,8 +314,23 @@ class _SemanticAnalyzer:
             **{u.name: u for u in self._file.users},
         }
         for conn in self._file.connects:
+            for entity_name in (conn.src_entity, conn.dst_entity):
+                if entity_name is not None and entity_name in self._template_names:
+                    errors.append(
+                        SemanticError(
+                            message=(
+                                f"template '{entity_name}' cannot be referenced directly; instantiate it with 'use'"
+                            ),
+                            filename=self._filename,
+                            line=conn.line,
+                        )
+                    )
             errors.extend(_resolve_simplified_connect(conn, top_child_entity_map, "top-level", self._filename))
-            errors.extend(_check_connect("top-level", conn, top_child_entity_map, self._filename))
+            errors.extend(
+                _check_connect(
+                    "top-level", conn, top_child_entity_map, self._filename, channel_scope=self._channel_scope
+                )
+            )
 
         # 9. Validate import entities against resolved source files.
         errors.extend(self._check_import_resolutions())
@@ -293,6 +358,15 @@ class _SemanticAnalyzer:
             )
         )
 
+        # Check for duplicate local channel declarations.
+        errors.extend(
+            _check_duplicate_name_lines(
+                [(ch.name, ch.line) for ch in comp.channels],
+                "Duplicate channel name '{}' in " + ctx,
+                self._filename,
+            )
+        )
+
         # Check for duplicate sub-component names.
         errors.extend(
             _check_duplicate_name_lines(
@@ -305,6 +379,17 @@ class _SemanticAnalyzer:
         # Merge locally-defined interfaces into scope for this component and its children.
         merged_interface_names = all_interface_names | {i.name for i in comp.interfaces}
         merged_interface_defs = {**local_interface_defs, **{i.name: i for i in comp.interfaces}}
+
+        # Validate body-level channel interface references.
+        for ch_def in comp.channels:
+            if ch_def.interface not in merged_interface_names:
+                errors.append(
+                    SemanticError(
+                        message=f"{ctx}: channel '{ch_def.name}': interface '{ch_def.interface}' is not defined",
+                        filename=self._filename,
+                        line=ch_def.line,
+                    )
+                )
 
         # Check requires / provides interface references.
         for ref in comp.requires:
@@ -342,10 +427,13 @@ class _SemanticAnalyzer:
         errors.extend(_check_config_refs(ctx, comp.configs, all_type_def_names, self._filename))
 
         # Check connect / expose statements.
+        local_channel_scope = {**self._channel_scope, **{ch.name: ch for ch in comp.channels}}
         child_entity_map: dict[str, Component | System | UserDef] = {c.name: c for c in comp.components}
         for conn in comp.connects:
             errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx, self._filename))
-            errors.extend(_check_connect(ctx, conn, child_entity_map, self._filename))
+            errors.extend(
+                _check_connect(ctx, conn, child_entity_map, self._filename, channel_scope=local_channel_scope)
+            )
         for exp in comp.exposes:
             errors.extend(_check_expose(ctx, exp, child_entity_map, self._filename))
 
@@ -385,9 +473,29 @@ class _SemanticAnalyzer:
             )
         )
 
+        # Check for duplicate local channel declarations.
+        errors.extend(
+            _check_duplicate_name_lines(
+                [(ch.name, ch.line) for ch in system.channels],
+                "Duplicate channel name '{}' in " + ctx,
+                self._filename,
+            )
+        )
+
         # Merge locally-defined interfaces into scope for this system and its children.
         merged_interface_names = all_interface_names | {i.name for i in system.interfaces}
         merged_interface_defs = {**local_interface_defs, **{i.name: i for i in system.interfaces}}
+
+        # Validate body-level channel interface references.
+        for ch_def in system.channels:
+            if ch_def.interface not in merged_interface_names:
+                errors.append(
+                    SemanticError(
+                        message=f"{ctx}: channel '{ch_def.name}': interface '{ch_def.interface}' is not defined",
+                        filename=self._filename,
+                        line=ch_def.line,
+                    )
+                )
 
         # Check for duplicate component names within this system.
         errors.extend(
@@ -474,9 +582,12 @@ class _SemanticAnalyzer:
             **{s.name: s for s in system.systems},
             **{u.name: u for u in system.users},
         }
+        local_channel_scope = {**self._channel_scope, **{ch.name: ch for ch in system.channels}}
         for conn in system.connects:
             errors.extend(_resolve_simplified_connect(conn, child_entity_map, ctx, self._filename))
-            errors.extend(_check_connect(ctx, conn, child_entity_map, self._filename))
+            errors.extend(
+                _check_connect(ctx, conn, child_entity_map, self._filename, channel_scope=local_channel_scope)
+            )
         for exp in system.exposes:
             errors.extend(_check_expose(ctx, exp, child_entity_map, self._filename))
 
@@ -568,6 +679,8 @@ def _assign_qualified_names(arch_file: ArchFile, *, file_key: str | None = None)
     file_prefix = file_key  # treated as the parent prefix for top-level entities
     for iface in arch_file.interfaces:
         iface.qualified_name = f"{file_prefix}::{iface.name}" if file_prefix else iface.name
+    for ch in arch_file.channels:
+        ch.qualified_name = f"{file_prefix}::{ch.name}" if file_prefix else ch.name
     for comp in arch_file.components:
         _assign_component_qualified_names(comp, prefix=file_prefix)
     for system in arch_file.systems:
@@ -638,6 +751,7 @@ def _collect_all_top_level_names(arch_file: ArchFile) -> set[str]:
     names.update(e.name for e in arch_file.enums)
     names.update(t.name for t in arch_file.types)
     names.update(i.name for i in arch_file.interfaces)
+    names.update(ch.name for ch in arch_file.channels)
     names.update(c.name for c in arch_file.components)
     names.update(s.name for s in arch_file.systems)
     names.update(u.name for u in arch_file.users)
@@ -710,6 +824,13 @@ def _check_top_level_duplicates(arch_file: ArchFile, filename: str | None = None
         _check_duplicate_name_lines(
             [(i.name, i.line) for i in arch_file.interfaces],
             "Duplicate interface name '{}'",
+            filename,
+        )
+    )
+    errors.extend(
+        _check_duplicate_name_lines(
+            [(ch.name, ch.line) for ch in arch_file.channels],
+            "Duplicate channel name '{}'",
             filename,
         )
     )
@@ -841,11 +962,63 @@ def _valid_connect_port_names(entity: Component | System | UserDef) -> set[str] 
     return names
 
 
+def _port_interface_name(refs: list[InterfaceRef], port_name: str) -> str | None:
+    """Return the interface name for a port identified by its effective name."""
+    for ref in refs:
+        if _effective_port_name(ref) == port_name:
+            return ref.name
+    return None
+
+
+def _check_channel_port_compat(
+    ctx: str,
+    conn: ConnectDef,
+    ch_def: ChannelDef,
+    child_entity_map: dict[str, Component | System | UserDef],
+    filename: str | None,
+) -> list[SemanticError]:
+    """Verify that the src/dst ports of a connect are compatible with the channel's interface."""
+    errors: list[SemanticError] = []
+    if conn.src_entity is not None and conn.src_port is not None:
+        src_ent = child_entity_map.get(conn.src_entity)
+        if src_ent is not None and not (isinstance(src_ent, (Component, System)) and src_ent.is_stub):
+            src_iface = _port_interface_name(src_ent.provides, conn.src_port)
+            if src_iface is not None and src_iface != ch_def.interface:
+                errors.append(
+                    SemanticError(
+                        message=(
+                            f"{ctx}: channel '${conn.channel}' declares interface '{ch_def.interface}'"
+                            f" but source port '{conn.src_entity}.{conn.src_port}' provides '{src_iface}'"
+                        ),
+                        filename=filename,
+                        line=conn.line,
+                    )
+                )
+    if conn.dst_entity is not None and conn.dst_port is not None:
+        dst_ent = child_entity_map.get(conn.dst_entity)
+        if dst_ent is not None and not (isinstance(dst_ent, (Component, System)) and dst_ent.is_stub):
+            dst_iface = _port_interface_name(dst_ent.requires, conn.dst_port)
+            if dst_iface is not None and dst_iface != ch_def.interface:
+                errors.append(
+                    SemanticError(
+                        message=(
+                            f"{ctx}: channel '${conn.channel}' declares interface '{ch_def.interface}'"
+                            f" but destination port '{conn.dst_entity}.{conn.dst_port}' requires '{dst_iface}'"
+                        ),
+                        filename=filename,
+                        line=conn.line,
+                    )
+                )
+    return errors
+
+
 def _check_connect(
     ctx: str,
     conn: ConnectDef,
     child_entity_map: dict[str, Component | System | UserDef],
     filename: str | None = None,
+    *,
+    channel_scope: dict[str, ChannelDef] | None = None,
 ) -> list[SemanticError]:
     """Check that entity and port references in a connect statement are valid."""
     errors: list[SemanticError] = []
@@ -858,6 +1031,19 @@ def _check_connect(
             )
         )
         return errors
+    if channel_scope is not None:
+        if conn.channel not in channel_scope:
+            errors.append(
+                SemanticError(
+                    message=f"{ctx}: connect references undeclared channel '${conn.channel}'",
+                    filename=filename,
+                    line=conn.line,
+                )
+            )
+        else:
+            errors.extend(
+                _check_channel_port_compat(ctx, conn, channel_scope[conn.channel], child_entity_map, filename)
+            )
     for side_entity, side_port in ((conn.src_entity, conn.src_port), (conn.dst_entity, conn.dst_port)):
         if side_entity is None:
             continue

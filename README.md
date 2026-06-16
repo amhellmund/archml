@@ -69,6 +69,11 @@ from types import OrderRequest, OrderConfirmation, PaymentRequest
 system ECommerce {
     """Customer-facing online store."""
 
+    # Declared channels — every $name used in connect must be declared here
+    channel order_in:  OrderRequest
+    channel order_out: OrderConfirmation
+    channel payment:   PaymentRequest
+
     # Human actor — same port model as components
     user Customer {
         requires OrderConfirmation
@@ -82,6 +87,9 @@ system ECommerce {
         @team: platform
         @tags: critical, orders
 
+        # Channel declared at component scope — local to this component
+        channel validation: ValidationResult
+
         component Validator {
             requires OrderRequest
             provides ValidationResult
@@ -93,7 +101,7 @@ system ECommerce {
             provides OrderConfirmation
         }
 
-        # Internal channel: wires Validator output to Processor input
+        # Wire Validator output to Processor input via the declared channel
         connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
 
         # Remaining ports are promoted to the OrderService boundary
@@ -120,14 +128,17 @@ system ECommerce {
 
 - **Interfaces and types** — `type` defines building blocks; `interface` defines port contracts. Fields use `name: Type` syntax.
 - **Ports** — `requires` and `provides` declare connection points. Port names default to the interface name; `as` assigns an explicit alias.
-- **Internal wiring** — `connect` introduces a named channel (`$validation`) between sub-component ports. The channel is local to the enclosing scope.
+- **Declared channels** — every `$name` used in `connect` must be declared as `channel name: Interface` in the same scope. The declaration binds a name to a contract type; the tooling validates that both connected ports carry that interface.
 - **Exposure** — `expose` promotes a sub-component's port to the enclosing boundary. Every sub-component port must be either wired or exposed — the tooling reports a validation error otherwise.
 - **User actors** — `user` is a leaf node with the same port model as components.
 - **Custom attributes** — `@team: platform` and `@tags: critical, pci-scope` attach user-defined metadata.
 - Values are comma-separated identifiers; the tooling does not interpret them.
 
 Large architectures split across files with `from ... import`.
-`use component X` places an imported component inside a system without redefining it.
+`use component X` instantiates a definition inside a system: the instance carries the
+definition's real ports and internal structure, and its open ports must be wired by the
+host. A `template system/component/user` is a reusable blueprint that is never rendered on
+its own — it appears only where it is instantiated with `use`.
 Remote repositories are referenced with `@repo-name` prefixes for multi-repo workspaces.
 Variants (`<cloud, on_premise>`) model multiple configurations within a single file.
 `config DbConfig` declares an external configuration dependency resolved by the deployment layer.
@@ -142,15 +153,18 @@ Variants (`<cloud, on_premise>`) model multiple configurations within a single f
 | `interface`                    | Named contract of typed fields used on ports                            |
 | `type`                         | Reusable data structure composed into interface fields                  |
 | `enum`                         | Constrained set of named values                                         |
+| `channel Name: Type`           | Declare a named, typed channel; required before any `$Name` in connect  |
 | `requires` / `provides`        | Declare a port that consumes or exposes an interface                    |
 | `requires X as port`           | Assign an explicit name to a port                                       |
 | `config TypeName [as name]`    | Declare an external configuration dependency (resolved by deployment)   |
-| `connect A.p -> $ch -> B.p`    | Wire two ports via a named channel                                      |
+| `connect A.p -> $ch -> B.p`    | Wire two ports via a declared channel                                   |
 | `expose Entity.port [as name]` | Promote a sub-entity's port to the enclosing boundary                  |
+| `template`                     | Reusable blueprint, never rendered standalone; only used via `use`      |
 | `external`                     | Marks a system, component, or user as outside the development boundary  |
 | `<v1, v2>`                     | Variant annotation on an entity or statement                            |
 | `@attr: val1, val2`            | Custom attribute; values are comma-separated identifiers                |
-| `from … import` / `use`        | Bring definitions from another file into scope                          |
+| `from … import`                | Bring definitions from another file into scope                          |
+| `use component/system/user X`  | Instantiate a definition (with its real ports) inside a system          |
 
 Primitive types: `String`, `Int`, `Float`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
@@ -185,7 +199,9 @@ archml init my-service .
 ### `archml check [-C <directory>]`
 
 Parse and validate all `.farchml` files in the workspace.
-Reports dangling references, unwired ports, disconnected entities, and type definition cycles.
+Instantiates every `use` (and template), then reports dangling references, unwired ports,
+disconnected entities, type definition cycles, instantiation cycles, and template warnings
+(unused or nested templates).
 Exits with a non-zero status if any errors are found.
 
 ```bash

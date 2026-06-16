@@ -29,10 +29,12 @@ system SimpleSystem {
     channel data_req: DataRequest
 
     component Client {
-        requires DataRequest via data_req
+        provides DataRequest
     }
     component WorkerInst {
-        requires DataRequest via data_req
+        requires DataRequest
         provides DataResponse
     }
+
+    connect Client.DataRequest -> $data_req -> WorkerInst.DataRequest
 }

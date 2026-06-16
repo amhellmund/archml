@@ -50,8 +50,8 @@
     },
 
     "entity-keyword": {
-      "comment": "Entity declaration keywords, optionally preceded by 'external'",
-      "match": "\\b(external\\s+)?(component|system|user|type|interface|enum)\\b",
+      "comment": "Entity declaration keywords, optionally preceded by 'external' or 'template'",
+      "match": "\\b((?:external|template)\\s+)?(component|system|user|type|interface|enum|channel)\\b",
       "captures": {
         "1": { "name": "storage.modifier.archml" },
         "2": { "name": "storage.type.archml" }
@@ -60,7 +60,7 @@
 
     "control-keyword": {
       "name": "keyword.control.archml",
-      "match": "\\b(requires|provides|connect|expose|use|as|from|import|external)\\b"
+      "match": "\\b(requires|provides|connect|expose|use|as|from|import|external|template|config)\\b"
     },
 
     "builtin-type": {

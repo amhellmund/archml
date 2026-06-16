@@ -166,6 +166,8 @@ component OrderService {
         provides OrderConfirmation
     }
 
+    channel validation: ValidationResult
+
     connect Validator.ValidationResult -> $validation -> Processor.ValidationResult
 
     expose Validator.OrderRequest
@@ -193,6 +195,8 @@ system Enterprise {
     system Warehouse {
         requires InventorySync
     }
+
+    channel inventory_sync: InventorySync
 
     connect ECommerce.InventorySync -> $inventory_sync -> Warehouse.InventorySync
 }
@@ -231,28 +235,68 @@ provides <Interface> [as <port_name>]
 `requires` declarations appear before `provides`.
 Port names must be unique within their entity.
 
-### Channels and `connect`
+### Channel Declarations
 
-A **channel** is a named conduit between ports.
-Channels are introduced implicitly by `connect` statements — there is no separate channel declaration.
-Channel names use the `$` prefix to distinguish them from ports.
-
-`connect` statements can appear inside `component` or `system` bodies, or at the top level of a `.farchml` file to wire top-level entities.
+A **channel** is a named, typed conduit between ports.
+Every channel name used in a `connect` statement must first be declared with a `channel` declaration in the same scope.
 
 ```
-// Full chain: introduces $channel and wires both ports
+channel <name> : <Interface>
+
+channel <name> : <Interface> {
+    """Optional markdown description."""
+    @attr: value
+}
+```
+
+`<name>` is the channel identifier (used as `$name` in `connect` statements).
+`<Interface>` is a required type annotation — the interface contract carried by the channel.
+The optional body may contain a triple-quoted description and custom `@attr: val` attributes.
+Variant annotation is supported: `channel<cloud> events: DomainEvent`.
+
+Channel declarations can appear at file scope or inside a `component` or `system` body.
+A body-scope channel is local to that scope and is not visible outside.
+File-scope channels can be imported with the standard `from ... import` syntax.
+
+```
+# Local scope — only visible inside this system
+system Order {
+    channel payment: PaymentRequest
+    channel confirmation: OrderConfirmation
+
+    connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
+    connect OrderService.OrderConfirmation -> $confirmation -> Customer.OrderConfirmation
+}
+```
+
+```
+# Shared channel declared at file scope and imported by multiple systems
+channel DomainEvents: EventMessage {
+    """All domain events flow through this channel."""
+    @owner: platform-team
+}
+```
+
+The tooling validates that both connected ports expose or require the channel's declared interface.
+Using an undeclared `$name` in a `connect` statement is a semantic error.
+
+### `connect`
+
+`connect` statements wire ports via a declared channel.
+They can appear inside `component` or `system` bodies, or at the top level of a `.farchml` file to wire top-level entities.
+
+```
+// Full chain: wires both endpoints via the channel
 connect <src_port> -> $<channel> -> <dst_port>
 
-// One-sided: introduces or references $channel, wires one port
+// One-sided: wires one endpoint to the channel
 connect <src_port> -> $<channel>
 connect $<channel> -> <dst_port>
 ```
 
-`<src_port>` and `<dst_port>` are either: `Entity.port_name` — explicit port on a named child entity
+`<src_port>` and `<dst_port>` use the form `Entity.port_name` — an explicit port on a named child entity.
 
 The arrow direction follows data flow: a `provides` port (producer) is always on the left; a `requires` port (consumer) is always on the right.
-
-A channel introduced by `connect` is local to the scope where it appears — it is not visible outside.
 
 ### Port Exposure: `expose`
 
@@ -378,10 +422,62 @@ external user Admin {
 
 ---
 
+## Templates
+
+The `template` modifier marks a `system`, `component`, or `user` as a reusable **blueprint**.
+A template is a complete definition, but it is never rendered on its own and may not be
+referenced directly — it exists only to be instantiated with `use`.
+
+```
+template system PaymentPipeline {
+    component Gateway   { provides PaymentRequest }
+    component Processor { requires PaymentRequest  provides PaymentResult }
+    channel pay: PaymentRequest
+    connect Gateway.PaymentRequest -> $pay -> Processor.PaymentRequest
+    expose Gateway.PaymentRequest
+    expose Processor.PaymentResult
+}
+
+template component RetryBuffer { requires Msg  provides Msg }
+template user     ServiceAccount { provides AdminCommand }
+```
+
+A template is declared at the top level (it cannot be nested inside another entity body)
+and may be imported like any other definition. It is brought to life with `use`:
+
+```
+from shared/templates import PaymentPipeline
+
+system Orders {
+    use system PaymentPipeline      # an instance with PaymentPipeline's full internals
+}
+system Billing {
+    use system PaymentPipeline      # an independent second instance
+}
+```
+
+Rules:
+
+- A template is **excluded** from the standalone landscape view; it appears only inside the
+  hosts that instantiate it. Each instantiation is an independent copy, re-qualified under
+  its host path, so a body-scoped channel like `pay` becomes `Orders::PaymentPipeline::pay`
+  in one host and `Billing::PaymentPipeline::pay` in another — never a collision.
+- Referencing a template directly in a top-level `connect` is an error; instantiate it with
+  `use` instead.
+- `external` and `template` cannot be combined (a blueprint is not an external entity).
+- Instantiating a template **inside another template** is discouraged and produces a
+  warning; the nested use is not expanded.
+- A template that is never instantiated anywhere produces a warning.
+
+`template` applies to `system`, `component`, and `user`. (A `user` is a leaf with no
+internal structure, so a template user simply contributes its ports on instantiation.)
+
+---
+
 ## Multi-File Composition
 
 Large architectures are split across files.
-Top-level declarations (`component`, `system`, `user`, `interface`, `type`, `enum`) can appear in any `.farchml` file — they do not need to be nested inside a system.
+Top-level declarations (`component`, `system`, `user`, `interface`, `type`, `enum`, `channel`) can appear in any `.farchml` file — they do not need to be nested inside a system.
 
 ### Imports
 
@@ -405,7 +501,8 @@ The path omits the `.farchml` extension. The first path segment is a mnemonic na
 
 ### `use`
 
-The `use` keyword places an already-imported entity into a system or component body without redefining it.
+The `use` keyword **instantiates** an in-scope entity (local or imported) inside a system
+or component body without redefining it.
 Always includes the entity type:
 
 ```
@@ -414,7 +511,17 @@ use system ECommerce
 use user Customer
 ```
 
-The entity's exposed ports become available as `Entity.port_name` targets in `connect` and `expose` statements within the enclosing scope.
+Instantiation is a real operation, not a shorthand reference: the instance carries a copy
+of the definition's **boundary ports** (its own `requires`/`provides` plus any `expose`d
+child ports) and, for containers, its full internal structure. The internal structure is
+re-qualified under the host path (e.g. `Orders::OrderService::Validator`), so two systems
+that each `use` the same definition get two independent instances.
+
+The instance's boundary ports become available as `Entity.port_name` targets in `connect`
+and `expose` statements within the enclosing scope, and — like any other sub-entity port —
+each open port **must be wired by a `connect` or promoted with `expose`**, otherwise it is
+a validation error. The definition's internal channels stay local to the instance and are
+never reachable from the host.
 
 ### Cross-Repository Imports
 
@@ -528,12 +635,14 @@ allowed — they select different workspaces.)
 | `provides`    | Declares a port that produces an interface.                                              |
 | `config`      | Declares an external configuration dependency on a component or system (`config DbConfig`). |
 | `as`          | Assigns an explicit name to a port or config dependency (`requires PaymentRequest as pay_in`). |
-| `connect`     | Wires ports, optionally via a named channel (`connect A.p -> $ch -> B.p`).               |
+| `channel`     | Declares a named, typed channel (`channel events: EventMessage`). Required before any `$name` in `connect`. |
+| `connect`     | Wires ports via a declared channel (`connect A.p -> $ch -> B.p`).                        |
 | `expose`      | Promotes a sub-entity's port to the enclosing boundary (`expose Entity.port [as name]`). |
-| `$channel`    | Channel name in `connect`; `$` prefix distinguishes channels from ports.                 |
+| `$channel`    | Channel reference in `connect`; the `$` prefix distinguishes channels from ports.        |
 | `from`        | Source path in an import statement (`from path import Name`).                            |
 | `import`      | Entities to bring into scope; always paired with `from`.                                 |
-| `use`         | Places an imported entity into a system or component (`use component X`).                |
+| `use`         | Instantiates an in-scope entity inside a system or component (`use component X`).        |
+| `template`    | Marks a system, component, or user as a reusable blueprint, instantiated only via `use`. |
 | `external`    | Marks a system, component, or user as outside the development boundary.                  |
 | `<v1, v2>`   | Variant annotation on an entity or statement.                                            |
 | `@attr: ...`  | Custom attribute on an entity; values are comma-separated identifiers.                   |
@@ -572,12 +681,16 @@ entity_kind ::= 'component' | 'system' | 'user'
 
 (* ── Entity declarations ────────────────────────────── *)
 
-entity_decl ::= block_decl
+entity_decl ::= top_block_decl
+              | channel_decl
               | interface_decl
               | type_decl
               | enum_decl
 
-block_decl  ::= [ 'external' ] entity_kind [ variant_ann ] IDENT '{' block_body '}'
+(* Top-level entities accept the 'template' or 'external' modifier;
+   nested block declarations accept only 'external'. *)
+top_block_decl ::= [ 'external' | 'template' ] entity_kind [ variant_ann ] IDENT '{' block_body '}'
+block_decl     ::= [ 'external' ] entity_kind [ variant_ann ] IDENT '{' block_body '}'
 
 block_body  ::= [ description ]
                 { attribute }
@@ -585,6 +698,7 @@ block_body  ::= [ description ]
 
 block_member ::= port_decl
                | config_decl
+               | channel_decl
                | connect_stmt
                | expose_stmt
                | block_decl
@@ -597,6 +711,11 @@ port_decl   ::= ( 'requires' | 'provides' ) [ variant_ann ] IDENT [ 'as' IDENT ]
 (* ── Configuration dependencies ─────────────────────── *)
 
 config_decl ::= 'config' [ variant_ann ] IDENT [ 'as' IDENT ]
+
+(* ── Channel declarations ───────────────────────────── *)
+
+channel_decl  ::= 'channel' [ variant_ann ] IDENT ':' IDENT [ '{' channel_body '}' ]
+channel_body  ::= [ description ] { attribute }
 
 (* ── Connect and expose ─────────────────────────────── *)
 

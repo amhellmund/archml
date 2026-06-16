@@ -623,7 +623,7 @@ def _fully_connected_system(system: System, v: str | None) -> list[ValidationErr
     for sub in active_subs:
         errors.extend(_fully_connected_system(sub, v))
     for user in active_users:
-        if _no_active_ports(user.requires, user.provides, v):
+        if not user.is_stub and _no_active_ports(user.requires, user.provides, v):
             label = _entity_label(user.name, user.qualified_name)
             errors.append(
                 ValidationError(message=(f"User '{label}'{_variant_label(v)} has no ports (requires or provides)."))
@@ -660,7 +660,7 @@ def _check_fully_connected(arch_file: ArchFile) -> list[ValidationError]:
         for ref in user.requires + user.provides:
             user_variants.update(ref.variants)
         for v in _check_variants_for(user_variants):
-            if _active(user.variants, v) and _no_active_ports(user.requires, user.provides, v):
+            if not user.is_stub and _active(user.variants, v) and _no_active_ports(user.requires, user.provides, v):
                 label = _entity_label(user.name, user.qualified_name)
                 errors.append(
                     ValidationError(message=(f"User '{label}'{_variant_label(v)} has no ports (requires or provides)."))

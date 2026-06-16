@@ -64,6 +64,9 @@ system ECommerce {
         provides InventoryStatus
     }
 
+    channel payment: PaymentRequest
+    channel inventory: InventoryCheck
+
     connect PaymentGateway.PaymentRequest -> $payment -> OrderService.PaymentRequest
     connect InventoryManager.InventoryCheck -> $inventory -> OrderService.InventoryCheck
 

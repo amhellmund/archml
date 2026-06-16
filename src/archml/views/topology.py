@@ -36,7 +36,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-from archml.model.entities import ArchFile, Component, ConnectDef, InterfaceRef, System, UserDef
+from archml.model.entities import ArchFile, ChannelDef, Component, ConnectDef, InterfaceRef, System, UserDef
 
 # ###############
 # Public Interface
@@ -232,6 +232,7 @@ def build_viz_diagram(
     *,
     global_connects: list[ConnectDef] | None = None,
     variant: str | None = None,
+    channel_defs: dict[str, ChannelDef] | None = None,
 ) -> VizDiagram:
     """Build a :class:`VizDiagram` topology from a model entity.
 
@@ -319,6 +320,7 @@ def build_viz_diagram(
                     child_path,
                     child_remaining,
                     variant,
+                    channel_defs=channel_defs,
                 )
                 expanded_boundary_map[child_name] = bnd
                 child_expose_maps[child_name] = expose_map
@@ -331,7 +333,12 @@ def build_viz_diagram(
     channel_node_map: dict[str, VizNode] = {}
     if depth != 0:
         channel_node_map = _collect_channel_nodes_resolve(
-            active_connects, root_id, all_sub_entity_map, opaque_child_map, child_expose_maps
+            active_connects,
+            root_id,
+            all_sub_entity_map,
+            opaque_child_map,
+            child_expose_maps,
+            channel_defs=channel_defs,
         )
 
     # --- Root boundary ---
@@ -623,6 +630,15 @@ def build_viz_diagram_all(
     all_inner_edges: list[VizEdge] = []
     all_connects: list[ConnectDef] = []
 
+    # Collect channel defs from all files first so they are available during
+    # recursive boundary building.
+    all_channel_defs: dict[str, ChannelDef] = {}
+    for arch_file in arch_files.values():
+        for ch in arch_file.channels:
+            if _active(ch.variants, variant):
+                all_channel_defs[ch.name] = ch
+    channel_defs_arg = all_channel_defs or None
+
     # entity_depth: remaining_depth to pass into _build_recursive_boundary for
     # each top-level entity.  depth=0 → entities are opaque (no expansion);
     # depth=1 → entities expanded with entity_depth=0 (children opaque);
@@ -631,38 +647,42 @@ def build_viz_diagram_all(
 
     for arch_file in arch_files.values():
         for comp in arch_file.components:
-            if not _active(comp.variants, variant):
+            if comp.is_template or not _active(comp.variants, variant):
                 continue
             entity_path = comp.qualified_name or comp.name
             all_sub_entity_map[comp.name] = comp
             if _should_expand(comp, variant) and (depth is None or depth >= 1):
-                bnd, inner_edges, expose_map = _build_recursive_boundary(comp, entity_path, entity_depth, variant)
+                bnd, inner_edges, expose_map = _build_recursive_boundary(
+                    comp, entity_path, entity_depth, variant, channel_defs=channel_defs_arg
+                )
                 expanded_boundary_map[comp.name] = bnd
                 expanded_expose_maps[comp.name] = expose_map
                 all_inner_edges.extend(inner_edges)
             else:
                 opaque_node_map[comp.name] = _make_child_node(comp, entity_path, variant)
         for sys in arch_file.systems:
-            if not _active(sys.variants, variant):
+            if sys.is_template or not _active(sys.variants, variant):
                 continue
             entity_path = sys.qualified_name or sys.name
             all_sub_entity_map[sys.name] = sys
             if _should_expand(sys, variant) and (depth is None or depth >= 1):
-                bnd, inner_edges, expose_map = _build_recursive_boundary(sys, entity_path, entity_depth, variant)
+                bnd, inner_edges, expose_map = _build_recursive_boundary(
+                    sys, entity_path, entity_depth, variant, channel_defs=channel_defs_arg
+                )
                 expanded_boundary_map[sys.name] = bnd
                 expanded_expose_maps[sys.name] = expose_map
                 all_inner_edges.extend(inner_edges)
             else:
                 opaque_node_map[sys.name] = _make_child_node(sys, entity_path, variant)
         for user in arch_file.users:
-            if not _active(user.variants, variant):
+            if user.is_template or not _active(user.variants, variant):
                 continue
             entity_path = user.qualified_name or user.name
             all_sub_entity_map[user.name] = user
             opaque_node_map[user.name] = _make_child_node(user, entity_path, variant)
         all_connects.extend(c for c in arch_file.connects if _active(c.variants, variant))
 
-    channel_node_map = _collect_channel_nodes(all_connects, root_id, all_sub_entity_map)
+    channel_node_map = _collect_channel_nodes(all_connects, root_id, all_sub_entity_map, channel_defs_arg)
 
     all_children: list[VizNode | VizBoundary] = [
         *opaque_node_map.values(),
@@ -878,18 +898,23 @@ def _collect_channel_nodes(
     connects: list[ConnectDef],
     root_id: str,
     sub_entity_map: dict[str, Component | System | UserDef],
+    channel_defs: dict[str, ChannelDef] | None = None,
 ) -> dict[str, VizNode]:
     """Build :class:`VizNode` instances for all named channels in *connects*.
 
     Each unique channel name in the connect statements becomes one channel
-    node placed inside the root boundary.  The channel's interface label is
-    inferred from the first resolvable src or dst port that mentions it.
+    node placed inside the root boundary.  When a :class:`ChannelDef` is
+    available for a channel (via *channel_defs*), its declared interface and
+    description are used directly.  Otherwise the interface label is inferred
+    from the first resolvable src or dst port that mentions it.
 
     Args:
         connects: The ``connect`` statements of the focus entity.
         root_id: ID prefix for channel node IDs (the root boundary ID).
         sub_entity_map: Map of child entity name to entity model, used to
-            resolve port interface names.
+            resolve port interface names when no declaration is present.
+        channel_defs: Optional map from channel name to its :class:`ChannelDef`,
+            providing the declared interface and description.
 
     Returns:
         Map of channel name to the :class:`VizNode` representing it.
@@ -904,7 +929,11 @@ def _collect_channel_nodes(
             channel_interfaces[ch] = None
         if channel_interfaces[ch] is not None:
             continue
-        # Try src port first.
+        # Prefer declared interface from ChannelDef.
+        if channel_defs and ch in channel_defs:
+            channel_interfaces[ch] = channel_defs[ch].interface
+            continue
+        # Fall back to inference from connected ports.
         if conn.src_entity and conn.src_port:
             sub = sub_entity_map.get(conn.src_entity)
             if sub:
@@ -912,7 +941,6 @@ def _collect_channel_nodes(
                 if result:
                     _, ref = result
                     channel_interfaces[ch] = _iref_label(ref)
-        # Fall back to dst port.
         if channel_interfaces[ch] is None and conn.dst_entity and conn.dst_port:
             sub = sub_entity_map.get(conn.dst_entity)
             if sub:
@@ -926,6 +954,7 @@ def _collect_channel_nodes(
     for ch_name, iface_label in channel_interfaces.items():
         ch_id = f"{root_id}.channel.{ch_name}"
         display_iface = iface_label or ch_name
+        ch_def = channel_defs.get(ch_name) if channel_defs else None
         ports = [
             VizPort(
                 id=f"{ch_id}.in",
@@ -945,7 +974,8 @@ def _collect_channel_nodes(
             label=ch_name,
             title=iface_label,
             kind="channel",
-            entity_path="",
+            entity_path=ch_def.qualified_name if ch_def else "",
+            description=ch_def.description if ch_def else None,
             ports=ports,
         )
 
@@ -1230,6 +1260,8 @@ def _build_recursive_boundary(
     entity_path: str,
     remaining_depth: int | None = None,
     variant: str | None = None,
+    *,
+    channel_defs: dict[str, ChannelDef] | None = None,
 ) -> tuple[VizBoundary, list[VizEdge], _ExposeMap]:
     """Build a :class:`VizBoundary` for *entity*, recursively expanding children.
 
@@ -1280,9 +1312,15 @@ def _build_recursive_boundary(
     for child in child_entities:
         child_path = f"{entity_path}::{child.name}"
         sub_entity_map[child.name] = child
-        if _should_expand(child, variant) and (remaining_depth is None or remaining_depth > 0):
+        if (
+            isinstance(child, (Component, System))
+            and _should_expand(child, variant)
+            and (remaining_depth is None or remaining_depth > 0)
+        ):
             next_depth = None if remaining_depth is None else remaining_depth - 1
-            child_bnd, child_edges, child_expose_map = _build_recursive_boundary(child, child_path, next_depth, variant)  # type: ignore[arg-type]
+            child_bnd, child_edges, child_expose_map = _build_recursive_boundary(
+                child, child_path, next_depth, variant, channel_defs=channel_defs
+            )
             child_boundary_map[child.name] = child_bnd
             child_expose_maps[child.name] = child_expose_map
             all_edges.extend(child_edges)
@@ -1294,7 +1332,12 @@ def _build_recursive_boundary(
 
     # Channel nodes — use expose-chain-aware label resolution.
     channel_node_map = _collect_channel_nodes_resolve(
-        active_connects, root_id, sub_entity_map, opaque_node_map, child_expose_maps
+        active_connects,
+        root_id,
+        sub_entity_map,
+        opaque_node_map,
+        child_expose_maps,
+        channel_defs=channel_defs,
     )
 
     all_children: list[VizNode | VizBoundary] = [
@@ -1375,6 +1418,8 @@ def _collect_channel_nodes_resolve(
     sub_entity_map: dict[str, Component | System | UserDef],
     opaque_node_map: dict[str, VizNode],
     child_expose_maps: dict[str, _ExposeMap],
+    *,
+    channel_defs: dict[str, ChannelDef] | None = None,
 ) -> dict[str, VizNode]:
     """Like :func:`_collect_channel_nodes` but resolves labels through expose chains."""
     channel_interfaces: dict[str, str | None] = {}
@@ -1385,6 +1430,10 @@ def _collect_channel_nodes_resolve(
         if ch not in channel_interfaces:
             channel_interfaces[ch] = None
         if channel_interfaces[ch] is not None:
+            continue
+        # Prefer declared interface from ChannelDef.
+        if channel_defs and ch in channel_defs:
+            channel_interfaces[ch] = channel_defs[ch].interface
             continue
         if conn.src_entity and conn.src_port:
             label = _resolve_iface_label(conn.src_entity, conn.src_port, sub_entity_map, child_expose_maps)
@@ -1399,6 +1448,7 @@ def _collect_channel_nodes_resolve(
     for ch_name, iface_label in channel_interfaces.items():
         ch_id = f"{root_id}.channel.{ch_name}"
         display_iface = iface_label or ch_name
+        ch_def = channel_defs.get(ch_name) if channel_defs else None
         ports = [
             VizPort(
                 id=f"{ch_id}.in",
@@ -1414,7 +1464,13 @@ def _collect_channel_nodes_resolve(
             ),
         ]
         channel_nodes[ch_name] = VizNode(
-            id=ch_id, label=ch_name, title=iface_label, kind="channel", entity_path="", ports=ports
+            id=ch_id,
+            label=ch_name,
+            title=iface_label,
+            kind="channel",
+            entity_path=ch_def.qualified_name if ch_def else "",
+            description=ch_def.description if ch_def else None,
+            ports=ports,
         )
     return channel_nodes
 

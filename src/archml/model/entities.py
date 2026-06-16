@@ -83,6 +83,19 @@ class InterfaceDef(NamedDef):
     qualified_name: str = ""
 
 
+class ChannelDef(NamedDef):
+    """A named, typed channel declaration.
+
+    Channels are declared at file scope and referenced by ``connect`` statements
+    via the ``$name`` syntax.  The ``interface`` field names the interface that
+    flows through this channel, enabling type validation at connect sites.
+    """
+
+    interface: str
+    qualified_name: str = ""
+    variants: list[str] = _Field(default_factory=list)
+
+
 class ConnectDef(BaseModel):
     """A ``connect`` statement wiring ports via a named channel.
 
@@ -144,6 +157,8 @@ class ArchEntity(BaseModel):
     configs: list[ConfigRef] = _Field(default_factory=list)
     attributes: dict[str, list[str]] = _Field(default_factory=dict)
     is_external: bool = False
+    is_stub: bool = False
+    is_template: bool = False
     qualified_name: str = ""
     line: int = 0
 
@@ -163,9 +178,9 @@ class ContainerEntity(ArchEntity):
     """
 
     interfaces: list[InterfaceDef] = _Field(default_factory=list)
+    channels: list[ChannelDef] = _Field(default_factory=list)
     connects: list[ConnectDef] = _Field(default_factory=list)
     exposes: list[ExposeDef] = _Field(default_factory=list)
-    is_stub: bool = False
 
 
 class Component(ContainerEntity):
@@ -204,6 +219,7 @@ class ArchFile(BaseModel):
     enums: list[EnumDef] = _Field(default_factory=list)
     types: list[TypeDef] = _Field(default_factory=list)
     interfaces: list[InterfaceDef] = _Field(default_factory=list)
+    channels: list[ChannelDef] = _Field(default_factory=list)
     components: list[Component] = _Field(default_factory=list)
     systems: list[System] = _Field(default_factory=list)
     users: list[UserDef] = _Field(default_factory=list)

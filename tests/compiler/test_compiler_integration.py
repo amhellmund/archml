@@ -317,6 +317,8 @@ external system StripeAPI {
 }
 
 system ECommerce {
+    channel payment: PaymentRequest
+
     component OrderServiceInst {
         requires OrderRequestV2
         requires PaymentRequest
@@ -371,6 +373,7 @@ interface Signal { v: Int }
 
 system Outer {
     system Middle {
+        channel sig_ch: Signal
         component Inner {
             provides Signal
         }

@@ -18,6 +18,9 @@ external system StripeAPI {
 
 system ECommerce {
 
+    channel payment: PaymentRequest
+    channel stripe: PaymentRequest
+
     use component OrderService
 
     component PaymentGateway {

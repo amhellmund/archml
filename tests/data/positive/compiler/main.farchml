@@ -4,6 +4,8 @@ from compiler/shared/types import TaskRequest, TaskResult
 from compiler/worker import TaskWorker, PriorityRouter
 
 system TaskProcessingSystem {
+    channel task_req: TaskRequest
+
     use component TaskWorker
     use component PriorityRouter
 

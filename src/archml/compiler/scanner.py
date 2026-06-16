@@ -34,6 +34,8 @@ class TokenType(enum.Enum):
     USE = "use"
     EXTERNAL = "external"
     CONFIG = "config"
+    CHANNEL = "channel"
+    TEMPLATE = "template"
     # Symbols and operators
     LBRACE = "{"
     RBRACE = "}"
@@ -110,6 +112,8 @@ RESERVED_KEYWORDS: frozenset[str] = frozenset(
         "use",
         "external",
         "config",
+        "channel",
+        "template",
     }
 )
 """The set of all reserved keywords in the ArchML language.
@@ -160,6 +164,8 @@ _KEYWORDS: dict[str, TokenType] = {
     "use": TokenType.USE,
     "external": TokenType.EXTERNAL,
     "config": TokenType.CONFIG,
+    "channel": TokenType.CHANNEL,
+    "template": TokenType.TEMPLATE,
 }
 
 _SINGLE_CHAR_TOKENS: dict[str, TokenType] = {

@@ -964,3 +964,60 @@ class TestVariantAndAttributeSyntax:
             TokenType.COMMA,
             TokenType.IDENTIFIER,
         ]
+
+
+# ###############
+# channel keyword
+# ###############
+
+
+class TestChannelKeyword:
+    """The 'channel' keyword must tokenize as CHANNEL, not IDENTIFIER."""
+
+    def test_channel_produces_channel_token(self) -> None:
+        assert _types("channel") == [TokenType.CHANNEL]
+
+    def test_channel_not_identifier(self) -> None:
+        token = _tokens_no_eof("channel")[0]
+        assert token.type == TokenType.CHANNEL
+        assert token.type != TokenType.IDENTIFIER
+
+    def test_channel_in_declaration_context(self) -> None:
+        types = _types("channel payment: PaymentRequest")
+        assert types == [
+            TokenType.CHANNEL,
+            TokenType.IDENTIFIER,
+            TokenType.COLON,
+            TokenType.IDENTIFIER,
+        ]
+
+    def test_channel_is_reserved(self) -> None:
+        from archml.compiler.scanner import RESERVED_KEYWORDS
+
+        assert "channel" in RESERVED_KEYWORDS
+
+
+# ###############
+# template keyword
+# ###############
+
+
+class TestTemplateKeyword:
+    """The 'template' keyword must tokenize as TEMPLATE, not IDENTIFIER."""
+
+    def test_template_produces_template_token(self) -> None:
+        assert _types("template") == [TokenType.TEMPLATE]
+
+    def test_template_not_identifier(self) -> None:
+        token = _tokens_no_eof("template")[0]
+        assert token.type == TokenType.TEMPLATE
+        assert token.type != TokenType.IDENTIFIER
+
+    def test_template_in_declaration_context(self) -> None:
+        types = _types("template system Pipeline")
+        assert types == [TokenType.TEMPLATE, TokenType.SYSTEM, TokenType.IDENTIFIER]
+
+    def test_template_is_reserved(self) -> None:
+        from archml.compiler.scanner import RESERVED_KEYWORDS
+
+        assert "template" in RESERVED_KEYWORDS
