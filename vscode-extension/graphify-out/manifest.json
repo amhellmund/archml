@@ -1,0 +1,27 @@
+{
+  "language-configuration.json": {
+    "mtime": 1774944631.4564767,
+    "ast_hash": "e144608df8dd72d777304bc0c693ffe8",
+    "semantic_hash": ""
+  },
+  "package.json": {
+    "mtime": 1781611747.537537,
+    "ast_hash": "f0e8a08f038c72e6727be4854d2d1f26",
+    "semantic_hash": ""
+  },
+  "src/extension.ts": {
+    "mtime": 1774944672.091547,
+    "ast_hash": "b3b17283923f2f2b31de8adf7bd0a5d9",
+    "semantic_hash": ""
+  },
+  "syntaxes/archml.tmLanguage.json": {
+    "mtime": 1781637891.4958904,
+    "ast_hash": "7534608d0aba3d6b5b0d4715c84b8542",
+    "semantic_hash": ""
+  },
+  "tsconfig.json": {
+    "mtime": 1774944620.3771913,
+    "ast_hash": "9e79fe14707e6d38a346b58788531f0c",
+    "semantic_hash": ""
+  }
+}

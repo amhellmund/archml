@@ -19,6 +19,7 @@ from archml.model.types import (
     OptionalTypeRef,
     PrimitiveType,
     PrimitiveTypeRef,
+    UrlTypeRef,
 )
 
 # ###############
@@ -518,6 +519,22 @@ class TestFieldTypeReferences:
         assert isinstance(f.type, OptionalTypeRef)
         assert isinstance(f.type.inner_type, ListTypeRef)
         assert isinstance(f.type.inner_type.element_type, MapTypeRef)
+
+    def test_url_with_schema(self) -> None:
+        f = self._parse_field_type("Url<SensorRecord>")
+        assert isinstance(f.type, UrlTypeRef)
+        assert f.type.schema_name == "SensorRecord"
+
+    def test_url_nested_in_optional(self) -> None:
+        f = self._parse_field_type("Optional<Url<SensorRecord>>")
+        assert isinstance(f.type, OptionalTypeRef)
+        assert isinstance(f.type.inner_type, UrlTypeRef)
+        assert f.type.inner_type.schema_name == "SensorRecord"
+
+    def test_url_without_schema_is_error(self) -> None:
+        """A bare Url (no <Schema>) is a parse error — the parameter is required."""
+        with pytest.raises(ParseError):
+            self._parse_field_type("Url")
 
 
 # ###############

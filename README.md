@@ -168,6 +168,7 @@ Variants (`<cloud, on_premise>`) model multiple configurations within a single f
 
 Primitive types: `String`, `Int`, `Float`, `Bool`, `Bytes`, `Timestamp`, `Datetime`
 Container types: `List<T>`, `Map<K, V>`, `Optional<T>`
+Reference types: `Url<Schema>` — a typed pointer to a resource shaped like `Schema` (a `type` or `interface`); the scheme and location are runtime values, only the schema is part of the contract
 
 Full language reference: [docs/language_specs/functional_architecture.md](docs/language_specs/functional_architecture.md)
 

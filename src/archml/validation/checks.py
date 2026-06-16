@@ -12,7 +12,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from archml.model.entities import ArchFile, Component, ConnectDef, ExposeDef, InterfaceRef, System
-from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
+from archml.model.types import (
+    FieldDef,
+    ListTypeRef,
+    MapTypeRef,
+    NamedTypeRef,
+    OptionalTypeRef,
+    TypeRef,
+    UrlTypeRef,
+)
 
 # ###############
 # Public Interface
@@ -124,7 +132,12 @@ def _entity_label(name: str, qualified_name: str) -> str:
 
 
 def _collect_named_refs_from_type(type_ref: TypeRef) -> list[str]:
-    """Recursively collect all NamedTypeRef names reachable from a type reference."""
+    """Recursively collect all NamedTypeRef names reachable from a type reference.
+
+    Used for type-definition cycle detection. A ``Url<Schema>`` is a reference (a
+    pointer), not a containment, so its schema is deliberately not followed — this
+    is what allows ``Url<T>`` to break what would otherwise be an illegal cycle.
+    """
     if isinstance(type_ref, NamedTypeRef):
         return [type_ref.name]
     if isinstance(type_ref, ListTypeRef):
@@ -133,6 +146,8 @@ def _collect_named_refs_from_type(type_ref: TypeRef) -> list[str]:
         return _collect_named_refs_from_type(type_ref.key_type) + _collect_named_refs_from_type(type_ref.value_type)
     if isinstance(type_ref, OptionalTypeRef):
         return _collect_named_refs_from_type(type_ref.inner_type)
+    if isinstance(type_ref, UrlTypeRef):
+        return []
     return []
 
 

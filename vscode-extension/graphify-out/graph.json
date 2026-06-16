@@ -1,0 +1,2034 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "label": "package.json",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "package",
+      "community": 0,
+      "norm_label": "package.json"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "package_name",
+      "community": 0,
+      "norm_label": "name"
+    },
+    {
+      "label": "displayName",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "package_displayname",
+      "community": 0,
+      "norm_label": "displayname"
+    },
+    {
+      "label": "description",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L4",
+      "_origin": "ast",
+      "id": "package_description",
+      "community": 0,
+      "norm_label": "description"
+    },
+    {
+      "label": "repository",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "package_repository",
+      "community": 0,
+      "norm_label": "repository"
+    },
+    {
+      "label": "license",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "package_license",
+      "community": 0,
+      "norm_label": "license"
+    },
+    {
+      "label": "version",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "package_version",
+      "community": 0,
+      "norm_label": "version"
+    },
+    {
+      "label": "publisher",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "package_publisher",
+      "community": 0,
+      "norm_label": "publisher"
+    },
+    {
+      "label": "engines",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L9",
+      "_origin": "ast",
+      "id": "package_engines",
+      "community": 0,
+      "norm_label": "engines"
+    },
+    {
+      "label": "vscode",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "package_engines_vscode",
+      "community": 0,
+      "norm_label": "vscode"
+    },
+    {
+      "label": "categories",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L12",
+      "_origin": "ast",
+      "id": "package_categories",
+      "community": 0,
+      "norm_label": "categories"
+    },
+    {
+      "label": "activationEvents",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "package_activationevents",
+      "community": 0,
+      "norm_label": "activationevents"
+    },
+    {
+      "label": "main",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L18",
+      "_origin": "ast",
+      "id": "package_main",
+      "community": 0,
+      "norm_label": "main"
+    },
+    {
+      "label": "contributes",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L19",
+      "_origin": "ast",
+      "id": "package_contributes",
+      "community": 0,
+      "norm_label": "contributes"
+    },
+    {
+      "label": "languages",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L20",
+      "_origin": "ast",
+      "id": "package_contributes_languages",
+      "community": 0,
+      "norm_label": "languages"
+    },
+    {
+      "label": "grammars",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L33",
+      "_origin": "ast",
+      "id": "package_contributes_grammars",
+      "community": 0,
+      "norm_label": "grammars"
+    },
+    {
+      "label": "scripts",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L41",
+      "_origin": "ast",
+      "id": "package_scripts",
+      "community": 0,
+      "norm_label": "scripts"
+    },
+    {
+      "label": "compile",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L42",
+      "_origin": "ast",
+      "id": "package_scripts_compile",
+      "community": 0,
+      "norm_label": "compile"
+    },
+    {
+      "label": "watch",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L43",
+      "_origin": "ast",
+      "id": "package_scripts_watch",
+      "community": 0,
+      "norm_label": "watch"
+    },
+    {
+      "label": "devDependencies",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L45",
+      "_origin": "ast",
+      "id": "package_devdependencies",
+      "community": 0,
+      "norm_label": "devdependencies"
+    },
+    {
+      "label": "@types/vscode",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L46",
+      "_origin": "ast",
+      "id": "package_devdependencies_types_vscode",
+      "community": 0,
+      "norm_label": "@types/vscode"
+    },
+    {
+      "label": "typescript",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L47",
+      "_origin": "ast",
+      "id": "package_devdependencies_typescript",
+      "community": 0,
+      "norm_label": "typescript"
+    },
+    {
+      "label": "dependencies",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L49",
+      "_origin": "ast",
+      "id": "package_dependencies",
+      "community": 0,
+      "norm_label": "dependencies"
+    },
+    {
+      "label": "@vscode/vsce",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L50",
+      "_origin": "ast",
+      "id": "package_dependencies_vscode_vsce",
+      "community": 0,
+      "norm_label": "@vscode/vsce"
+    },
+    {
+      "label": "extension.ts",
+      "file_type": "code",
+      "source_file": "src/extension.ts",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "src_extension",
+      "community": 5,
+      "norm_label": "extension.ts"
+    },
+    {
+      "label": "activate()",
+      "file_type": "code",
+      "source_file": "src/extension.ts",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "src_extension_activate",
+      "community": 5,
+      "norm_label": "activate()"
+    },
+    {
+      "label": "deactivate()",
+      "file_type": "code",
+      "source_file": "src/extension.ts",
+      "source_location": "L12",
+      "_origin": "ast",
+      "id": "src_extension_deactivate",
+      "community": 5,
+      "norm_label": "deactivate()"
+    },
+    {
+      "label": "ArchmlFoldingRangeProvider",
+      "file_type": "code",
+      "source_file": "src/extension.ts",
+      "source_location": "L18",
+      "_origin": "ast",
+      "id": "src_extension_archmlfoldingrangeprovider",
+      "community": 5,
+      "norm_label": "archmlfoldingrangeprovider"
+    },
+    {
+      "label": ".provideFoldingRanges()",
+      "file_type": "code",
+      "source_file": "src/extension.ts",
+      "source_location": "L19",
+      "_origin": "ast",
+      "id": "src_extension_archmlfoldingrangeprovider_providefoldingranges",
+      "community": 5,
+      "norm_label": ".providefoldingranges()"
+    },
+    {
+      "label": "._descriptionRanges()",
+      "file_type": "code",
+      "source_file": "src/extension.ts",
+      "source_location": "L38",
+      "_origin": "ast",
+      "id": "src_extension_archmlfoldingrangeprovider_descriptionranges",
+      "community": 5,
+      "norm_label": "._descriptionranges()"
+    },
+    {
+      "label": "._braceRanges()",
+      "file_type": "code",
+      "source_file": "src/extension.ts",
+      "source_location": "L72",
+      "_origin": "ast",
+      "id": "src_extension_archmlfoldingrangeprovider_braceranges",
+      "community": 5,
+      "norm_label": "._braceranges()"
+    },
+    {
+      "label": "_countTripleQuotes()",
+      "file_type": "code",
+      "source_file": "src/extension.ts",
+      "source_location": "L97",
+      "_origin": "ast",
+      "id": "src_extension_counttriplequotes",
+      "community": 5,
+      "norm_label": "_counttriplequotes()"
+    },
+    {
+      "label": "archml.tmLanguage.json",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage",
+      "community": 6,
+      "norm_label": "archml.tmlanguage.json"
+    },
+    {
+      "label": "$schema",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_schema",
+      "community": 6,
+      "norm_label": "$schema"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_name",
+      "community": 6,
+      "norm_label": "name"
+    },
+    {
+      "label": "scopeName",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L4",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_scopename",
+      "community": 6,
+      "norm_label": "scopename"
+    },
+    {
+      "label": "fileTypes",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_filetypes",
+      "community": 6,
+      "norm_label": "filetypes"
+    },
+    {
+      "label": "patterns",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_patterns",
+      "community": 6,
+      "norm_label": "patterns"
+    },
+    {
+      "label": "repository",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L19",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository",
+      "community": 1,
+      "norm_label": "repository"
+    },
+    {
+      "label": "comment",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L20",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_comment",
+      "community": 1,
+      "norm_label": "comment"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L21",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_comment_name",
+      "community": 1,
+      "norm_label": "name"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L22",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_comment_match",
+      "community": 1,
+      "norm_label": "match"
+    },
+    {
+      "label": "description",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L25",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_description",
+      "community": 3,
+      "norm_label": "description"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L26",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_description_name",
+      "community": 3,
+      "norm_label": "name"
+    },
+    {
+      "label": "begin",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L27",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_description_begin",
+      "community": 3,
+      "norm_label": "begin"
+    },
+    {
+      "label": "end",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L28",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_description_end",
+      "community": 3,
+      "norm_label": "end"
+    },
+    {
+      "label": "beginCaptures",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L29",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_description_begincaptures",
+      "community": 3,
+      "norm_label": "begincaptures"
+    },
+    {
+      "label": "0",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L30",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_begincaptures_0",
+      "community": 3,
+      "norm_label": "0"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L30",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_0_name",
+      "community": 3,
+      "norm_label": "name"
+    },
+    {
+      "label": "endCaptures",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L32",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_description_endcaptures",
+      "community": 3,
+      "norm_label": "endcaptures"
+    },
+    {
+      "label": "0",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L33",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_endcaptures_0",
+      "community": 3,
+      "norm_label": "0"
+    },
+    {
+      "label": "patterns",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L35",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_description_patterns",
+      "community": 3,
+      "norm_label": "patterns"
+    },
+    {
+      "label": "attribute",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L44",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_attribute",
+      "community": 2,
+      "norm_label": "attribute"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L45",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_attribute_match",
+      "community": 2,
+      "norm_label": "match"
+    },
+    {
+      "label": "captures",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L46",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_attribute_captures",
+      "community": 2,
+      "norm_label": "captures"
+    },
+    {
+      "label": "1",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L47",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_captures_1",
+      "community": 2,
+      "norm_label": "1"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L47",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_1_name",
+      "community": 2,
+      "norm_label": "name"
+    },
+    {
+      "label": "2",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L48",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_captures_2",
+      "community": 2,
+      "norm_label": "2"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L48",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_2_name",
+      "community": 2,
+      "norm_label": "name"
+    },
+    {
+      "label": "entity-keyword",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L52",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_entity_keyword",
+      "community": 2,
+      "norm_label": "entity-keyword"
+    },
+    {
+      "label": "comment",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L53",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_entity_keyword_comment",
+      "community": 2,
+      "norm_label": "comment"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L54",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_entity_keyword_match",
+      "community": 2,
+      "norm_label": "match"
+    },
+    {
+      "label": "captures",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L55",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_entity_keyword_captures",
+      "community": 2,
+      "norm_label": "captures"
+    },
+    {
+      "label": "control-keyword",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L61",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_control_keyword",
+      "community": 7,
+      "norm_label": "control-keyword"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L62",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_control_keyword_name",
+      "community": 7,
+      "norm_label": "name"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L63",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_control_keyword_match",
+      "community": 7,
+      "norm_label": "match"
+    },
+    {
+      "label": "builtin-type",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L66",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_builtin_type",
+      "community": 1,
+      "norm_label": "builtin-type"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L67",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_builtin_type_name",
+      "community": 1,
+      "norm_label": "name"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L68",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_builtin_type_match",
+      "community": 1,
+      "norm_label": "match"
+    },
+    {
+      "label": "variant",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L71",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_variant",
+      "community": 1,
+      "norm_label": "variant"
+    },
+    {
+      "label": "comment",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L72",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_variant_comment",
+      "community": 1,
+      "norm_label": "comment"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L73",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_variant_name",
+      "community": 1,
+      "norm_label": "name"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L74",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_variant_match",
+      "community": 1,
+      "norm_label": "match"
+    },
+    {
+      "label": "generic-type",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L77",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_generic_type",
+      "community": 1,
+      "norm_label": "generic-type"
+    },
+    {
+      "label": "comment",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L78",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_generic_type_comment",
+      "community": 1,
+      "norm_label": "comment"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L79",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_generic_type_name",
+      "community": 1,
+      "norm_label": "name"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L80",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_generic_type_match",
+      "community": 1,
+      "norm_label": "match"
+    },
+    {
+      "label": "channel",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L83",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_channel",
+      "community": 1,
+      "norm_label": "channel"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L84",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_channel_name",
+      "community": 1,
+      "norm_label": "name"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L85",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_channel_match",
+      "community": 1,
+      "norm_label": "match"
+    },
+    {
+      "label": "arrow",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L88",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_arrow",
+      "community": 1,
+      "norm_label": "arrow"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L89",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_arrow_name",
+      "community": 1,
+      "norm_label": "name"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L90",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_arrow_match",
+      "community": 1,
+      "norm_label": "match"
+    },
+    {
+      "label": "port-ref",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L93",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_repository_port_ref",
+      "community": 2,
+      "norm_label": "port-ref"
+    },
+    {
+      "label": "comment",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L94",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_port_ref_comment",
+      "community": 2,
+      "norm_label": "comment"
+    },
+    {
+      "label": "match",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L95",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_port_ref_match",
+      "community": 2,
+      "norm_label": "match"
+    },
+    {
+      "label": "captures",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L96",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_port_ref_captures",
+      "community": 2,
+      "norm_label": "captures"
+    },
+    {
+      "label": "3",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L99",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_captures_3",
+      "community": 2,
+      "norm_label": "3"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L99",
+      "_origin": "ast",
+      "id": "syntaxes_archml_tmlanguage_3_name",
+      "community": 2,
+      "norm_label": "name"
+    },
+    {
+      "label": "tsconfig.json",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "tsconfig",
+      "community": 4,
+      "norm_label": "tsconfig.json"
+    },
+    {
+      "label": "compilerOptions",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "tsconfig_compileroptions",
+      "community": 4,
+      "norm_label": "compileroptions"
+    },
+    {
+      "label": "module",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "tsconfig_compileroptions_module",
+      "community": 4,
+      "norm_label": "module"
+    },
+    {
+      "label": "target",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L4",
+      "_origin": "ast",
+      "id": "tsconfig_compileroptions_target",
+      "community": 4,
+      "norm_label": "target"
+    },
+    {
+      "label": "lib",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "tsconfig_compileroptions_lib",
+      "community": 4,
+      "norm_label": "lib"
+    },
+    {
+      "label": "outDir",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "tsconfig_compileroptions_outdir",
+      "community": 4,
+      "norm_label": "outdir"
+    },
+    {
+      "label": "rootDir",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "tsconfig_compileroptions_rootdir",
+      "community": 4,
+      "norm_label": "rootdir"
+    },
+    {
+      "label": "strict",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "tsconfig_compileroptions_strict",
+      "community": 4,
+      "norm_label": "strict"
+    },
+    {
+      "label": "sourceMap",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L9",
+      "_origin": "ast",
+      "id": "tsconfig_compileroptions_sourcemap",
+      "community": 4,
+      "norm_label": "sourcemap"
+    },
+    {
+      "label": "exclude",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L11",
+      "_origin": "ast",
+      "id": "tsconfig_exclude",
+      "community": 4,
+      "norm_label": "exclude"
+    }
+  ],
+  "links": [
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_activationevents",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_categories",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L19",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_contributes",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L49",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_dependencies",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_description",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L45",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_devdependencies",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_displayname",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L9",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_engines",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_license",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L18",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_main",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_publisher",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_repository",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L41",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_scripts",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L7",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_version",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "package_engines",
+      "target": "package_engines_vscode",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L33",
+      "weight": 1.0,
+      "source": "package_contributes",
+      "target": "package_contributes_grammars",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L20",
+      "weight": 1.0,
+      "source": "package_contributes",
+      "target": "package_contributes_languages",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L42",
+      "weight": 1.0,
+      "source": "package_scripts",
+      "target": "package_scripts_compile",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L43",
+      "weight": 1.0,
+      "source": "package_scripts",
+      "target": "package_scripts_watch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L46",
+      "weight": 1.0,
+      "source": "package_devdependencies",
+      "target": "package_devdependencies_types_vscode",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L47",
+      "weight": 1.0,
+      "source": "package_devdependencies",
+      "target": "package_devdependencies_typescript",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L50",
+      "weight": 1.0,
+      "source": "package_dependencies",
+      "target": "package_dependencies_vscode_vsce",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "src_extension",
+      "target": "src_extension_activate",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L18",
+      "weight": 1.0,
+      "source": "src_extension",
+      "target": "src_extension_archmlfoldingrangeprovider",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L97",
+      "weight": 1.0,
+      "source": "src_extension",
+      "target": "src_extension_counttriplequotes",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "src_extension",
+      "target": "src_extension_deactivate",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L72",
+      "weight": 1.0,
+      "source": "src_extension_archmlfoldingrangeprovider",
+      "target": "src_extension_archmlfoldingrangeprovider_braceranges",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L38",
+      "weight": 1.0,
+      "source": "src_extension_archmlfoldingrangeprovider",
+      "target": "src_extension_archmlfoldingrangeprovider_descriptionranges",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L19",
+      "weight": 1.0,
+      "source": "src_extension_archmlfoldingrangeprovider",
+      "target": "src_extension_archmlfoldingrangeprovider_providefoldingranges",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L27",
+      "weight": 1.0,
+      "source": "src_extension_archmlfoldingrangeprovider_providefoldingranges",
+      "target": "src_extension_archmlfoldingrangeprovider_braceranges",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L26",
+      "weight": 1.0,
+      "source": "src_extension_archmlfoldingrangeprovider_providefoldingranges",
+      "target": "src_extension_archmlfoldingrangeprovider_descriptionranges",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extension.ts",
+      "source_location": "L44",
+      "weight": 1.0,
+      "source": "src_extension_archmlfoldingrangeprovider_descriptionranges",
+      "target": "src_extension_counttriplequotes",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage",
+      "target": "syntaxes_archml_tmlanguage_filetypes",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage",
+      "target": "syntaxes_archml_tmlanguage_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage",
+      "target": "syntaxes_archml_tmlanguage_patterns",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L19",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage",
+      "target": "syntaxes_archml_tmlanguage_repository",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage",
+      "target": "syntaxes_archml_tmlanguage_schema",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage",
+      "target": "syntaxes_archml_tmlanguage_scopename",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L88",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_arrow",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L44",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_attribute",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L66",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_builtin_type",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L83",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_channel",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L20",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_comment",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L61",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_control_keyword",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L25",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_description",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L52",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_entity_keyword",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L77",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_generic_type",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L93",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_port_ref",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L71",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository",
+      "target": "syntaxes_archml_tmlanguage_repository_variant",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L22",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_comment",
+      "target": "syntaxes_archml_tmlanguage_comment_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L21",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_comment",
+      "target": "syntaxes_archml_tmlanguage_comment_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L27",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_description",
+      "target": "syntaxes_archml_tmlanguage_description_begin",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L29",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_description",
+      "target": "syntaxes_archml_tmlanguage_description_begincaptures",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L28",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_description",
+      "target": "syntaxes_archml_tmlanguage_description_end",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L32",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_description",
+      "target": "syntaxes_archml_tmlanguage_description_endcaptures",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L26",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_description",
+      "target": "syntaxes_archml_tmlanguage_description_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L35",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_description",
+      "target": "syntaxes_archml_tmlanguage_description_patterns",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L30",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_description_begincaptures",
+      "target": "syntaxes_archml_tmlanguage_begincaptures_0",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L30",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_begincaptures_0",
+      "target": "syntaxes_archml_tmlanguage_0_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L33",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_endcaptures_0",
+      "target": "syntaxes_archml_tmlanguage_0_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L33",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_description_endcaptures",
+      "target": "syntaxes_archml_tmlanguage_endcaptures_0",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L46",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_attribute",
+      "target": "syntaxes_archml_tmlanguage_attribute_captures",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L45",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_attribute",
+      "target": "syntaxes_archml_tmlanguage_attribute_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L47",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_attribute_captures",
+      "target": "syntaxes_archml_tmlanguage_captures_1",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L48",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_attribute_captures",
+      "target": "syntaxes_archml_tmlanguage_captures_2",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L97",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_captures_1",
+      "target": "syntaxes_archml_tmlanguage_1_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L56",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_entity_keyword_captures",
+      "target": "syntaxes_archml_tmlanguage_captures_1",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L97",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_port_ref_captures",
+      "target": "syntaxes_archml_tmlanguage_captures_1",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L98",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_captures_2",
+      "target": "syntaxes_archml_tmlanguage_2_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L57",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_entity_keyword_captures",
+      "target": "syntaxes_archml_tmlanguage_captures_2",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L98",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_port_ref_captures",
+      "target": "syntaxes_archml_tmlanguage_captures_2",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L55",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_entity_keyword",
+      "target": "syntaxes_archml_tmlanguage_entity_keyword_captures",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L53",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_entity_keyword",
+      "target": "syntaxes_archml_tmlanguage_entity_keyword_comment",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L54",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_entity_keyword",
+      "target": "syntaxes_archml_tmlanguage_entity_keyword_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L63",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_control_keyword",
+      "target": "syntaxes_archml_tmlanguage_control_keyword_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L62",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_control_keyword",
+      "target": "syntaxes_archml_tmlanguage_control_keyword_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L68",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_builtin_type",
+      "target": "syntaxes_archml_tmlanguage_builtin_type_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L67",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_builtin_type",
+      "target": "syntaxes_archml_tmlanguage_builtin_type_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L72",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_variant",
+      "target": "syntaxes_archml_tmlanguage_variant_comment",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L74",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_variant",
+      "target": "syntaxes_archml_tmlanguage_variant_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L73",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_variant",
+      "target": "syntaxes_archml_tmlanguage_variant_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L78",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_generic_type",
+      "target": "syntaxes_archml_tmlanguage_generic_type_comment",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L80",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_generic_type",
+      "target": "syntaxes_archml_tmlanguage_generic_type_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L79",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_generic_type",
+      "target": "syntaxes_archml_tmlanguage_generic_type_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L85",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_channel",
+      "target": "syntaxes_archml_tmlanguage_channel_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L84",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_channel",
+      "target": "syntaxes_archml_tmlanguage_channel_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L90",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_arrow",
+      "target": "syntaxes_archml_tmlanguage_arrow_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L89",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_arrow",
+      "target": "syntaxes_archml_tmlanguage_arrow_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L96",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_port_ref",
+      "target": "syntaxes_archml_tmlanguage_port_ref_captures",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L94",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_port_ref",
+      "target": "syntaxes_archml_tmlanguage_port_ref_comment",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L95",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_repository_port_ref",
+      "target": "syntaxes_archml_tmlanguage_port_ref_match",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L99",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_port_ref_captures",
+      "target": "syntaxes_archml_tmlanguage_captures_3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "syntaxes/archml.tmLanguage.json",
+      "source_location": "L99",
+      "weight": 1.0,
+      "source": "syntaxes_archml_tmlanguage_captures_3",
+      "target": "syntaxes_archml_tmlanguage_3_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "tsconfig",
+      "target": "tsconfig_compileroptions",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L11",
+      "weight": 1.0,
+      "source": "tsconfig",
+      "target": "tsconfig_exclude",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "tsconfig_compileroptions",
+      "target": "tsconfig_compileroptions_lib",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "tsconfig_compileroptions",
+      "target": "tsconfig_compileroptions_module",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "tsconfig_compileroptions",
+      "target": "tsconfig_compileroptions_outdir",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L7",
+      "weight": 1.0,
+      "source": "tsconfig_compileroptions",
+      "target": "tsconfig_compileroptions_rootdir",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L9",
+      "weight": 1.0,
+      "source": "tsconfig_compileroptions",
+      "target": "tsconfig_compileroptions_sourcemap",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "tsconfig_compileroptions",
+      "target": "tsconfig_compileroptions_strict",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "tsconfig_compileroptions",
+      "target": "tsconfig_compileroptions_target",
+      "confidence_score": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "built_at_commit": "4857b0fc568d271260d11d29c03f8453d8b45fbc"
+}

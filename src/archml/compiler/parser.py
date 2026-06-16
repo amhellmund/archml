@@ -31,6 +31,7 @@ from archml.model.types import (
     PrimitiveType,
     PrimitiveTypeRef,
     TypeRef,
+    UrlTypeRef,
 )
 
 # ###############
@@ -916,7 +917,8 @@ class _Parser:
     def _parse_type_ref(self) -> TypeRef:
         """Parse a type reference.
 
-        Handles primitive types, List<T>, Map<K,V>, Optional<T>, or a named type.
+        Handles primitive types, List<T>, Map<K,V>, Optional<T>, Url<Schema>, or a
+        named type.
         """
         name_tok = self._expect_name()
         name = name_tok.value
@@ -939,6 +941,11 @@ class _Parser:
             inner = self._parse_type_ref()
             self._expect(TokenType.RANGLE)
             return OptionalTypeRef(inner_type=inner)
+        if name == "Url":
+            self._expect(TokenType.LANGLE)
+            schema_tok = self._expect_name()
+            self._expect(TokenType.RANGLE)
+            return UrlTypeRef(schema_name=schema_tok.value)
         return NamedTypeRef(name=name)
 
     # ------------------------------------------------------------------

@@ -79,6 +79,31 @@ An entity may have any number of `@` attributes.
 | `Map<K, V>`   | Key–value mapping              |
 | `Optional<T>` | Value that may be absent       |
 
+### Reference Types
+
+| Type           | Description                                              |
+| -------------- | ------------------------------------------------------- |
+| `Url<Schema>`  | A typed reference to a resource shaped like `Schema`    |
+
+A URL bundles three aspects: a **scheme** (e.g. `https`, `s3`), a **location** (e.g.
+`api.example.com/orders`), and the **schema** of the resource it points to. The scheme and
+location are *runtime* values and are deliberately **not** part of the functional contract — only
+the schema is architecturally meaningful. `Url<Schema>` therefore captures just the schema, the
+shape of the data that lives at the other end:
+
+```
+interface BlobEvent {
+    record:  Url<SensorRecord>
+    archive: Url<BatchManifest>
+    backup:  Optional<Url<SensorRecord>>
+}
+```
+
+The parameter is **required** (a bare `Url` is a syntax error) and must name a `type` or
+`interface` (not an `enum` or primitive). Because a `Url` is a reference rather than a containment,
+`Url<T>` does **not** form a type-definition cycle — `type Node { next: Url<Node> }` is legal,
+whereas `type Node { next: Node }` is not.
+
 ### Enumerations
 
 The `enum` keyword defines a constrained set of named values.
@@ -741,6 +766,7 @@ type_expr   ::= primitive_type
               | 'List'     '<' type_expr '>'
               | 'Map'      '<' type_expr ',' type_expr '>'
               | 'Optional' '<' type_expr '>'
+              | 'Url'      '<' IDENT '>'
               | IDENT
 
 primitive_type ::= 'String' | 'Int' | 'Float' | 'Bool'

@@ -64,10 +64,24 @@ class NamedTypeRef(BaseModel):
     name: str
 
 
+class UrlTypeRef(BaseModel):
+    """Reference to a ``Url<Schema>`` — a typed pointer to a remote resource.
+
+    A URL bundles a scheme and a location, both of which are runtime values, plus
+    a schema describing the shape of the resource it points to. Only the schema is
+    architecturally meaningful, so it is the sole part captured here. ``schema_name``
+    must resolve to a type or interface. Because a URL is a reference rather than a
+    containment, ``Url<T>`` does not contribute to type-definition cycles.
+    """
+
+    kind: Literal["url"] = "url"
+    schema_name: str
+
+
 # A field type reference — one of the built-in, container, or named types.
 # The `kind` discriminator field enables fast, unambiguous deserialization.
 TypeRef = Annotated[
-    PrimitiveTypeRef | ListTypeRef | MapTypeRef | OptionalTypeRef | NamedTypeRef,
+    PrimitiveTypeRef | ListTypeRef | MapTypeRef | OptionalTypeRef | NamedTypeRef | UrlTypeRef,
     _Field(discriminator="kind"),
 ]
 

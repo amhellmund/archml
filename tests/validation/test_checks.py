@@ -22,6 +22,7 @@ from archml.model.types import (
     OptionalTypeRef,
     PrimitiveType,
     PrimitiveTypeRef,
+    UrlTypeRef,
 )
 from archml.validation.checks import (
     ValidationResult,
@@ -56,6 +57,11 @@ def _lfield(name: str, element_type: str) -> FieldDef:
 def _ofield(name: str, inner_type: str) -> FieldDef:
     """Create a FieldDef with an Optional<NamedType> type."""
     return FieldDef(name=name, type=OptionalTypeRef(inner_type=NamedTypeRef(name=inner_type)))
+
+
+def _ufield(name: str, schema_name: str) -> FieldDef:
+    """Create a FieldDef with a Url<Schema> type."""
+    return FieldDef(name=name, type=UrlTypeRef(schema_name=schema_name))
 
 
 def _mfield(name: str, key_type: str, value_type: str) -> FieldDef:
@@ -224,6 +230,22 @@ class TestTypeCycles:
             types=[
                 TypeDef(name="X", fields=[_pfield("a")]),
                 TypeDef(name="Y", fields=[_pfield("b")]),
+            ]
+        )
+        _assert_no_error(arch)
+
+    def test_url_self_reference_not_a_cycle(self) -> None:
+        # type Node { next: Url<Node> } — a Url is a reference, not containment,
+        # so a self-referential Url does not form a cycle.
+        arch = ArchFile(types=[TypeDef(name="Node", fields=[_ufield("next", "Node")])])
+        _assert_no_error(arch)
+
+    def test_url_breaks_otherwise_cyclic_reference(self) -> None:
+        # type A { b: B }  type B { a: Url<A> } — the Url edge breaks the cycle.
+        arch = ArchFile(
+            types=[
+                TypeDef(name="A", fields=[_nfield("b", "B")]),
+                TypeDef(name="B", fields=[_ufield("a", "A")]),
             ]
         )
         _assert_no_error(arch)

@@ -95,7 +95,8 @@ export type TypeRefJson =
   | { kind: "list"; element_type: TypeRefJson }
   | { kind: "map"; key_type: TypeRefJson; value_type: TypeRefJson }
   | { kind: "optional"; inner_type: TypeRefJson }
-  | { kind: "named"; name: string };
+  | { kind: "named"; name: string }
+  | { kind: "url"; schema_name: string };
 
 export interface FieldDefJson {
   name: string;

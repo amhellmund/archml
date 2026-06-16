@@ -65,7 +65,7 @@
 
     "builtin-type": {
       "name": "support.type.primitive.archml",
-      "match": "\\b(String|Int|Float|Bool|Bytes|Timestamp|Datetime|List|Map|Optional)\\b"
+      "match": "\\b(String|Int|Float|Bool|Bytes|Timestamp|Datetime|List|Map|Optional|Url)\\b"
     },
 
     "variant": {

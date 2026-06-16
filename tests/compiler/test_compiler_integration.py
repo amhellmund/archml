@@ -429,3 +429,34 @@ system ECommerce {
         # as a stub component in the system — no connect errors expected here.
         connect_errors = [e for e in errors if "unknown child entity" in e.message]
         assert connect_errors == [], f"Connect errors: {connect_errors}"
+
+    def test_url_field_end_to_end(self) -> None:
+        """A file using Url<Schema> parses, analyses, validates, and round-trips."""
+        from archml.compiler.artifact import serialize
+        from archml.model.types import UrlTypeRef
+        from archml.validation.checks import validate
+
+        source = """
+type SensorRecord {
+    device_id: String
+    temperature: Float
+}
+
+interface BlobEvent {
+    record: Url<SensorRecord>
+    archive: Optional<Url<SensorRecord>>
+}
+
+component Ingester {
+    requires BlobEvent
+}
+"""
+        arch_file = parse(source)
+        assert analyze(arch_file) == []
+        assert not validate(arch_file).has_errors
+
+        # The schema survives a JSON artifact round-trip via the discriminated union.
+        restored = ArchFile.model_validate_json(serialize(arch_file))
+        record_field = restored.interfaces[0].fields[0]
+        assert isinstance(record_field.type, UrlTypeRef)
+        assert record_field.type.schema_name == "SensorRecord"

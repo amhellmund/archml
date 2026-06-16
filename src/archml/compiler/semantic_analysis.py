@@ -30,7 +30,15 @@ from archml.model.entities import (
     TypeDef,
     UserDef,
 )
-from archml.model.types import FieldDef, ListTypeRef, MapTypeRef, NamedTypeRef, OptionalTypeRef, TypeRef
+from archml.model.types import (
+    FieldDef,
+    ListTypeRef,
+    MapTypeRef,
+    NamedTypeRef,
+    OptionalTypeRef,
+    TypeRef,
+    UrlTypeRef,
+)
 
 _RESERVED_VARIANTS: frozenset[str] = frozenset({"all", "baseline"})
 
@@ -160,8 +168,12 @@ class _SemanticAnalyzer:
         # For field type checks: only types and enums are valid (not interfaces).
         # When resolved imports are available, filter to only type/enum imports.
         # Without resolution we are permissive — the kind is not yet known.
+        #
+        # The schema of a ``Url<Schema>`` must be a type or interface (not an enum),
+        # so its valid imported names are gathered in the same pass.
         if self._resolved is not None:
             imported_field_type_names: set[str] = set()
+            imported_url_schema_names: set[str] = set()
             for imp in self._file.imports:
                 path = imp.source_path
                 if path in self._resolved:
@@ -169,14 +181,26 @@ class _SemanticAnalyzer:
                     resolved_type_enum_names = {e.name for e in resolved_file.enums} | {
                         t.name for t in resolved_file.types
                     }
+                    resolved_type_iface_names = {t.name for t in resolved_file.types} | {
+                        i.name for i in resolved_file.interfaces
+                    }
                     for entity_name in imp.entities:
+                        alias = imp.aliases.get(entity_name, entity_name)
                         if entity_name in resolved_type_enum_names:
-                            imported_field_type_names.add(imp.aliases.get(entity_name, entity_name))
+                            imported_field_type_names.add(alias)
+                        if entity_name in resolved_type_iface_names:
+                            imported_url_schema_names.add(alias)
         else:
             imported_field_type_names = imported_names
+            imported_url_schema_names = imported_names
 
         # Combined sets used for reference resolution.
         all_field_type_names = local_field_type_names | imported_field_type_names
+        # Valid targets for a ``Url<Schema>``: locally-defined types and interfaces
+        # (enums and primitives are rejected) plus imported types and interfaces.
+        url_schema_names = (
+            {t.name for t in self._file.types} | {i.name for i in self._file.interfaces} | imported_url_schema_names
+        )
         all_type_names = local_field_type_names | {i.name for i in self._file.interfaces} | imported_names
         all_interface_plain_names = {i.name for i in self._file.interfaces} | imported_names
         # Config declarations must reference a TypeDef (not enum, not interface).
@@ -243,7 +267,11 @@ class _SemanticAnalyzer:
             errors.extend(_check_field_names(f"type '{type_def.name}'", type_def.fields, self._filename))
             errors.extend(
                 _check_type_refs_in_fields(
-                    f"type '{type_def.name}'", type_def.fields, all_field_type_names, self._filename
+                    f"type '{type_def.name}'",
+                    type_def.fields,
+                    all_field_type_names,
+                    url_schema_names,
+                    self._filename,
                 )
             )
 
@@ -264,6 +292,7 @@ class _SemanticAnalyzer:
                     f"interface '{iface_def.name}'",
                     iface_def.fields,
                     all_field_type_names,
+                    url_schema_names,
                     self._filename,
                 )
             )
@@ -885,7 +914,11 @@ def _check_field_names(ctx: str, fields: list[FieldDef], filename: str | None = 
 
 
 def _collect_named_type_refs(type_ref: TypeRef) -> list[str]:
-    """Recursively collect all NamedTypeRef names from a type reference tree."""
+    """Recursively collect all NamedTypeRef names from a type reference tree.
+
+    The schema of a ``Url<Schema>`` is intentionally excluded — it is validated
+    separately by :func:`_collect_url_schema_names` because it has stricter rules.
+    """
     if isinstance(type_ref, NamedTypeRef):
         return [type_ref.name]
     if isinstance(type_ref, ListTypeRef):
@@ -897,13 +930,31 @@ def _collect_named_type_refs(type_ref: TypeRef) -> list[str]:
     return []
 
 
+def _collect_url_schema_names(type_ref: TypeRef) -> list[str]:
+    """Recursively collect the schema name of every ``Url<Schema>`` in a type tree."""
+    if isinstance(type_ref, UrlTypeRef):
+        return [type_ref.schema_name]
+    if isinstance(type_ref, ListTypeRef):
+        return _collect_url_schema_names(type_ref.element_type)
+    if isinstance(type_ref, MapTypeRef):
+        return _collect_url_schema_names(type_ref.key_type) + _collect_url_schema_names(type_ref.value_type)
+    if isinstance(type_ref, OptionalTypeRef):
+        return _collect_url_schema_names(type_ref.inner_type)
+    return []
+
+
 def _check_type_refs_in_fields(
     ctx: str,
     fields: list[FieldDef],
     valid_type_names: set[str],
+    url_schema_names: set[str],
     filename: str | None = None,
 ) -> list[SemanticError]:
-    """Check that every NamedTypeRef in field types resolves to a known name."""
+    """Check that every type reference in field types resolves to a known name.
+
+    Named references must resolve to a known type or enum. ``Url<Schema>`` schemas
+    must resolve specifically to a type or interface (``url_schema_names``).
+    """
     errors: list[SemanticError] = []
     for field_def in fields:
         for name_ref in _collect_named_type_refs(field_def.type):
@@ -911,6 +962,18 @@ def _check_type_refs_in_fields(
                 errors.append(
                     SemanticError(
                         message=f"Undefined type '{name_ref}' in field '{field_def.name}' of {ctx}",
+                        filename=filename,
+                        line=field_def.line,
+                    )
+                )
+        for schema_ref in _collect_url_schema_names(field_def.type):
+            if schema_ref not in url_schema_names:
+                errors.append(
+                    SemanticError(
+                        message=(
+                            f"Url schema '{schema_ref}' in field '{field_def.name}' of {ctx} "
+                            "must refer to a defined type or interface"
+                        ),
                         filename=filename,
                         line=field_def.line,
                     )

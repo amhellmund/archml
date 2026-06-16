@@ -3,6 +3,8 @@
 
 """High-level tests demonstrating how to construct the ArchML semantic model."""
 
+from pydantic import TypeAdapter
+
 from archml.model import (
     ArchFile,
     Component,
@@ -20,7 +22,9 @@ from archml.model import (
     PrimitiveTypeRef,
     System,
     TypeDef,
+    UrlTypeRef,
 )
+from archml.model.types import TypeRef
 
 
 def test_primitive_field() -> None:
@@ -49,6 +53,24 @@ def test_named_type_ref() -> None:
     """A NamedTypeRef references a type, enum, or interface by name."""
     ref = NamedTypeRef(name="OrderItem")
     assert ref.name == "OrderItem"
+
+
+def test_url_type_ref() -> None:
+    """A UrlTypeRef captures the schema of the resource it points to."""
+    ref = UrlTypeRef(schema_name="SensorRecord")
+    assert ref.kind == "url"
+    assert ref.schema_name == "SensorRecord"
+
+
+def test_url_type_ref_round_trip() -> None:
+    """A UrlTypeRef round-trips through the discriminated TypeRef union."""
+    adapter: TypeAdapter[TypeRef] = TypeAdapter(TypeRef)
+    original: TypeRef = OptionalTypeRef(inner_type=UrlTypeRef(schema_name="SensorRecord"))
+    decoded = adapter.validate_json(adapter.dump_json(original))
+    assert decoded == original
+    assert isinstance(decoded, OptionalTypeRef)
+    assert isinstance(decoded.inner_type, UrlTypeRef)
+    assert decoded.inner_type.schema_name == "SensorRecord"
 
 
 def test_field_with_annotations() -> None:

@@ -546,6 +546,52 @@ interface AllPrimitives {
 
 
 # ###############
+# Url Schema Resolution
+# ###############
+
+
+class TestUrlSchemaResolution:
+    def test_url_to_known_type_ok(self) -> None:
+        _assert_clean("""
+type SensorRecord { device_id: String }
+interface BlobEvent { record: Url<SensorRecord> }
+""")
+
+    def test_url_to_known_interface_ok(self) -> None:
+        # Unlike plain field types, a Url schema may name an interface.
+        _assert_clean("""
+interface Payload { value: String }
+interface BlobEvent { ref: Url<Payload> }
+""")
+
+    def test_url_nested_in_optional_ok(self) -> None:
+        _assert_clean("""
+type SensorRecord { device_id: String }
+interface BlobEvent { record: Optional<Url<SensorRecord>> }
+""")
+
+    def test_url_to_unknown_schema_is_error(self) -> None:
+        _assert_error(
+            """
+interface BlobEvent { record: Url<Unknown> }
+""",
+            "Url schema 'Unknown'",
+        )
+
+    def test_url_to_enum_is_error(self) -> None:
+        # An enum is not a valid Url schema — it must be a type or interface.
+        _assert_error(
+            """
+enum Quality {
+    Raw
+}
+interface BlobEvent { record: Url<Quality> }
+""",
+            "Url schema 'Quality'",
+        )
+
+
+# ###############
 # Interface Reference Resolution
 # ###############
 

@@ -828,6 +828,13 @@ function renderTypeRef(type: TypeRefJson, files: Record<string, ArchFileJson>, v
       return `<span class="archml-type-wrapper">Map</span><ul class="archml-type-children"><li><span class="archml-type-role">key </span>${k}</li><li><span class="archml-type-role">val </span>${v}</li></ul>`;
     }
 
+    case "url": {
+      // A Url<Schema> is a typed reference; render it as a wrapper around the
+      // (expandable, navigable) schema, reusing the named-type rendering.
+      const inner = renderTypeRef({ kind: "named", name: type.schema_name }, files, visited);
+      return `<span class="archml-type-wrapper">Url</span><ul class="archml-type-children"><li>${inner}</li></ul>`;
+    }
+
     case "named": {
       const nameHtml = `<span class="archml-type-named">${escText(type.name)}</span>`;
       if (visited.has(type.name)) return nameHtml + `<span class="archml-type-recursive"> …</span>`;

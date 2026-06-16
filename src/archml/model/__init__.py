@@ -28,6 +28,7 @@ from archml.model.types import (
     PrimitiveType,
     PrimitiveTypeRef,
     TypeRef,
+    UrlTypeRef,
 )
 
 __all__ = [
@@ -38,6 +39,7 @@ __all__ = [
     "MapTypeRef",
     "OptionalTypeRef",
     "NamedTypeRef",
+    "UrlTypeRef",
     "TypeRef",
     "FieldDef",
     # Base classes
