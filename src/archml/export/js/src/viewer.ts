@@ -83,18 +83,26 @@ export function mountViewer(container: HTMLElement, payload: ViewerPayload): voi
   const errorBanner = container.querySelector<HTMLElement>(".archml-error-banner")!;
   const loadingEl = container.querySelector<HTMLElement>(".archml-loading")!;
 
-  // Expand/collapse toggle for right sidebar
-  const expandBtn = container.querySelector<HTMLElement>("#archml-sidebar-expand-btn");
+  // Manual resize of the introspection sidebar by dragging its left edge.
   const rightSidebar = container.querySelector<HTMLElement>(".archml-sidebar-right");
-  expandBtn?.addEventListener("click", () => {
-    const expanded = rightSidebar!.classList.toggle("archml-sidebar-right--expanded");
-    const svg = expandBtn.querySelector("svg");
-    if (svg) {
-      svg.innerHTML = expanded
-        ? `<polyline points="5,1 1,1 1,5"/><polyline points="11,1 15,1 15,5"/><polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/><line x1="1" y1="1" x2="6" y2="6"/><line x1="15" y1="1" x2="10" y2="6"/><line x1="15" y1="15" x2="10" y2="10"/><line x1="1" y1="15" x2="6" y2="10"/>`
-        : `<polyline points="1,5 1,1 5,1"/><polyline points="11,1 15,1 15,5"/><polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/>`;
-    }
-    expandBtn.title = expanded ? "Collapse sidebar" : "Expand sidebar";
+  const resizeHandle = container.querySelector<HTMLElement>(".archml-sidebar-resize-handle");
+  let resizing = false;
+  resizeHandle?.addEventListener("mousedown", (e) => {
+    resizing = true;
+    rightSidebar!.classList.add("is-resizing");
+    e.preventDefault();
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!resizing) return;
+    const rect = container.getBoundingClientRect();
+    const newWidth = rect.right - e.clientX;
+    const clamped = Math.max(200, Math.min(newWidth, rect.width - 200));
+    rightSidebar!.style.width = `${clamped}px`;
+  });
+  document.addEventListener("mouseup", () => {
+    if (!resizing) return;
+    resizing = false;
+    rightSidebar!.classList.remove("is-resizing");
   });
 
   // Populate variant dropdown (named variants shown in italic)
@@ -331,14 +339,9 @@ function buildViewerShell(): string {
         <div class="archml-loading">Loading…</div>
       </div>
       <div class="archml-sidebar-right">
+        <div class="archml-sidebar-resize-handle" title="Drag to resize"></div>
         <div class="archml-sidebar-right-header">
           <span class="archml-sidebar-right-title">Details</span>
-          <button class="archml-sidebar-expand-btn" id="archml-sidebar-expand-btn" type="button" title="Expand sidebar">
-            <svg class="archml-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="1,5 1,1 5,1"/><polyline points="11,1 15,1 15,5"/>
-              <polyline points="15,11 15,15 11,15"/><polyline points="5,15 1,15 1,11"/>
-            </svg>
-          </button>
         </div>
         <div class="archml-sidebar-right-body">
           <p class="archml-detail-empty">Click an entity to see details.</p>
@@ -703,7 +706,7 @@ function showInterfaceDetails(
 
   const label = def.version ? `${def.name}@${def.version}` : def.name;
   let html = `
-    <h3 class="archml-detail-title">${escText(def.name)}</h3>
+    <h3 class="archml-detail-title archml-detail-title--code">${escText(def.name)}</h3>
     <div class="archml-detail-kind">interface</div>
   `;
 
@@ -807,7 +810,7 @@ function findTypeDef(files: Record<string, ArchFileJson>, name: string): TypeDef
   return null;
 }
 
-function renderTypeRef(type: TypeRefJson, files: Record<string, ArchFileJson>, visited: Set<string>): string {
+export function renderTypeRef(type: TypeRefJson, files: Record<string, ArchFileJson>, visited: Set<string>): string {
   switch (type.kind) {
     case "primitive":
       return `<span class="archml-type-primitive">${escText(type.primitive)}</span>`;
@@ -829,24 +832,44 @@ function renderTypeRef(type: TypeRefJson, files: Record<string, ArchFileJson>, v
     }
 
     case "url": {
-      // A Url<Schema> is a typed reference; render it as a wrapper around the
-      // (expandable, navigable) schema, reusing the named-type rendering.
-      const inner = renderTypeRef({ kind: "named", name: type.schema_name }, files, visited);
+      // A Url<Schema> is a typed reference to a remote resource. Its schema may
+      // resolve to a type *or* an interface; render it as a wrapper around the
+      // (expandable, navigable) schema, including the schema's nested members
+      // and description.
+      const inner = renderSchemaRef(type.schema_name, files, visited);
       return `<span class="archml-type-wrapper">Url</span><ul class="archml-type-children"><li>${inner}</li></ul>`;
     }
 
-    case "named": {
-      const nameHtml = `<span class="archml-type-named">${escText(type.name)}</span>`;
-      if (visited.has(type.name)) return nameHtml + `<span class="archml-type-recursive"> …</span>`;
-      const def = findTypeDef(files, type.name);
-      if (!def || def.fields.length === 0) return nameHtml;
-      const next = new Set(visited).add(type.name);
-      const fieldsHtml = def.fields
-        .map((f) => `<li class="archml-type-field"><span class="archml-type-fname">${escText(f.name)}</span><span class="archml-type-sep">:</span>${renderTypeRef(f.type, files, next)}</li>`)
-        .join("");
-      return `${nameHtml}<ul class="archml-type-children">${fieldsHtml}</ul>`;
-    }
+    case "named":
+      return renderSchemaRef(type.name, files, visited);
   }
+}
+
+/**
+ * Render a named schema reference — a type or an interface — as a navigable
+ * label followed by its description and nested members. Recursion through the
+ * same schema is collapsed via *visited* to keep the tree finite.
+ */
+function renderSchemaRef(name: string, files: Record<string, ArchFileJson>, visited: Set<string>): string {
+  const nameHtml = `<span class="archml-type-named">${escText(name)}</span>`;
+  if (visited.has(name)) return nameHtml + `<span class="archml-type-recursive"> …</span>`;
+
+  // A field type resolves to a type/enum; a Url schema resolves to a type or
+  // interface. Search both so either kind expands with its members.
+  const def: TypeDefJson | InterfaceDefJson | null =
+    findTypeDef(files, name) ?? findInterfaceDef(files, name);
+  if (!def) return nameHtml;
+
+  const descHtml = def.description
+    ? `<div class="archml-type-desc">${renderMarkdown(def.description)}</div>`
+    : "";
+  if (def.fields.length === 0) return nameHtml + descHtml;
+
+  const next = new Set(visited).add(name);
+  const fieldsHtml = def.fields
+    .map((f) => `<li class="archml-type-field"><span class="archml-type-fname">${escText(f.name)}</span><span class="archml-type-sep">:</span>${renderTypeRef(f.type, files, next)}</li>`)
+    .join("");
+  return `${nameHtml}${descHtml}<ul class="archml-type-children">${fieldsHtml}</ul>`;
 }
 
 function escText(s: string): string {
